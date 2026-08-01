@@ -1,0 +1,75 @@
+
+
+/* Glass‑morphism container */
+.finance-container {
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(12px) saturate(180%);
+  border-radius: 12px;
+  padding: 2rem;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
+  color: #f0f0f0;
+}
+
+.finance-header {
+  font-size: 2rem;
+  font-weight: 700;
+  margin-bottom: 1.5rem;
+  text-align: center;
+  color: #fff;
+}
+
+.finance-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0 0.5rem;
+}
+
+.finance-table th {
+  text-align: left;
+  color: #bbb;
+  font-weight: 600;
+  padding: 0.5rem 1rem;
+}
+
+.finance-table td {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+}
+
+.finance-form {
+  margin-top: 2rem;
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.finance-form input,
+.finance-form select {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+  color: #fff;
+}
+
+.finance-form button {
+  background: #4f46e5;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 0.6rem 1rem;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.finance-form button:hover {
+  background: #4338ca;
+}
+
+.totals-section {
+  margin-top: 1.5rem;
+  text-align: right;
+  color: #fff;
+  font-weight: 600;
+}
