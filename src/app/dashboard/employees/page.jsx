@@ -131,32 +131,30 @@ export default function EmployeesPage() {
   // Fetch Employees with Live Supabase Sync & LocalStorage Fallback
   const fetchEmployees = async () => {
     setFetching(true);
-    let dbEmps = [];
-    try {
-      const { data, error } = await supabase
-        .from("employees")
-        .select("*");
-
-      if (!error && data && data.length > 0) {
-        dbEmps = data;
-      }
-    } catch (err) {}
-
     let localEmps = [];
     try {
       const s = localStorage.getItem("persistent_employees");
       if (s) localEmps = JSON.parse(s);
     } catch(e) {}
 
+    let dbEmps = [];
+    try {
+      const { data, error } = await supabase.from("employees").select("*");
+      if (!error && data && data.length > 0) {
+        dbEmps = data;
+      }
+    } catch (err) {}
+
     const empMap = new Map();
     const baseEmps = localEmps.length > 0 ? localEmps : INITIAL_DEMO_EMPLOYEES;
+
     baseEmps.forEach(e => {
-      const key = (e.email || e.id || "").toLowerCase();
-      if (key) empMap.set(key, { status: "active", ...e });
+      const key = (e.email || e.id || "").toLowerCase().trim();
+      if (key) empMap.set(key, { ...e, status: e.status || "active" });
     });
 
     dbEmps.forEach(e => {
-      const key = (e.email || e.id || "").toLowerCase();
+      const key = (e.email || e.id || "").toLowerCase().trim();
       if (key) {
         const existing = empMap.get(key) || {};
         empMap.set(key, { ...existing, ...e, status: e.status || existing.status || "active" });
@@ -280,19 +278,38 @@ export default function EmployeesPage() {
     try {
       const newEmpObj = {
         id: `emp-${Date.now()}`,
-        ...form,
-        email: trimmedEmail,
         full_name: trimmedName,
+        father_name: form.father_name || "",
+        email: trimmedEmail,
+        phone: form.phone || "",
+        department: form.department,
+        designation: form.designation || "Staff Member",
+        employment_type: form.employment_type || "Paid Staff (Full Time)",
+        joining_date: form.joining_date || new Date().toISOString().split("T")[0],
+        address: form.address || "",
         status: "active"
       };
 
-      const updatedList = [newEmpObj, ...employees];
-      setEmployees(updatedList);
+      // 1. Get current list directly from localStorage to prevent closure/stale state bugs!
+      let currentLocal = [];
       try {
-        localStorage.setItem("persistent_employees", JSON.stringify(updatedList));
+        const s = localStorage.getItem("persistent_employees");
+        if (s) currentLocal = JSON.parse(s);
       } catch(e) {}
 
-      // Save Admin assigned credentials so the employee can log in with their exact email & password!
+      // Deduplicate by email
+      const filteredCurrent = currentLocal.filter(emp => (emp.email || "").toLowerCase().trim() !== trimmedEmail);
+      const newFullList = [newEmpObj, ...filteredCurrent];
+
+      // 2. Save directly to localStorage
+      try {
+        localStorage.setItem("persistent_employees", JSON.stringify(newFullList));
+      } catch(e) {}
+
+      // 3. Update React State
+      setEmployees(newFullList);
+
+      // 4. Save to System Users credentials cache
       const userCredentials = {
         fullName: trimmedName,
         email: trimmedEmail,
@@ -305,47 +322,41 @@ export default function EmployeesPage() {
         const saved = localStorage.getItem("registered_system_users");
         const existing = saved ? JSON.parse(saved) : [];
         const updatedUsers = [
-          ...existing.filter(u => u && u.email && u.email.toLowerCase() !== trimmedEmail),
+          ...existing.filter(u => u && u.email && u.email.toLowerCase().trim() !== trimmedEmail),
           userCredentials
         ];
         localStorage.setItem("registered_system_users", JSON.stringify(updatedUsers));
       } catch(e) {}
 
-      // Async background DB insert with 1.5s timeout so button NEVER gets stuck on "Saving..."
-      const dbPayload = {
-        full_name: trimmedName,
-        email: trimmedEmail,
-        phone: form.phone || null,
-        department: form.department,
-        designation: form.designation,
-        employment_type: form.employment_type,
-        joining_date: form.joining_date || new Date().toISOString().split("T")[0],
-        address: form.address || null,
-        status: "active"
-      };
+      // 5. Upsert into Supabase DB
+      try {
+        await supabase.from("employees").upsert([{
+          id: newEmpObj.id,
+          full_name: trimmedName,
+          email: trimmedEmail,
+          phone: form.phone || null,
+          department: form.department,
+          designation: form.designation,
+          employment_type: form.employment_type,
+          joining_date: form.joining_date || new Date().toISOString().split("T")[0],
+          address: form.address || null,
+          status: "active"
+        }], { onConflict: "email" });
+      } catch(err) {}
 
-      Promise.race([
-        supabase.from("employees").upsert([dbPayload], { onConflict: "email" }),
-        new Promise(resolve => setTimeout(() => resolve({ error: true }), 1500))
-      ]).catch(() => {});
-
-      // Log activity in background non-blocking
-      logActivity(
-        "Admin / HR",
-        "Employee Added",
-        `Created employee profile & credentials for ${trimmedName} (${form.department})`,
-        "employee"
-      ).catch(() => {});
-
-      // Notify all open pages/listeners that data changed
-      if (typeof window !== "undefined") {
-        window.dispatchEvent(new Event("dataChanged"));
-        window.dispatchEvent(new Event("storage"));
-      }
+      // 6. Log activity
+      try {
+        await logActivity(
+          "Admin / HR",
+          "Employee Added",
+          `Created employee profile & credentials for ${trimmedName} (${form.department})`,
+          "employee"
+        );
+      } catch(e) {}
 
       showToast(
         "Employee Added Successfully! 🟢",
-        `Employee: ${trimmedName}\nEmail: ${trimmedEmail}\nStatus: Active & Credentials Created`,
+        `Employee: ${trimmedName}\nEmail: ${trimmedEmail}\nStatus: Active & Saved`,
         "success"
       );
 
