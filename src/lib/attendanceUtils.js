@@ -1,33 +1,6 @@
 "use client";
 
 /**
- * Fetch client IP address using public IPify service
- */
-export async function getCurrentIp() {
-  const services = [
-    "https://api.ipify.org?format=json",
-    "https://ipapi.co/json/",
-    "https://api.my-ip.io/v2/ip.json"
-  ];
-
-  for (const url of services) {
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 3000);
-      const res = await fetch(url, { signal: controller.signal });
-      clearTimeout(timeoutId);
-      if (!res.ok) continue;
-      const data = await res.json();
-      const ip = data.ip || data.ip_address || data.query || "";
-      if (ip) return ip;
-    } catch (e) {
-      // Continue to next service fallback
-    }
-  }
-  return "192.168.1.100"; // Default local fallback IP if offline/blocked
-}
-
-/**
  * Returns total minutes elapsed since midnight today
  */
 export function getCurrentMinutes() {
@@ -36,102 +9,84 @@ export function getCurrentMinutes() {
 }
 
 /**
- * Full Attendance Logic Engine strictly following your prompt specification:
+ * Student & Employee Pure Time-Based Attendance Status Logic Engine:
  * 
- * IP Match Rule:
- * - If detected IP does not match registered Office IP (set in Admin Settings), BLOCK attendance & check-out!
- * - Message: "You must be connected to the office network to mark attendance."
+ * Before 10:00 AM (< 600 min):
+ * - White Status ("white"). Attendance Closed.
  * 
- * Office / Class Start Time: 10:00 AM (600 minutes)
+ * 10:00 AM – 10:14 AM (600 <= min < 615):
+ * - Green Status ("green"). On-Time Check-In. Status: "Present".
  * 
- * Employees:
- * - Before 10:00 AM (< 600 min): Blocked. "Please wait until office hours begin at 10:00 AM."
- * - 10:00 AM - 10:15 AM (600 <= min < 615): On Time. 🟢 Green indicator. Modal: "You have successfully checked in on time."
- * - 10:15 AM - 10:30 AM (615 <= min < 630): Late. 🟢 Green indicator. Modal: "You are late. Please arrive on time to avoid salary deductions."
- * - 10:30 AM - 11:00 AM (630 <= min < 660): Very Late. 🟠 Orange indicator. Modal: "You are significantly late. A salary deduction may be applied according to company policy."
- * - After 11:00 AM (>= 660 min): 🔴 Red indicator. Modal: "You have arrived after 11:00 AM. One day's salary will be deducted according to company policy."
+ * 10:15 AM – 10:29 AM (615 <= min < 630):
+ * - Orange Status ("orange"). Late Warning: "You are late. Please mark your attendance immediately."
  * 
- * Students:
- * - Before 10:00 AM (< 600 min): Blocked. "Please wait until attendance opens at 10:00 AM."
- * - 10:00 AM - 10:15 AM (600 <= min < 615): 🟢 Green indicator. Modal: "You are slightly late. Please try to arrive on time."
- * - 10:15 AM - 10:30 AM (615 <= min < 630): 🟠 Orange indicator. Modal: "This is your final warning. Please avoid arriving late."
- * - 10:30 AM - 11:00 AM (630 <= min < 660): 🟠 Orange indicator. Modal: "This is your final warning. Please avoid arriving late."
- * - After 11:00 AM (>= 660 min): 🔴 Red indicator. Modal: "You have arrived after the allowed attendance time. Please pay the applicable late attendance fine."
+ * 10:30 AM and After (>= 630 min):
+ * - Red Status ("red").
+ *   - Students: "You are very late. A late attendance fine may apply according to institute policy."
+ *   - Employees: "You are very late. One day's salary will be deducted according to company policy."
  */
-export function determineAttendanceState(role = "employee", minutes, ipMatch) {
-  const isStudentOrIntern = role === "student" || role === "internship" || role === "intern";
+export function determineAttendanceState(role = "employee", minutes) {
+  const isStudent = role === "student" || role === "course_student" || role === "intern" || role === "internship";
 
-  // IP verification check (IPify matched against Admin Settings office IP)
-  if (!ipMatch) {
-    return {
-      allowed: false,
-      modalMessage: "You must be connected to the office network to mark attendance.",
-      status: "error",
-      lightColor: "grey",
-      label: "Blocked (Office Wi-Fi IP Required)"
-    };
-  }
-
-  // Before 10:00 AM
+  // 1. Before 10:00 AM (< 600 min): White Status, Attendance Disabled / Closed
   if (minutes < 600) {
     return {
       allowed: false,
-      modalMessage: isStudentOrIntern
-        ? "Please wait until attendance opens at 10:00 AM."
-        : "Please wait until office hours begin at 10:00 AM.",
+      modalMessage: "Attendance is disabled before 10:00 AM.",
       status: "info",
-      lightColor: "grey",
-      label: "Closed (Before 10:00 AM)"
+      lightColor: "white",
+      label: "Attendance Closed (Before 10:00 AM)",
+      attendanceStatus: "Closed",
+      salaryDeductionStatus: "No Deduction"
     };
   }
 
-  // 10:00 AM – 10:15 AM
+  // 2. 10:00 AM – 10:14 AM (600 <= min < 615): Green Status, On Time
   if (minutes >= 600 && minutes < 615) {
     return {
       allowed: true,
-      modalMessage: isStudentOrIntern
-        ? "You are slightly late. Please try to arrive on time."
-        : "You have successfully checked in on time.",
+      modalMessage: "Attendance marked as On Time!",
       status: "success",
       lightColor: "green",
-      label: isStudentOrIntern ? "Slightly Late" : "On Time"
+      label: "On Time (Green)",
+      attendanceStatus: "Present",
+      salaryDeductionStatus: "No Deduction"
     };
   }
 
-  // 10:15 AM – 10:30 AM
+  // 3. 10:15 AM – 10:29 AM (615 <= min < 630): Orange Status, Late Warning
   if (minutes >= 615 && minutes < 630) {
     return {
       allowed: true,
-      modalMessage: isStudentOrIntern
-        ? "This is your final warning. Please avoid arriving late."
-        : "You are late. Please arrive on time to avoid salary deductions.",
-      status: isStudentOrIntern ? "warning" : "success",
-      lightColor: isStudentOrIntern ? "orange" : "green",
-      label: isStudentOrIntern ? "Final Warning" : "Late"
-    };
-  }
-
-  // 10:30 AM – 11:00 AM
-  if (minutes >= 630 && minutes < 660) {
-    return {
-      allowed: true,
-      modalMessage: isStudentOrIntern
-        ? "This is your final warning. Please avoid arriving late."
-        : "You are significantly late. A salary deduction may be applied according to company policy.",
+      modalMessage: "You are late. Please mark your attendance immediately.",
       status: "warning",
       lightColor: "orange",
-      label: isStudentOrIntern ? "Final Warning" : "Very Late"
+      label: "Late Warning (Orange)",
+      attendanceStatus: "Late",
+      salaryDeductionStatus: "Warning Issued"
     };
   }
 
-  // After 11:00 AM
-  return {
-    allowed: true,
-    modalMessage: isStudentOrIntern
-      ? "You have arrived after the allowed attendance time. Please pay the applicable late attendance fine."
-      : "You have arrived after 11:00 AM. One day's salary will be deducted according to company policy.",
-    status: "error",
-    lightColor: "red",
-    label: isStudentOrIntern ? "Late Fine Applicable" : "1 Day Salary Cut"
-  };
+  // 4. 10:30 AM and After (>= 630 min): Red Status
+  if (isStudent) {
+    return {
+      allowed: true,
+      modalMessage: "You are very late. A late attendance fine may apply according to institute policy.",
+      status: "error",
+      lightColor: "red",
+      label: "Red Status (Late Fine Applicable)",
+      attendanceStatus: "Late",
+      salaryDeductionStatus: "Late Fine Policy"
+    };
+  } else {
+    return {
+      allowed: true,
+      modalMessage: "You are very late. One day's salary will be deducted according to company policy.",
+      status: "error",
+      lightColor: "red",
+      label: "Red Status (1-Day Salary Deducted)",
+      attendanceStatus: "Late",
+      salaryDeductionStatus: "1-Day Salary Deducted"
+    };
+  }
 }

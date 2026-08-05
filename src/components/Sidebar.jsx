@@ -18,11 +18,25 @@ import {
   FaBuilding,
   FaFileAlt,
   FaLaptopCode,
+  FaExclamationTriangle,
+  FaVideo,
+  FaTrophy,
+  FaDesktop,
+  FaBullhorn,
+  FaChevronLeft,
+  FaCogs
 } from "react-icons/fa";
 
 const adminMenus = [
   { name: "Overview Dashboard", href: "/dashboard", icon: FaChartPie },
-  { name: "Paid Employees Staff", href: "/dashboard/employees", icon: FaUsers },
+  { name: "Company Settings & Branding", href: "/dashboard/settings", icon: FaCogs },
+  { name: "Student Portal Dashboard", href: "/dashboard/student", icon: FaGraduationCap },
+  { name: "Announcement Board", href: "/dashboard/announcements", icon: FaBullhorn },
+  { name: "Remote Monitoring", href: "/dashboard/remote-monitoring", icon: FaDesktop },
+  { name: "Performance & Ranking", href: "/dashboard/performance", icon: FaTrophy },
+  { name: "Meeting Management", href: "/dashboard/meetings", icon: FaVideo },
+  { name: "Complaint System", href: "/dashboard/complaints", icon: FaExclamationTriangle },
+  { name: "Payroll, Payslips & Staff", href: "/dashboard/payroll", icon: FaWallet },
   { name: "Leave Approvals", href: "/dashboard/leaves", icon: FaUserClock },
   { name: "Attendance Control", href: "/dashboard/attendance", icon: FaCalendarCheck },
   { name: "Finance & Accounting", href: "/dashboard/finance", icon: FaLandmark },
@@ -34,28 +48,43 @@ const adminMenus = [
 
 // Employee / Staff Menus
 const employeeMenus = [
-  { name: "My Attendance", href: "/dashboard/attendance", icon: FaCalendarCheck },
+  { name: "My Dashboard & Staff Portal", href: "/dashboard/employees", icon: FaUserTie },
+  { name: "Company Settings & Branding", href: "/dashboard/settings", icon: FaCogs },
+  { name: "My Salary & Payslips", href: "/dashboard/payroll", icon: FaWallet },
+  { name: "Announcement Board", href: "/dashboard/announcements", icon: FaBullhorn },
+  { name: "Remote Work Monitor", href: "/dashboard/remote-monitoring", icon: FaDesktop },
+  { name: "My Performance Score", href: "/dashboard/performance", icon: FaTrophy },
+  { name: "Meeting Management", href: "/dashboard/meetings", icon: FaVideo },
+  { name: "Complaint System", href: "/dashboard/complaints", icon: FaExclamationTriangle },
   { name: "My Projects Progress", href: "/dashboard/projects", icon: FaProjectDiagram },
   { name: "Leave Application", href: "/dashboard/leaves", icon: FaUserClock },
 ];
 
-// Course Student Specific Menus (ONLY Courses, Attendance & Leaves)
+// Course Student Specific Menus
 const courseStudentMenus = [
-  { name: "My Course & Fees", href: "/dashboard/courses", icon: FaGraduationCap },
-  { name: "My Attendance", href: "/dashboard/attendance", icon: FaCalendarCheck },
+  { name: "Student Portal Dashboard", href: "/dashboard/student", icon: FaGraduationCap },
+  { name: "Announcement Board", href: "/dashboard/announcements", icon: FaBullhorn },
+  { name: "Remote Work Monitor", href: "/dashboard/remote-monitoring", icon: FaDesktop },
+  { name: "Student Performance Score", href: "/dashboard/performance", icon: FaTrophy },
+  { name: "Meeting Management", href: "/dashboard/meetings", icon: FaVideo },
+  { name: "Complaint System", href: "/dashboard/complaints", icon: FaExclamationTriangle },
   { name: "Leave Application", href: "/dashboard/leaves", icon: FaUserClock },
 ];
 
-// Intern Specific Menus (ONLY Internship, Projects & Leaves)
+// Intern Specific Menus
 const internMenus = [
   { name: "My 3-Month Internship", href: "/dashboard/internships", icon: FaLaptopCode },
+  { name: "Announcement Board", href: "/dashboard/announcements", icon: FaBullhorn },
+  { name: "Remote Work Monitor", href: "/dashboard/remote-monitoring", icon: FaDesktop },
+  { name: "My Performance Score", href: "/dashboard/performance", icon: FaTrophy },
+  { name: "Meeting Management", href: "/dashboard/meetings", icon: FaVideo },
+  { name: "Complaint System", href: "/dashboard/complaints", icon: FaExclamationTriangle },
   { name: "My Assigned Project", href: "/dashboard/projects", icon: FaProjectDiagram },
-  { name: "My Attendance", href: "/dashboard/attendance", icon: FaCalendarCheck },
   { name: "Leave Application", href: "/dashboard/leaves", icon: FaUserClock },
 ];
 
 const clientMenus = [
-  { name: "My Project Daily Progress", href: "/dashboard/projects", icon: FaProjectDiagram },
+  { name: "My Client Portal Dashboard", href: "/dashboard/client-portal", icon: FaProjectDiagram },
 ];
 
 export default function Sidebar({ isOpen, onClose }) {
@@ -80,12 +109,6 @@ export default function Sidebar({ isOpen, onClose }) {
     window.dispatchEvent(new Event("roleChanged"));
   };
 
-  // Select role-based sidebar menu items:
-  // - Admin: All menus
-  // - Client: Client project progress menu
-  // - Intern: Internship, Assigned Project, Attendance & Leaves
-  // - Student: Course & Fees, Attendance & Leaves
-  // - Employee: Attendance, Assigned Project & Leaves
   const navItems =
     role === "admin"
       ? adminMenus
@@ -93,9 +116,14 @@ export default function Sidebar({ isOpen, onClose }) {
       ? clientMenus
       : role === "intern" || role === "internship"
       ? internMenus
-      : role === "student"
+      : role === "student" || role === "course_student" || role === "course"
       ? courseStudentMenus
       : employeeMenus;
+
+  // Allow Sidebar for client role as well
+  if (role !== "admin" && role !== "hr" && role !== "manager" && role !== "accounts" && role !== "client") {
+    return null;
+  }
 
   return (
     <>
@@ -109,7 +137,7 @@ export default function Sidebar({ isOpen, onClose }) {
 
       {/* Main Sidebar */}
       <aside
-        className={`fixed top-0 bottom-0 left-0 z-50 flex w-64 flex-col bg-blue-700 text-white shadow-xl transition-transform duration-300 md:translate-x-0 ${
+        className={`fixed top-0 bottom-0 left-0 z-50 flex w-64 flex-col bg-blue-700 text-white shadow-xl transition-all duration-300 ${
           isOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
@@ -118,24 +146,25 @@ export default function Sidebar({ isOpen, onClose }) {
           <Link href="/dashboard" className="flex items-center gap-3">
             <img
               src="/logo.jpeg"
-              alt="Logo"
+              alt="NEXA Logo"
               className="h-9 w-9 rounded-lg object-cover border border-white/20 shadow-xs"
             />
             <div>
-              <span className="text-base font-bold tracking-tight text-white block leading-tight">
-                Software House
+              <span className="text-sm font-black tracking-tight text-white block leading-tight">
+                NEXA
               </span>
-              <span className="text-[10px] text-blue-200 uppercase font-semibold tracking-wider">
-                Management System
+              <span className="text-[10px] text-blue-200 uppercase font-bold tracking-wider">
+                Software House System
               </span>
             </div>
           </Link>
 
           <button
             onClick={onClose}
-            className="text-blue-200 hover:text-white md:hidden"
+            className="p-2 rounded-xl text-blue-100 hover:text-white hover:bg-blue-600/80 transition-all border border-blue-500/50 cursor-pointer flex items-center gap-1.5 shadow-sm"
+            title="Close / Minimize Sidebar"
           >
-            <FaTimes className="text-lg" />
+            <FaTimes className="text-base" />
           </button>
         </div>
 
@@ -156,9 +185,9 @@ export default function Sidebar({ isOpen, onClose }) {
               onChange={(e) => changeRole(e.target.value)}
               className="w-full rounded-lg bg-blue-900/80 border border-blue-500/50 px-3 py-1.5 text-xs text-white outline-none font-medium cursor-pointer"
             >
-              <option value="admin">👑 Admin View Mode</option>
-              <option value="employee">🧑‍💻 Student / Staff View Mode</option>
-              <option value="client">🏢 Client View Mode</option>
+              <option value="admin">Admin View Mode</option>
+              <option value="employee">Student / Staff View Mode</option>
+              <option value="client">Client View Mode</option>
             </select>
           ) : (
             <div className="flex items-center gap-2 text-xs font-bold text-white bg-blue-900/60 px-3 py-1.5 rounded-lg border border-blue-500/40">

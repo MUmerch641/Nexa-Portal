@@ -2,9 +2,20 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { logActivity } from "@/lib/activityUtils";
 import Modal from "@/components/Modal";
 import { FaCheck, FaTimes, FaCalendarPlus, FaUserClock, FaShieldAlt, FaInfoCircle } from "react-icons/fa";
 import "@/app/dashboard/leaves/leaves.css";
+
+const StatusBadge = ({ status }) => {
+  if (status === "approved") {
+    return <span className="inline-flex items-center gap-1 bg-emerald-100 text-emerald-800 border border-emerald-300 px-3 py-1 rounded-full text-xs font-bold">🟢 Approved (Salary NOT Cut)</span>;
+  }
+  if (status === "rejected") {
+    return <span className="inline-flex items-center gap-1 bg-rose-100 text-rose-800 border border-rose-300 px-3 py-1 rounded-full text-xs font-bold">🔴 Rejected (Salary Cut Applied)</span>;
+  }
+  return <span className="inline-flex items-center gap-1 bg-amber-100 text-amber-800 border border-amber-300 px-3 py-1 rounded-full text-xs font-bold">⏳ Pending Admin Review</span>;
+};
 
 export default function LeavesPage() {
   const [role, setRole] = useState("employee");
@@ -110,10 +121,12 @@ export default function LeavesPage() {
       return;
     }
 
+    const currentEmail = localStorage.getItem("current_user_email") || "user@gmail.com";
     const newLeave = {
       id: Date.now().toString(),
       employee_id: user?.id || "local-user",
       employee_name: form.applicantName || (role === "student" ? "Student Applicant" : "Employee Applicant"),
+      applicant_email: currentEmail.toLowerCase().trim(),
       type: form.type,
       start_date: form.startDate,
       end_date: form.endDate,
@@ -143,6 +156,7 @@ export default function LeavesPage() {
   };
 
   const handleApprove = async (id) => {
+    const targetLeave = leaves.find(l => l.id === id);
     try {
       await supabase.from("leaves").update({ status: "approved", salary_cut: false }).eq("id", id);
     } catch(e) {}
@@ -150,10 +164,21 @@ export default function LeavesPage() {
     const updated = leaves.map(l => l.id === id ? { ...l, status: "approved", salary_cut: false } : l);
     setLeaves(updated);
     localStorage.setItem("software_house_leaves", JSON.stringify(updated));
+
+    try {
+      await logActivity(
+        "Admin / HR",
+        "Leave Approved",
+        `Approved leave request for ${targetLeave?.employee_name || "Employee Staff"}`,
+        "leave"
+      );
+    } catch(e) {}
+
     setModal({ isOpen: true, title: "Leave Approved 🟢", message: "Leave approved by Admin. Salary WILL NOT be cut (Exempt).", type: "success" });
   };
 
   const handleReject = async (id) => {
+    const targetLeave = leaves.find(l => l.id === id);
     try {
       await supabase.from("leaves").update({ status: "rejected", salary_cut: true }).eq("id", id);
     } catch(e) {}
@@ -161,20 +186,20 @@ export default function LeavesPage() {
     const updated = leaves.map(l => l.id === id ? { ...l, status: "rejected", salary_cut: true } : l);
     setLeaves(updated);
     localStorage.setItem("software_house_leaves", JSON.stringify(updated));
+
+    try {
+      await logActivity(
+        "Admin / HR",
+        "Leave Rejected",
+        `Rejected leave request for ${targetLeave?.employee_name || "Employee Staff"}`,
+        "leave"
+      );
+    } catch(e) {}
+
     setModal({ isOpen: true, title: "Leave Rejected 🔴", message: "Leave rejected by Admin. Salary cut policy applied.", type: "error" });
   };
 
   if (loading) return <div className="p-8 text-center text-slate-500 font-bold">Loading Leave Management Portal...</div>;
-
-  const StatusBadge = ({ status }) => {
-    if (status === "approved") {
-      return <span className="inline-flex items-center gap-1 bg-emerald-100 text-emerald-800 border border-emerald-300 px-3 py-1 rounded-full text-xs font-bold">🟢 Approved (Salary NOT Cut)</span>;
-    }
-    if (status === "rejected") {
-      return <span className="inline-flex items-center gap-1 bg-rose-100 text-rose-800 border border-rose-300 px-3 py-1 rounded-full text-xs font-bold">🔴 Rejected (Salary Cut Applied)</span>;
-    }
-    return <span className="inline-flex items-center gap-1 bg-amber-100 text-amber-800 border border-amber-300 px-3 py-1 rounded-full text-xs font-bold">⏳ Pending Admin Review</span>;
-  };
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
@@ -322,14 +347,22 @@ export default function LeavesPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {leaves.length === 0 ? (
+              {leaves.filter(l => {
+                if (role === "admin" || role === "hr" || role === "manager") return true;
+                const currentEmail = (localStorage.getItem("current_user_email") || "").toLowerCase().trim();
+                return l.applicant_email ? l.applicant_email.toLowerCase() === currentEmail : true;
+              }).length === 0 ? (
                 <tr>
                   <td colSpan="5" className="p-6 text-center text-slate-400 text-xs">
-                    No leave requests found. Submit a request using the form above.
+                    No leave requests found for your account. Submit a request using the form above.
                   </td>
                 </tr>
               ) : (
-                leaves.map((l) => (
+                leaves.filter(l => {
+                  if (role === "admin" || role === "hr" || role === "manager") return true;
+                  const currentEmail = (localStorage.getItem("current_user_email") || "").toLowerCase().trim();
+                  return l.applicant_email ? l.applicant_email.toLowerCase() === currentEmail : true;
+                }).map((l) => (
                   <tr key={l.id} className="hover:bg-slate-50/70 transition-colors">
                     <td className="p-3 font-semibold text-slate-900">
                       {l.employee_name || "Staff / Student"}

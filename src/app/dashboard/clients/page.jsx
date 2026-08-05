@@ -142,31 +142,33 @@ export default function ClientsPage() {
       calculatedStatus = "Pending Invoice";
     }
 
-    const { error } = await supabase.from("clients").insert([
-      {
-        client_name: form.client_name,
-        contact_person: form.contact_person,
-        email: form.email,
-        phone: form.phone,
-        address: form.address,
-        project_name: form.project_name,
-        contract_start_date: form.contract_start_date,
-        contract_end_date: form.contract_end_date,
-        contract_value: contractVal,
-        amount_paid: paidVal,
-        payment_status: calculatedStatus,
-        notes: form.notes,
-      },
-    ]);
+    const clientPayload = {
+      client_name: form.client_name,
+      contact_person: form.contact_person,
+      email: form.email,
+      phone: form.phone,
+      project_name: form.project_name,
+      contract_value: contractVal,
+      amount_paid: paidVal,
+      payment_status: calculatedStatus,
+      notes: form.notes,
+    };
+
+    if (form.address) clientPayload.address = form.address;
+    if (form.contract_start_date) clientPayload.contract_start_date = form.contract_start_date;
+    if (form.contract_end_date) clientPayload.contract_end_date = form.contract_end_date;
+
+    const { data: insertedData, error } = await supabase.from("clients").insert([clientPayload]).select();
 
     setSubmitting(false);
 
     if (error) {
-      showAlert("Error Adding Client", error.message, "error");
+      console.error("Supabase Clients Insert Error:", error);
+      showAlert("Database Insert Error 🛑", `Failed to save client into Supabase Database.\n\nReason: ${error.message}`, "error");
       return;
     }
 
-    showAlert("Client Contract Added!", `Client: ${form.client_name}\nContract Start: ${form.contract_start_date}\nContract End: ${form.contract_end_date}\nContract Value: ${contractVal.toLocaleString()} PKR`, "success");
+    showAlert("Client Contract Added! 💼", `Client: ${form.client_name}\nProject: ${form.project_name}\nContract Value: ${contractVal.toLocaleString()} PKR`, "success");
 
     setForm({
       client_name: "",
@@ -260,15 +262,28 @@ export default function ClientsPage() {
   };
 
   // Delete Client
-  const handleDeleteClient = async (id) => {
+  const handleDeleteClient = async (id, clientEmail) => {
     if (!confirm("Are you sure you want to delete this client record?")) return;
 
-    const { error } = await supabase.from("clients").delete().eq("id", id);
-    if (error) {
-      showAlert("Error", error.message, "error");
-      return;
-    }
+    // Remove from local state immediately
+    const updated = clients.filter(c => c.id !== id);
+    setClients(updated);
 
+    try {
+      localStorage.setItem("software_house_master_clients", JSON.stringify(updated));
+    } catch(e) {}
+
+    // Delete from Supabase Database
+    try {
+      if (id) {
+        await supabase.from("clients").delete().eq("id", id);
+      }
+      if (clientEmail) {
+        await supabase.from("clients").delete().eq("email", clientEmail);
+      }
+    } catch (e) {}
+
+    showAlert("Client Record Deleted 🗑️", "Client deal record deleted successfully.", "success");
     fetchClients();
   };
 
@@ -663,7 +678,7 @@ export default function ClientsPage() {
 
                           {/* Delete */}
                           <button
-                            onClick={() => handleDeleteClient(client.id)}
+                            onClick={() => handleDeleteClient(client.id, client.email)}
                             title="Delete Client Record"
                             className="w-full inline-flex items-center justify-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-semibold text-rose-600 border border-rose-200 hover:bg-rose-50 transition-colors"
                           >

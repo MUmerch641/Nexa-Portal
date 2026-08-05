@@ -8,7 +8,14 @@ export async function login(email, password) {
 }
 
 export async function logout() {
-  return await supabase.auth.signOut();
+  if (typeof window !== "undefined") {
+    localStorage.removeItem("isLoggedIn");
+    localStorage.removeItem("user_role");
+    localStorage.removeItem("current_user_email");
+  }
+  try {
+    return await supabase.auth.signOut();
+  } catch(e) {}
 }
 
 export async function getCurrentUser() {

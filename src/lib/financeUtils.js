@@ -1,53 +1,83 @@
 // src/lib/financeUtils.js
-
 import { supabase } from "@/lib/supabase";
 
+// 15 Standard Expense Categories
+export const EXPENSE_CATEGORIES = [
+  "Employee Salary",
+  "Office Rent",
+  "Electricity Bill",
+  "Water Bill",
+  "Internet Bill",
+  "Gas Bill",
+  "Office Maintenance",
+  "Office Equipment",
+  "Computer & Laptop Purchase",
+  "Software Licenses",
+  "Marketing & Advertising",
+  "Travel Expense",
+  "Fuel Expense",
+  "Office Supplies",
+  "Miscellaneous Expense"
+];
+
+// Income Categories
+export const INCOME_CATEGORIES = [
+  "Client Project Payment",
+  "Software Sales",
+  "Maintenance Charges",
+  "Consultation Fee",
+  "Other Income"
+];
+
+// Initial Datasets (Empty defaults so Admin enters real records)
+export const INITIAL_EXPENSES = [];
+export const INITIAL_INCOMES = [];
+export const INITIAL_UTILITY_BILLS = [];
+
 /**
- * Fetch all finance records for the organization.
+ * Fetch helper for all modules with database fallback
  */
 export async function fetchFinanceRecords() {
-  const { data, error } = await supabase.from("finance").select("*");
-  if (error) throw error;
-  return data;
+  try {
+    const { data, error } = await supabase.from("expenses").select("*");
+    if (!error && data && data.length > 0) return data;
+  } catch (e) {}
+  return INITIAL_EXPENSES;
 }
 
 /**
- * Add a new finance record.
- * @param {Object} record - { type, amount, description, date, paid }
+ * Export data array to CSV/Excel file download
  */
-export async function addFinanceRecord(record) {
-  const { error, data } = await supabase.from("finance").insert(record).single();
-  if (error) throw error;
-  return data;
+export function exportToCsv(filename, rows) {
+  if (!rows || !rows.length) return;
+  const separator = ",";
+  const keys = Object.keys(rows[0]);
+  const csvContent =
+    keys.join(separator) +
+    "\n" +
+    rows
+      .map((row) => {
+        return keys
+          .map((k) => {
+            let cell = row[k] === null || row[k] === undefined ? "" : row[k];
+            cell = cell.toString().replace(/"/g, '""');
+            if (cell.search(/("|,|\n)/g) >= 0) cell = `"${cell}"`;
+            return cell;
+          })
+          .join(separator);
+      })
+      .join("\n");
+
+  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+  const link = document.createElement("a");
+  if (link.download !== undefined) {
+    const url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    link.setAttribute("download", filename);
+    link.style.visibility = "hidden";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
 }
 
-/**
- * Toggle the paid flag of a finance record.
- * @param {string} id - record id
- * @param {boolean} paid - new paid status
- */
-export async function togglePaid(id, paid) {
-  const { error, data } = await supabase
-    .from("finance")
-    .update({ paid })
-    .eq("id", id)
-    .single();
-  if (error) throw error;
-  return data;
-}
-
-/**
- * Calculate totals per category and overall.
- * @param {Array} records - finance records array
- * @returns {Object} { totalsByType, overallTotal }
- */
-export function calculateTotals(records) {
-  const totalsByType = {};
-  let overallTotal = 0;
-  records.forEach((r) => {
-    const amt = Number(r.amount) || 0;
-    overallTotal += amt;
-    totalsByType[r.type] = (totalsByType[r.type] || 0) + amt;
-  });
-  return { totalsByType, overallTotal };
-}

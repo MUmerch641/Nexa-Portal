@@ -3,6 +3,9 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
+import { showToast } from "@/components/Toast";
+import { fetchRecentActivities, formatTimeAgo, clearActivityLogs } from "@/lib/activityUtils";
+import FinancialChart from "@/components/FinancialChart";
 import {
   FaUsers,
   FaCalendarCheck,
@@ -14,7 +17,13 @@ import {
   FaUserTie,
   FaTasks,
   FaLock,
-  FaShieldAlt
+  FaShieldAlt,
+  FaLandmark,
+  FaPaperPlane,
+  FaBell,
+  FaExclamationTriangle,
+  FaHistory,
+  FaClock
 } from "react-icons/fa";
 
 export default function DashboardPage() {
@@ -22,19 +31,43 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({
     employees: 0,
-    students: 0,
-    present: 0,
-    salary: 0,
-    projects: 0,
+    activeProjects: 0,
+    monthlyRevenue: 0,
+    pendingLeaves: 0,
   });
 
   const [liveAttendanceList, setLiveAttendanceList] = useState([]);
   const [projectsProgressList, setProjectsProgressList] = useState([]);
+  const [recentActivities, setRecentActivities] = useState([]);
+
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const handleRefreshFeed = async () => {
+    setIsRefreshing(true);
+    try {
+      const data = await fetchRecentActivities();
+      setRecentActivities([...(data || [])]);
+      await loadDashboardData();
+      await loadAllMembers();
+      showToast("Feed Synced 🔄", "Recent activity feed & system stats refreshed successfully.", "info");
+    } catch(e) {}
+    setTimeout(() => setIsRefreshing(false), 400);
+  };
 
   // Selected User Modal Inspection State
   const [selectedUserModal, setSelectedUserModal] = useState(null);
   const [userCategoryFilter, setUserCategoryFilter] = useState("all");
   const [allRegisteredUsersList, setAllRegisteredUsersList] = useState([]);
+
+  // Assign Task Modal State
+  const [assignTaskModal, setAssignTaskModal] = useState(false);
+  const [taskForm, setTaskForm] = useState({
+    selectedUserEmail: "",
+    title: "",
+    description: "",
+    priority: "High",
+    dueDate: new Date().toISOString().split("T")[0],
+  });
 
   // Read role from localStorage and listen to role changes
   useEffect(() => {
@@ -52,39 +85,155 @@ export default function DashboardPage() {
   const loadDashboardData = async () => {
     setLoading(true);
     try {
-      let employeeCount = 12;
-      let studentCount = 24;
-      let projectCount = 8;
+      let employeeCount = 0;
+      let activeProjectCount = 0;
+      let monthlyRevenue = 0;
+      let pendingLeavesCount = 0;
       let projData = [];
       let attData = [];
-      let totalSalary = 185000;
 
+      // 1. Total Employees (Combine DB & local persistent employees)
       try {
-        const resEmp = await supabase.from("employees").select("*", { count: "exact", head: true });
-        if (resEmp.count) employeeCount = resEmp.count;
-      } catch(e) {}
+        let dbEmps = [];
+        const { data, error } = await supabase.from("employees").select("*");
+        if (!error && data) dbEmps = data;
 
-      try {
-        const resStu = await supabase.from("students").select("*", { count: "exact", head: true });
-        if (resStu.count) studentCount = resStu.count;
-      } catch(e) {}
+        let localEmps = [];
+        const saved = localStorage.getItem("persistent_employees");
+        if (saved) {
+          try {
+            const parsed = JSON.parse(saved);
+            if (Array.isArray(parsed)) localEmps = parsed;
+          } catch(e) {}
+        }
 
+        const empMap = new Map();
+        dbEmps.forEach(e => {
+          const key = (e.email || e.id || "").toLowerCase();
+          if (key) empMap.set(key, e);
+        });
+        localEmps.forEach(e => {
+          const key = (e.email || e.id || "").toLowerCase();
+          if (key && !empMap.has(key)) empMap.set(key, e);
+        });
+
+        const allEmps = Array.from(empMap.values());
+        employeeCount = allEmps.filter(e => (e.status || "").toLowerCase() !== "inactive" && (e.status || "").toLowerCase() !== "terminated").length;
+      } catch(e) {
+        employeeCount = 0;
+      }
+
+      // 2. Total Active Projects (Count status = "active" / "in progress")
       try {
         const resProj = await supabase.from("projects").select("*").order("id", { ascending: false });
-        if (resProj.data && resProj.data.length > 0) {
+        if (resProj.data) {
           projData = resProj.data;
-          projectCount = resProj.data.length;
+          const activeFiltered = resProj.data.filter(p => {
+            const st = (p.status || "").toLowerCase();
+            return st === "active" || st === "in progress" || st === "in_progress" || st === "ongoing";
+          });
+          activeProjectCount = activeFiltered.length;
         }
+      } catch(e) {
+        activeProjectCount = 0;
+      }
+
+      // 3. Monthly Revenue (Sum of current month paid incomes)
+      try {
+        const currentYearMonth = new Date().toISOString().slice(0, 7);
+        const { data, error } = await supabase.from("incomes").select("amount, date, status");
+        if (!error && data && data.length > 0) {
+          monthlyRevenue = data
+            .filter(item => {
+              const isCurrentMonth = item.date && item.date.startsWith(currentYearMonth);
+              const isPaid = !item.status || item.status.toLowerCase() === "paid";
+              return isCurrentMonth && isPaid;
+            })
+            .reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+        } else {
+          const saved = localStorage.getItem("persistent_incomes");
+          if (saved) {
+            const parsed = JSON.parse(saved);
+            if (Array.isArray(parsed)) {
+              monthlyRevenue = parsed
+                .filter(item => {
+                  const isCurrentMonth = item.date && item.date.startsWith(currentYearMonth);
+                  const isPaid = !item.status || item.status.toLowerCase() === "paid";
+                  return isCurrentMonth && isPaid;
+                })
+                .reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+            }
+          }
+        }
+      } catch(e) {
+        monthlyRevenue = 0;
+      }
+
+      // 4. Pending Leaves (Count status = "pending")
+      try {
+        const { data, error } = await supabase.from("leaves").select("*");
+        if (!error && data) {
+          pendingLeavesCount = data.filter(l => (l.status || "").toLowerCase() === "pending").length;
+        } else {
+          const saved = localStorage.getItem("persistent_leaves");
+          if (saved) {
+            const parsed = JSON.parse(saved);
+            if (Array.isArray(parsed)) {
+              pendingLeavesCount = parsed.filter(l => (l.status || "").toLowerCase() === "pending").length;
+            }
+          }
+        }
+      } catch(e) {
+        pendingLeavesCount = 0;
+      }
+
+      // 5. Monthly Expenses & Category Distribution
+      let totalExpensesAmount = 0;
+      let categoryBreakdown = [];
+      try {
+        const { data, error } = await supabase.from("expenses").select("amount, category");
+        let expList = [];
+        if (!error && data) {
+          expList = data;
+        } else {
+          const saved = localStorage.getItem("persistent_expenses");
+          if (saved) {
+            try { expList = JSON.parse(saved); } catch(e) {}
+          }
+        }
+
+        totalExpensesAmount = expList.reduce((sum, i) => sum + (Number(i.amount) || 0), 0);
+        const catMap = new Map();
+        expList.forEach(i => {
+          const cat = i.category || "General Expense";
+          const amt = Number(i.amount) || 0;
+          catMap.set(cat, (catMap.get(cat) || 0) + amt);
+        });
+        categoryBreakdown = Array.from(catMap.entries()).map(([category, amount]) => ({ category, amount }));
       } catch(e) {}
 
+      // Load live assigned tasks into projects progress list
       try {
-        const resAtt = await supabase.from("attendance").select("*");
-        if (resAtt.data) attData = resAtt.data;
+        let liveTasks = [];
+        const { data: dbTasks } = await supabase.from("daily_tasks").select("*").order("id", { ascending: false });
+        if (dbTasks && dbTasks.length > 0) {
+          liveTasks = dbTasks;
+        } else {
+          const savedTasks = localStorage.getItem("software_house_daily_tasks");
+          if (savedTasks) liveTasks = JSON.parse(savedTasks);
+        }
+        
+        projData = liveTasks.map(t => ({
+          id: t.id,
+          title: t.task || t.task_name,
+          client_name: t.assignedTo || t.assigned_to || "Assigned Task",
+          progress: t.status === "Completed" ? 100 : t.status === "In Progress" ? 50 : 20,
+          status: t.status || "In Progress"
+        }));
       } catch(e) {}
 
       setProjectsProgressList(projData || []);
 
-      // 4. Attendance Today
       const savedEmpAtt = localStorage.getItem("today_attendance_employee");
       const savedStuAtt = localStorage.getItem("today_attendance_student");
       
@@ -102,30 +251,15 @@ export default function DashboardPage() {
         } catch(e) {}
       }
 
-      if (combinedAttendance.length === 0) {
-        combinedAttendance = [
-          { name: "Muhammad Rahim (Senior Developer)", role: "Employee / Staff", type: "check_in", timestamp: new Date().toISOString(), status: "On Time (Green)" },
-          { name: "Ali Hassan (Web Dev Student)", role: "Student / Intern", type: "check_in", timestamp: new Date().toISOString(), status: "Slightly Late (Green)" },
-          { name: "Sara Ahmed (UI/UX Student)", role: "Student / Intern", type: "check_in", timestamp: new Date().toISOString(), status: "Final Warning (Orange)" },
-        ];
-      }
-
       setLiveAttendanceList(combinedAttendance);
 
-      // 5. Total Salary
-      try {
-        const { data: salaryData } = await supabase.from("salary").select("amount");
-        if (salaryData && salaryData.length > 0) {
-          totalSalary = salaryData.reduce((sum, item) => sum + Number(item.amount || 0), 0);
-        }
-      } catch(e) {}
-
       setStats({
-        employees: employeeCount || 12,
-        students: studentCount || 24,
-        present: combinedAttendance.length,
-        salary: totalSalary,
-        projects: projectCount || 8,
+        employees: employeeCount,
+        activeProjects: activeProjectCount,
+        monthlyRevenue: monthlyRevenue,
+        pendingLeaves: pendingLeavesCount,
+        monthlyExpenses: totalExpensesAmount,
+        categoryBreakdown: categoryBreakdown
       });
     } catch (err) {
       console.warn("Notice fetching stats:", err);
@@ -136,40 +270,24 @@ export default function DashboardPage() {
 
   useEffect(() => {
     loadDashboardData();
-  }, []);
+    loadAllMembers();
+    handleRefreshFeed();
 
-  // Strict Admin Guard: Non-admin users cannot see the Overview Dashboard
-  if (role !== "admin") {
-    return (
-      <div className="flex flex-col items-center justify-center p-12 text-center bg-white rounded-2xl border border-slate-200 shadow-sm max-w-lg mx-auto my-12">
-        <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center text-2xl mb-4">
-          <FaLock />
-        </div>
-        <h2 className="text-xl font-bold text-slate-900">Admin Access Only</h2>
-        <p className="text-sm text-slate-500 mt-2 max-w-xs">
-          The main system Overview Dashboard (Staff counts, Finances & Company Statistics) is strictly reserved for Admin view.
-        </p>
-        <div className="mt-6 flex flex-col gap-2.5 w-full max-w-xs">
-          <Link
-            href="/dashboard/projects"
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-4 rounded-xl text-xs transition-all shadow-2xs text-center"
-          >
-            Go to My Projects Progress →
-          </Link>
-          <Link
-            href="/dashboard/attendance"
-            className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 px-4 rounded-xl text-xs transition-all text-center"
-          >
-            Go to My Attendance →
-          </Link>
-        </div>
-        <div className="mt-6 flex items-center gap-2 text-xs font-semibold text-slate-400 uppercase tracking-wider bg-slate-100 px-3 py-1.5 rounded-lg">
-          <FaShieldAlt className="text-slate-500" />
-          <span>Admin Access Guard Active</span>
-        </div>
-      </div>
-    );
-  }
+    const handleUpdate = () => {
+      loadDashboardData();
+      loadAllMembers();
+      handleRefreshFeed();
+    };
+
+    window.addEventListener("storage", handleUpdate);
+    window.addEventListener("dataChanged", handleUpdate);
+    window.addEventListener("activityLogged", handleUpdate);
+    return () => {
+      window.removeEventListener("storage", handleUpdate);
+      window.removeEventListener("dataChanged", handleUpdate);
+      window.removeEventListener("activityLogged", handleUpdate);
+    };
+  }, []);
 
   // Fetch all registered software house members across categories
   const loadAllMembers = () => {
@@ -181,59 +299,7 @@ export default function DashboardPage() {
       const persistentStudents = JSON.parse(localStorage.getItem("persistent_courses") || "[]");
       const persistentInterns = JSON.parse(localStorage.getItem("persistent_internships") || "[]");
 
-      const defaultMembers = [
-        {
-          id: "m-1",
-          fullName: "Muhammad Rahim Bugti",
-          email: "rahim.dev@gmail.com",
-          category: "On-Site Staff (Full Time)",
-          role: "employee",
-          department: "Web Development (Senior Lead)",
-          attendance: "Checked In (09:55 AM - On Time 🟢)",
-          progress: "E-Commerce SaaS Web Portal & Mobile App (70% Complete)",
-          dailyTask: "Integrated payment gateway API endpoints and Stripe webhooks.",
-          feeStatus: "N/A (Paid Staff)",
-        },
-        {
-          id: "m-2",
-          fullName: "Ali Hassan",
-          email: "student@gmail.com",
-          category: "Course Enrolled Student",
-          role: "student",
-          department: "Full Stack MERN Development",
-          attendance: "Checked In (10:08 AM - Slightly Late 🟢)",
-          progress: "MERN Stack E-Commerce App (70% Complete)",
-          dailyTask: "Completed responsive product catalog & cart checkout flow.",
-          feeStatus: "Paid (Next Due: 30 Days Cycle Active)",
-        },
-        {
-          id: "m-3",
-          fullName: "Bilal Ahmed",
-          email: "bilal.remote@gmail.com",
-          category: "Remote 3-Month Intern",
-          role: "intern",
-          department: "Python & AI Engineering",
-          attendance: "Checked In (10:02 AM - On Time 🟢)",
-          progress: "AI Customer Support Chatbot System (90% Complete)",
-          dailyTask: "Trained vector embeddings on knowledge base documentation.",
-          feeStatus: "N/A (Free 3-Month Internship)",
-        },
-        {
-          id: "m-4",
-          fullName: "Sara Khan",
-          email: "sara.design@gmail.com",
-          category: "On-Site Staff (Part Time)",
-          role: "employee",
-          department: "UI/UX Design Lead",
-          attendance: "Checked In (10:12 AM - On Time 🟢)",
-          progress: "Mobile App Wireframes & Figma UI Kit (85% Complete)",
-          dailyTask: "Finalized mobile drawer navigation and high-fidelity mockups.",
-          feeStatus: "N/A (Paid Staff)",
-        },
-      ];
-
       const combinedMap = new Map();
-      defaultMembers.forEach(m => combinedMap.set(m.email.toLowerCase(), m));
 
       // Append persistent employees
       persistentEmps.forEach(e => {
@@ -291,6 +357,33 @@ export default function DashboardPage() {
     loadAllMembers();
   }, []);
 
+  // Strict Admin Guard: Non-admin users cannot see the Overview Dashboard
+  if (role !== "admin") {
+    return (
+      <div className="flex flex-col items-center justify-center p-12 text-center bg-white rounded-2xl border border-slate-200 shadow-sm max-w-lg mx-auto my-12">
+        <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center text-2xl mb-4">
+          <FaLock />
+        </div>
+        <h2 className="text-xl font-bold text-slate-900">Admin Access Only</h2>
+        <p className="text-sm text-slate-500 mt-2 max-w-xs">
+          The main system Overview Dashboard (Staff counts, Finances & Company Statistics) is strictly reserved for Admin view.
+        </p>
+        <div className="mt-6 flex flex-col gap-2.5 w-full max-w-xs">
+          <Link
+            href="/dashboard/projects"
+            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-4 rounded-xl text-xs transition-all shadow-2xs text-center"
+          >
+            Go to My Projects Progress →
+          </Link>
+        </div>
+        <div className="mt-6 flex items-center gap-2 text-xs font-semibold text-slate-400 uppercase tracking-wider bg-slate-100 px-3 py-1.5 rounded-lg">
+          <FaShieldAlt className="text-slate-500" />
+          <span>Admin Access Guard Active</span>
+        </div>
+      </div>
+    );
+  }
+
   const filteredMembers = allRegisteredUsersList.filter(u => {
     if (userCategoryFilter === "all") return true;
     if (userCategoryFilter === "employee") return u.role === "employee";
@@ -301,28 +394,45 @@ export default function DashboardPage() {
     return true;
   });
 
+  const formatCurrency = (val) => {
+    const num = Number(val) || 0;
+    return `Rs. ${num.toLocaleString("en-PK")}`;
+  };
+
   const cards = [
-    { title: "Paid Employees Staff", value: stats.employees, icon: FaUsers, color: "text-blue-600" },
-    { title: "Courses & Intern Students", value: stats.students, icon: FaGraduationCap, color: "text-purple-600" },
-    { title: "Present Today (Live)", value: stats.present, icon: FaCalendarCheck, color: "text-emerald-600" },
-    { title: "Active Client Projects", value: stats.projects, icon: FaProjectDiagram, color: "text-amber-600" },
+    { title: "Total Employees", value: stats.employees, icon: FaUsers, color: "text-blue-600" },
+    { title: "Total Active Projects", value: stats.activeProjects, icon: FaProjectDiagram, color: "text-amber-600" },
+    { title: "Monthly Revenue", value: formatCurrency(stats.monthlyRevenue), icon: FaMoneyBillWave, color: "text-emerald-600" },
+    { title: "Pending Leaves", value: stats.pendingLeaves, icon: FaCalendarCheck, color: "text-rose-600" },
   ];
 
   const quickActions = [
-    { label: "Attendance Control", href: "/dashboard/attendance", icon: FaCheckCircle },
-    { label: "Projects Progress", href: "/dashboard/projects", icon: FaTasks },
-    { label: "Finance & Accounts", href: "/dashboard/finance", icon: FaMoneyBillWave },
     { label: "Add Employee", href: "/dashboard/employees", icon: FaUserPlus },
+    { label: "Log Attendance", href: "/dashboard/attendance", icon: FaCalendarCheck },
+    { label: "Finance & Accounts", href: "/dashboard/finance", icon: FaLandmark },
+    { label: "Payroll & Payslips", href: "/dashboard/payroll", icon: FaMoneyBillWave },
+    { label: "Projects Progress", href: "/dashboard/projects", icon: FaTasks },
   ];
 
   return (
     <div className="space-y-6">
       {/* Page Header */}
-      <div className="border-b border-slate-200 pb-4">
-        <h1 className="text-2xl font-bold text-slate-900">Admin Control Overview</h1>
-        <p className="text-sm text-slate-500 mt-1">
-          Live Attendance Logs & Progress Feed for Software House Staff and Students
-        </p>
+      <div className="border-b border-slate-200 pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Admin Control Overview</h1>
+          <p className="text-sm text-slate-500 mt-1">
+            Live Attendance Logs & Progress Feed for Software House Staff and Students
+          </p>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => setAssignTaskModal(true)}
+          className="bg-blue-600 hover:bg-blue-700 text-white font-extrabold px-5 py-3 rounded-2xl text-xs transition-all shadow-md flex items-center gap-2 shrink-0 cursor-pointer border border-blue-500"
+        >
+          <FaPaperPlane className="text-sm" />
+          <span>Assign New Task</span>
+        </button>
       </div>
 
       {/* Metric Cards Grid */}
@@ -342,13 +452,20 @@ export default function DashboardPage() {
                   {loading ? "..." : card.value}
                 </p>
               </div>
-              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-slate-50 border border-slate-200">
-                <Icon className={`text-xl ${card.color}`} />
+              <div className="flex items-center justify-center p-2">
+                <Icon className={`text-2xl ${card.color}`} />
               </div>
             </div>
           );
         })}
       </div>
+
+      {/* FINANCIAL REVENUE & EXPENSE VISUAL CHARTS */}
+      <FinancialChart
+        revenue={stats.monthlyRevenue}
+        expenses={stats.monthlyExpenses || 0}
+        categoryData={stats.categoryBreakdown || []}
+      />
 
 
       {/* Quick Actions */}
@@ -356,7 +473,7 @@ export default function DashboardPage() {
         <h2 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">
           Quick Management Portals
         </h2>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
           {quickActions.map((action) => {
             const ActionIcon = action.icon;
             return (
@@ -370,6 +487,96 @@ export default function DashboardPage() {
               </Link>
             );
           })}
+        </div>
+      </div>
+
+      {/* RECENT SYSTEM ACTIVITY FEED SECTION */}
+      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs space-y-4">
+        <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
+              <FaHistory className="text-sm" />
+            </div>
+            <div>
+              <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <span>Recent System Activity Feed</span>
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  Live Sync
+                </span>
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Real-time audit log of leave approvals, expenses, employee onboarding & project updates
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={async () => {
+                await clearActivityLogs();
+                handleRefreshFeed();
+                showToast("Audit Logs Cleared 🗑️", "Recent activity history has been cleared.", "info");
+              }}
+              className="text-xs font-bold text-rose-600 hover:text-rose-700 bg-rose-50 px-3 py-1.5 rounded-xl border border-rose-200 transition-all cursor-pointer"
+            >
+              Clear Logs 🗑️
+            </button>
+            <button
+              type="button"
+              disabled={isRefreshing}
+              onClick={handleRefreshFeed}
+              className="text-xs font-bold text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 px-3.5 py-1.5 rounded-xl border border-blue-200 transition-all cursor-pointer flex items-center gap-1.5 shadow-2xs"
+            >
+              <span className={isRefreshing ? "animate-spin" : ""}>🔄</span>
+              <span>{isRefreshing ? "Refreshing..." : "Refresh Feed"}</span>
+            </button>
+          </div>
+        </div>
+
+        <div className="space-y-2.5">
+          {recentActivities.length === 0 ? (
+            <div className="py-8 text-center bg-slate-50 rounded-xl border border-slate-100">
+              <FaHistory className="mx-auto text-2xl text-slate-300 mb-2" />
+              <p className="text-xs font-bold text-slate-600">No recent system activity recorded yet</p>
+              <p className="text-[11px] text-slate-400 mt-1">Actions performed across portal modules will appear here automatically.</p>
+            </div>
+          ) : (
+            recentActivities.slice(0, 5).map((act, idx) => (
+              <div
+                key={act.id || idx}
+                className="flex flex-col sm:flex-row sm:items-center justify-between p-3.5 rounded-xl bg-slate-50/80 hover:bg-slate-100/70 border border-slate-200/80 transition-all gap-2"
+              >
+                <div className="flex items-start sm:items-center gap-3">
+                  <div className="text-xl shrink-0">
+                    {act.icon === "leave" ? <FaCalendarCheck className="text-emerald-600" /> :
+                     act.icon === "expense" ? <FaMoneyBillWave className="text-amber-600" /> :
+                     act.icon === "employee" ? <FaUsers className="text-blue-600" /> : <FaProjectDiagram className="text-purple-600" />}
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs font-bold text-slate-900">{act.user_name}</span>
+                      <span className={`px-2 py-0.5 rounded-md text-[10px] font-extrabold border ${
+                        act.icon === "leave" ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
+                        act.icon === "expense" ? "bg-amber-50 text-amber-700 border-amber-200" :
+                        act.icon === "employee" ? "bg-blue-50 text-blue-700 border-blue-200" : "bg-purple-50 text-purple-700 border-purple-200"
+                      }`}>
+                        {act.action_type}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-600 mt-0.5">{act.description}</p>
+                  </div>
+                </div>
+
+                <div className="text-right shrink-0">
+                  <span className="text-[11px] font-semibold text-slate-400 flex items-center justify-end gap-1">
+                    <FaClock className="text-[10px]" />
+                    {formatTimeAgo(act.timestamp)}
+                  </span>
+                </div>
+              </div>
+            ))
+          )}
         </div>
       </div>
 
@@ -514,7 +721,21 @@ export default function DashboardPage() {
                 <p className="text-xs text-slate-400 text-center py-6">No attendance recorded today yet.</p>
               ) : (
                 liveAttendanceList.slice(0, 5).map((att, idx) => (
-                  <div key={idx} className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-100">
+                  <div
+                    key={idx}
+                    onClick={() => {
+                      setSelectedUserModal({
+                        fullName: att.name || att.user_id || "Registered Member",
+                        email: att.email || att.user_email || "staff@softwarehouse.com",
+                        category: att.role || "Employee Staff",
+                        attendance: `${att.type === "check_in" ? "Checked In ✅" : "Checked Out 🔴"} at ${att.timestamp ? new Date(att.timestamp).toLocaleTimeString() : "Today"}`,
+                        progress: "Live Attendance Entry",
+                        dailyTask: `Attendance Logged via Office Wi-Fi Network (${att.ip || 'Authorized Public IP'})`,
+                        feeStatus: "N/A"
+                      });
+                    }}
+                    className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-100 hover:bg-slate-100 transition-all cursor-pointer shadow-2xs"
+                  >
                     <div className="flex items-center gap-3">
                       <div className={`p-2 rounded-lg text-white font-bold text-xs ${att.role?.includes("Student") ? "bg-purple-600" : "bg-blue-600"}`}>
                         {att.role?.includes("Student") ? <FaGraduationCap /> : <FaUserTie />}
@@ -539,8 +760,8 @@ export default function DashboardPage() {
           </div>
 
           <div className="mt-4 pt-3 border-t border-slate-100 text-center">
-            <Link href="/dashboard/attendance" className="text-xs font-semibold text-slate-600 hover:text-blue-600">
-              View Full Live Attendance Logs ({liveAttendanceList.length} Total Records)
+            <Link href="/dashboard/attendance" className="text-xs font-bold text-blue-600 hover:text-blue-700 hover:underline flex items-center justify-center gap-1">
+              <span>View Full Live Attendance Logs ({liveAttendanceList.length} Total Records) →</span>
             </Link>
           </div>
         </div>
@@ -560,30 +781,9 @@ export default function DashboardPage() {
 
             <div className="space-y-3">
               {projectsProgressList.length === 0 ? (
-                [
-                  { name: "E-Commerce Mobile App & Admin Portal", progress: 85, developer: "Rahim Bugti (Senior Dev)", status: "In Progress" },
-                  { name: "Hospital Management ERP System", progress: 60, developer: "Ali & Team", status: "Testing Phase" },
-                  { name: "Real Estate Property Listing Portal", progress: 100, developer: "Muhammad Ali", status: "Completed ✅" },
-                ].map((proj, idx) => (
-                  <div key={idx} className="p-3.5 rounded-xl bg-slate-50 border border-slate-100 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <p className="text-xs font-bold text-slate-900">{proj.name}</p>
-                      <span className="text-[11px] font-extrabold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-200">
-                        {proj.progress}%
-                      </span>
-                    </div>
-                    <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
-                      <div
-                        className="bg-blue-600 h-full rounded-full transition-all duration-500"
-                        style={{ width: `${proj.progress}%` }}
-                      />
-                    </div>
-                    <div className="flex items-center justify-between text-[11px] text-slate-500">
-                      <span>Dev: <strong>{proj.developer}</strong></span>
-                      <span className="font-semibold text-slate-700">{proj.status}</span>
-                    </div>
-                  </div>
-                ))
+                <div className="p-8 text-center text-xs text-slate-400 font-semibold bg-slate-50 rounded-xl border border-slate-200">
+                  No active assigned tasks. Admin can assign tasks to employees from Projects Feed.
+                </div>
               ) : (
                 projectsProgressList.slice(0, 3).map((proj, idx) => {
                   const progress = proj.progress || 50;
@@ -635,7 +835,7 @@ export default function DashboardPage() {
               </div>
               <button
                 onClick={() => setSelectedUserModal(null)}
-                className="text-slate-400 hover:text-slate-700 text-xl font-bold p-1"
+                className="text-slate-400 hover:text-slate-700 text-xl font-bold p-1 cursor-pointer"
               >
                 ✕
               </button>
@@ -673,11 +873,194 @@ export default function DashboardPage() {
             <div className="pt-2 text-right">
               <button
                 onClick={() => setSelectedUserModal(null)}
-                className="bg-slate-900 hover:bg-slate-800 text-white font-bold px-5 py-2 rounded-xl text-xs transition-all"
+                className="bg-slate-900 hover:bg-slate-800 text-white font-bold px-5 py-2 rounded-xl text-xs transition-all cursor-pointer"
               >
                 Close Inspector Modal
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ASSIGN TASK TO INDIVIDUAL STUDENT OR EMPLOYEE MODAL */}
+      {assignTaskModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl space-y-4 border border-blue-100 text-left animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-blue-50 border border-blue-200 text-blue-600 flex items-center justify-center">
+                  <FaPaperPlane className="text-sm" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-slate-900 text-base">Assign New Task</h3>
+                  <p className="text-xs text-blue-600 font-bold">Select individual Employee or Student</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setAssignTaskModal(false)}
+                className="text-slate-400 hover:text-slate-700 font-bold text-lg cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!taskForm.selectedUserEmail || !taskForm.title) {
+                  showToast("Validation Error", "Please select a user and enter task title.", "warning");
+                  return;
+                }
+
+                const targetUser = allRegisteredUsersList.find(u => u.email.toLowerCase() === taskForm.selectedUserEmail.toLowerCase());
+                const assignedObj = {
+                  id: `task-${Date.now()}`,
+                  title: taskForm.title,
+                  description: taskForm.description,
+                  priority: taskForm.priority,
+                  dueDate: taskForm.dueDate,
+                  assignedBy: "Admin",
+                  assignedToEmail: taskForm.selectedUserEmail.toLowerCase().trim(),
+                  assignedToName: targetUser?.fullName || taskForm.selectedUserEmail.split("@")[0],
+                  userRole: targetUser?.role || "employee",
+                  status: "Pending",
+                  assignedAt: new Date().toISOString(),
+                };
+
+                // 1. Save to Global Assigned Tasks
+                const existingGlobal = JSON.parse(localStorage.getItem("software_house_assigned_tasks") || "[]");
+                localStorage.setItem("software_house_assigned_tasks", JSON.stringify([assignedObj, ...existingGlobal]));
+
+                // 2. Save Notification to user's isolated inbox
+                const notifKey = `user_notifications_${taskForm.selectedUserEmail.toLowerCase().trim()}`;
+                const userNotifs = JSON.parse(localStorage.getItem(notifKey) || "[]");
+                const newNotif = {
+                  id: `notif-${Date.now()}`,
+                  type: "task_assigned",
+                  title: `New Task Assigned: ${taskForm.title}`,
+                  message: taskForm.description || "Admin has assigned a new task to your dashboard.",
+                  priority: taskForm.priority,
+                  dueDate: taskForm.dueDate,
+                  taskId: assignedObj.id,
+                  read: false,
+                  timestamp: new Date().toISOString(),
+                };
+                localStorage.setItem(notifKey, JSON.stringify([newNotif, ...userNotifs]));
+
+                showToast("Task Assigned Successfully", `Task assigned to ${assignedObj.assignedToName}. Notification sent to their dashboard.`, "success");
+                setAssignTaskModal(false);
+                setTaskForm({
+                  selectedUserEmail: "",
+                  title: "",
+                  description: "",
+                  priority: "High",
+                  dueDate: new Date().toISOString().split("T")[0],
+                });
+              }}
+              className="space-y-4 text-xs"
+            >
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">
+                  Select Assignee (Employee or Student) *
+                </label>
+                <select
+                  required
+                  value={taskForm.selectedUserEmail}
+                  onChange={(e) => setTaskForm({ ...taskForm, selectedUserEmail: e.target.value })}
+                  className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-xs text-slate-900 outline-none focus:border-blue-600 font-bold bg-slate-50 cursor-pointer"
+                >
+                  <option value="">-- Select Member from List ({allRegisteredUsersList.length} Total) --</option>
+                  <optgroup label="🧑‍💻 Employees / Staff">
+                    {allRegisteredUsersList.filter(u => u.role === "employee").map(u => (
+                      <option key={u.id} value={u.email}>
+                        {u.fullName} ({u.email}) - {u.category}
+                      </option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="🎓 Students & Interns">
+                    {allRegisteredUsersList.filter(u => u.role === "student" || u.role === "intern").map(u => (
+                      <option key={u.id} value={u.email}>
+                        {u.fullName} ({u.email}) - {u.category}
+                      </option>
+                    ))}
+                  </optgroup>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">
+                  Task Title *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={taskForm.title}
+                  onChange={(e) => setTaskForm({ ...taskForm, title: e.target.value })}
+                  placeholder="e.g. Build Payment Integration / Complete Practice Lab 4"
+                  className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-xs text-slate-900 outline-none focus:border-blue-600 font-bold"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">
+                  Task Description & Deliverable Instructions
+                </label>
+                <textarea
+                  rows="3"
+                  value={taskForm.description}
+                  onChange={(e) => setTaskForm({ ...taskForm, description: e.target.value })}
+                  placeholder="Provide detailed instructions for the employee/student..."
+                  className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-xs text-slate-900 outline-none focus:border-blue-600 font-medium"
+                ></textarea>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">Priority</label>
+                  <select
+                    value={taskForm.priority}
+                    onChange={(e) => setTaskForm({ ...taskForm, priority: e.target.value })}
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs text-slate-900 outline-none focus:border-blue-600 font-bold cursor-pointer"
+                  >
+                    <option value="High">High Priority</option>
+                    <option value="Medium">Medium Priority</option>
+                    <option value="Low">Low Priority</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">Due Date</label>
+                  <input
+                    type="date"
+                    value={taskForm.dueDate}
+                    onChange={(e) => setTaskForm({ ...taskForm, dueDate: e.target.value })}
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs text-slate-900 outline-none focus:border-blue-600 font-bold"
+                  />
+                </div>
+              </div>
+
+              <div className="p-3 bg-blue-50 rounded-2xl border border-blue-100 text-[11px] text-blue-900 font-medium flex items-center gap-2">
+                <FaBell className="text-blue-600 text-sm shrink-0" />
+                <span>Assigning this task will instantly trigger an in-app notification on the user's personal dashboard.</span>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setAssignTaskModal(false)}
+                  className="px-5 py-2.5 rounded-xl border border-slate-300 text-slate-700 font-bold text-xs hover:bg-slate-100 transition-all cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs shadow-md transition-all cursor-pointer flex items-center gap-1.5"
+                >
+                  <FaPaperPlane className="text-white text-xs" />
+                  <span>Assign & Notify User</span>
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

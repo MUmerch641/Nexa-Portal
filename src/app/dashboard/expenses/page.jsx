@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { logActivity } from "@/lib/activityUtils";
 import {
   FaWallet,
   FaBolt,
@@ -104,6 +105,15 @@ export default function ExpensesPage() {
       alert(error.message);
       return;
     }
+
+    try {
+      await logActivity(
+        "Accounts Manager",
+        "Expense Added",
+        `Recorded ${form.category}: ${form.title} (Rs. ${Number(form.amount).toLocaleString("en-PK")})`,
+        "expense"
+      );
+    } catch(e) {}
 
     alert("Expense Record Added Successfully!");
     setForm({

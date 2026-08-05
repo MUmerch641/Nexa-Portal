@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { login } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
 import Modal from "@/components/Modal";
+import ToastContainer, { showToast } from "@/components/Toast";
 import { FaUserTie, FaBuilding, FaLock, FaEnvelope, FaKey, FaGraduationCap, FaShieldAlt, FaUserCheck } from "react-icons/fa";
 
 export default function LoginPage() {
@@ -14,10 +15,34 @@ export default function LoginPage() {
 
   // Form Fields
   const [fullName, setFullName] = useState("");
-  const [email, setEmail] = useState("admin@gmail.com");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [department, setDepartment] = useState("Software Engineering");
   const [loading, setLoading] = useState(false);
+
+  // Form Validation Errors State
+  const [errors, setErrors] = useState({ email: "", password: "" });
+
+  const handleEmailChange = (e) => {
+    const val = e.target.value;
+    setEmail(val);
+    if (errors.email) {
+      if (val.trim()) {
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (emailRegex.test(val.trim())) {
+          setErrors((prev) => ({ ...prev, email: "" }));
+        }
+      }
+    }
+  };
+
+  const handlePasswordChange = (e) => {
+    const val = e.target.value;
+    setPassword(val);
+    if (errors.password && val.trim()) {
+      setErrors((prev) => ({ ...prev, password: "" }));
+    }
+  };
 
   // OTP Verification Modal State
   const [otpModal, setOtpModal] = useState({
@@ -34,6 +59,21 @@ export default function LoginPage() {
     message: "",
     type: "info",
   });
+
+  // Redirect user if already logged in when visiting /login
+  useEffect(() => {
+    const isLoggedIn = localStorage.getItem("isLoggedIn") === "true";
+    const userRole = localStorage.getItem("user_role");
+    if (isLoggedIn && userRole) {
+      if (userRole === "client") {
+        router.replace("/dashboard/client-portal");
+      } else if (userRole === "admin") {
+        router.replace("/dashboard");
+      } else {
+        router.replace("/dashboard/attendance");
+      }
+    }
+  }, [router]);
 
   const showAlert = (title, message, type = "info") => {
     setModal({ isOpen: true, title, message, type });
@@ -64,11 +104,29 @@ export default function LoginPage() {
   // Step 1: Handle Login or Register Submission
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!email || !password) {
-      showAlert("Missing Fields", "Please enter Email and Password.", "warning");
+
+    const trimmedEmail = (email || "").trim();
+    const trimmedPassword = (password || "").trim();
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    const newErrors = { email: "", password: "" };
+
+    if (!trimmedEmail) {
+      newErrors.email = "Email is required.";
+    } else if (!emailRegex.test(trimmedEmail)) {
+      newErrors.email = "Please enter a valid email address.";
+    }
+
+    if (!trimmedPassword) {
+      newErrors.password = "Password is required.";
+    }
+
+    if (newErrors.email || newErrors.password) {
+      setErrors(newErrors);
       return;
     }
 
+    setErrors({ email: "", password: "" });
     setLoading(true);
 
     // Registration Flow: Create Account -> Send OTP -> Verify -> Save Credentials
@@ -77,7 +135,7 @@ export default function LoginPage() {
       const userExists = existingUsers.some(u => u.email.toLowerCase() === email.toLowerCase());
 
       if (userExists) {
-        showAlert("Account Exists", "An account with this email is already registered. Please switch to Sign In.", "warning");
+        showToast("Account Exists", "An account with this email is already registered. Please switch to Sign In.", "warning");
         setLoading(false);
         return;
       }
@@ -111,10 +169,32 @@ export default function LoginPage() {
         }
       });
 
-      showAlert(
-        "📩 Verification OTP Dispatched!",
-        `An Email Verification OTP has been dispatched to: ${email}\n\nYour Verification Code is: ${newOtp}`,
+      showToast(
+        "Verification Code Sent 📧",
+        `OTP Code: ${newOtp}\nCheck OTP verification dialog to complete registration.`,
         "info"
+      );
+      return;
+    }
+
+    // Check if account has been deactivated by Admin
+    let persistentEmps = [];
+    try {
+      const p = localStorage.getItem("persistent_employees");
+      if (p) persistentEmps = JSON.parse(p);
+    } catch (e) {}
+
+    const matchedEmpRecord = persistentEmps.find(
+      (emp) => (emp.email || "").trim().toLowerCase() === email.trim().toLowerCase()
+    );
+
+    if (matchedEmpRecord && (matchedEmpRecord.status === "inactive" || matchedEmpRecord.status === "deactivated")) {
+      setLoading(false);
+      showToast("Account Deactivated 🛑", "Your account has been deactivated by Admin. Access denied.", "error");
+      showAlert(
+        "Account Deactivated 🛑",
+        "Your employee account has been deactivated by Management. You cannot log into the system portal. Please contact HR or System Administrator.",
+        "error"
       );
       return;
     }
@@ -122,10 +202,13 @@ export default function LoginPage() {
     // Normal Login Flow: Strict authentication against registered accounts
     const registeredUsers = getRegisteredUsers();
     
-    // Default system seed accounts
+    // Default system seed accounts assigned by Admin
     const defaultAccounts = [
       { email: "admin@gmail.com", password: "adminpassword", role: "admin" },
-      { email: "student@gmail.com", password: "studentpassword", role: "employee" },
+      { email: "student@gmail.com", password: "studentpassword", role: "student" },
+      { email: "sara.design@gmail.com", password: "employeepassword", role: "employee" },
+      { email: "rahim.dev@gmail.com", password: "employeepassword", role: "employee" },
+      { email: "ali.staff@gmail.com", password: "employeepassword", role: "employee" },
       { email: "client@acmetech.com", password: "clientpassword", role: "client" },
     ];
 
@@ -136,34 +219,53 @@ export default function LoginPage() {
     );
 
     let supabaseAuthSuccess = false;
+    let isNetworkError = false;
     try {
       const { error } = await login(email, password);
-      if (!error) supabaseAuthSuccess = true;
-    } catch(e) {}
+      if (!error) {
+        supabaseAuthSuccess = true;
+      } else if (error.status === 500 || error.message?.includes("fetch") || error.message?.includes("NetworkError")) {
+        isNetworkError = true;
+      }
+    } catch(e) {
+      isNetworkError = true;
+    }
+
+    if (isNetworkError && !matchedUser) {
+      setLoading(false);
+      showToast("Connection Issue ⚠️", "Unable to reach auth server. Please check your network connection.", "warning");
+      showAlert(
+        "Network Connection Warning ⚠️",
+        "Unable to reach the authentication server. Please check your internet connection and try again.",
+        "warning"
+      );
+      return;
+    }
 
     // Strict Credentials Check: Must match exact email and password
     if (matchedUser || supabaseAuthSuccess) {
-      const activeRole = matchedUser ? matchedUser.role : selectedRole;
+      // Determine exact role assigned by Admin (employee gets employee features, student gets student features)
+      const activeRole = matchedUser ? (matchedUser.role || selectedRole) : selectedRole;
+      localStorage.setItem("isLoggedIn", "true");
       localStorage.setItem("user_role", activeRole);
       localStorage.setItem("current_user_email", email);
       window.dispatchEvent(new Event("roleChanged"));
 
       setLoading(false);
-      showAlert("Login Successful 🟢", `Welcome back! Opening ${activeRole.toUpperCase()} Portal...`, "success");
+      showToast("Login Successful 🟢", `Welcome back! Logging into ${activeRole.toUpperCase()} Portal...`, "success");
 
       if (activeRole === "client") {
-        setTimeout(() => router.push("/dashboard/projects"), 800);
-      } else if (activeRole === "intern" || activeRole === "internship") {
-        setTimeout(() => router.push("/dashboard/internships"), 800);
-      } else if (activeRole === "student") {
-        setTimeout(() => router.push("/dashboard/courses"), 800);
-      } else if (activeRole === "employee") {
-        setTimeout(() => router.push("/dashboard/projects"), 800);
+        setTimeout(() => router.replace("/dashboard/client-portal"), 800);
+      } else if (activeRole === "admin") {
+        // Admin Master Control Operations Dashboard
+        setTimeout(() => router.replace("/dashboard"), 800);
       } else {
-        setTimeout(() => router.push("/dashboard"), 800);
+        // REQUIREMENT 1: For Students, Employees, Staff & Interns - First display Attendance Verification & Check-In Page before dashboard!
+        setTimeout(() => router.replace("/dashboard/attendance"), 800);
       }
     } else {
       setLoading(false);
+      showToast("Invalid Credentials 🔴", "Incorrect Email or Password. Please check your credentials and try again.", "error");
       showAlert(
         "Invalid Credentials 🔴",
         "Incorrect Email or Password. Only registered accounts can log in. If you are new, click 'Register Account' to verify OTP first.",
@@ -197,16 +299,25 @@ export default function LoginPage() {
     showAlert("Account Verified & Saved! 🟢", `Email verified successfully. Your account is now saved. Logging into ${assignedRole.toUpperCase()} Portal...`, "success");
 
     if (assignedRole === "client") {
-      setTimeout(() => router.push("/dashboard/projects"), 1000);
-    } else if (assignedRole === "employee" || assignedRole === "student") {
-      setTimeout(() => router.push("/dashboard/courses"), 1000);
+      setTimeout(() => router.push("/dashboard/client-portal"), 1000);
+    } else if (assignedRole === "student" || assignedRole === "course_student") {
+      setTimeout(() => router.push("/dashboard/student"), 1000);
+    } else if (assignedRole === "employee" || assignedRole === "staff") {
+      setTimeout(() => router.push("/dashboard/employees"), 1000);
     } else {
       setTimeout(() => router.push("/dashboard"), 1000);
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-100 px-4 py-12">
+    <div className="min-h-screen flex items-center justify-center bg-white bg-dot-matrix px-4 py-12 relative overflow-hidden">
+      {/* Ultra-Subtle Soft Ambient Pulse Dots (Minimal & Elegant) */}
+      <div className="absolute top-20 left-24 w-2 h-2 rounded-full bg-blue-500/40 animate-dot-pulse-1 pointer-events-none"></div>
+      <div className="absolute bottom-24 right-28 w-2 h-2 rounded-full bg-indigo-500/40 animate-dot-pulse-2 pointer-events-none"></div>
+
+      {/* Single Soft Ambient Radial Glow */}
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-blue-50/40 rounded-full blur-3xl pointer-events-none"></div>
+
       {/* Notification Modal */}
       <Modal
         isOpen={modal.isOpen}
@@ -266,105 +377,65 @@ export default function LoginPage() {
       )}
 
       {/* Main Login / Register Card */}
-      <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-8 shadow-md space-y-6">
-        {/* Header */}
+      <div className="w-full max-w-md rounded-2xl border border-blue-100 bg-white p-8 login-card-shadow space-y-6 relative z-10 animate-slide-up-fade">
+        {/* Header Subtitle */}
         <div className="text-center flex flex-col items-center">
           <img
             src="/logo.jpeg"
             alt="Software House Logo"
-            className="h-16 w-16 rounded-2xl object-cover border border-slate-200 shadow-xs mb-3"
+            className="h-16 w-16 rounded-2xl object-cover border border-blue-200 shadow-md mb-3 hover:scale-105 transition-transform duration-300"
           />
 
-          <h1 className="text-2xl font-bold text-slate-900">
-            Software House System
+          <h1 className="text-2xl font-black text-slate-900 tracking-tight">
+            Nexa Innovation and Technology
           </h1>
 
           <p className="mt-1 text-xs text-slate-500 font-medium">
-            Admin, Student & Client Portal Access
+            Universal Single Sign-On Portal (Automatic Role Recognition)
           </p>
         </div>
 
-        {/* Role Selector Tabs */}
-        <div className="grid grid-cols-3 gap-1.5 p-1 bg-slate-100 rounded-xl border border-slate-200">
-          <button
-            type="button"
-            onClick={() => {
-              setSelectedRole("admin");
-              if (!email || email === "client@acmetech.com" || email === "student@gmail.com") setEmail("admin@gmail.com");
-            }}
-            className={`flex items-center justify-center gap-1 py-2 text-[11px] font-bold rounded-lg transition-all ${
-              selectedRole === "admin"
-                ? "bg-white text-blue-700 shadow-xs border border-slate-200"
-                : "text-slate-500 hover:text-slate-800"
-            }`}
-          >
-            <FaUserTie className={selectedRole === "admin" ? "text-amber-500" : ""} />
-            <span>Admin</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              setSelectedRole("employee");
-              if (!email || email === "admin@gmail.com" || email === "client@acmetech.com") setEmail("student@gmail.com");
-            }}
-            className={`flex items-center justify-center gap-1 py-2 text-[11px] font-bold rounded-lg transition-all ${
-              selectedRole === "employee"
-                ? "bg-white text-blue-700 shadow-xs border border-slate-200"
-                : "text-slate-500 hover:text-slate-800"
-            }`}
-          >
-            <FaGraduationCap className={selectedRole === "employee" ? "text-emerald-500" : ""} />
-            <span>Student</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              setSelectedRole("client");
-              if (!email || email === "admin@gmail.com" || email === "student@gmail.com") setEmail("client@acmetech.com");
-            }}
-            className={`flex items-center justify-center gap-1 py-2 text-[11px] font-bold rounded-lg transition-all ${
-              selectedRole === "client"
-                ? "bg-white text-blue-700 shadow-xs border border-slate-200"
-                : "text-slate-500 hover:text-slate-800"
-            }`}
-          >
-            <FaBuilding className={selectedRole === "client" ? "text-sky-500" : ""} />
-            <span>Client</span>
-          </button>
-        </div>
-
-        {/* Mode Switcher (Sign In vs Register Account) */}
-        <div className="flex items-center justify-between text-xs border-b border-slate-100 pb-3">
-          <span className="font-bold text-slate-700">
-            {isRegisterMode ? `Create New ${selectedRole.toUpperCase()} Account` : "Sign In to Portal"}
+        {/* Mode Title Sub-Header */}
+        <div className="border-b border-slate-100 pb-3 text-center">
+          <span className="font-bold text-xs text-slate-700 uppercase tracking-wider">
+            {isRegisterMode ? "Create New Verified Account" : "Sign In to System Portal"}
           </span>
-          <button
-            type="button"
-            onClick={() => setIsRegisterMode(!isRegisterMode)}
-            className="font-bold text-blue-600 hover:underline"
-          >
-            {isRegisterMode ? "Back to Sign In" : "Register Account"}
-          </button>
         </div>
 
         {/* Login / Register Form */}
         <form className="space-y-4" onSubmit={handleSubmit}>
           {isRegisterMode && (
-            <div>
-              <label className="mb-1 block text-xs font-semibold uppercase text-slate-600">
-                Full Name *
-              </label>
-              <input
-                type="text"
-                placeholder="e.g. Muhammad Ali"
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
-                className="w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm text-slate-900 outline-none focus:border-blue-600"
-                required={isRegisterMode}
-              />
-            </div>
+            <>
+              <div>
+                <label className="mb-1 block text-xs font-semibold uppercase text-slate-600">
+                  Full Name *
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Muhammad Ali"
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  className="w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm text-slate-900 outline-none focus:border-blue-600"
+                  required={isRegisterMode}
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs font-semibold uppercase text-slate-600">
+                  Select Account Role *
+                </label>
+                <select
+                  value={selectedRole}
+                  onChange={(e) => setSelectedRole(e.target.value)}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-blue-600 font-medium"
+                >
+                  <option value="student">🎓 Student Account</option>
+                  <option value="employee">🧑‍💻 Paid Staff / Employee</option>
+                  <option value="client">🏢 Client Account</option>
+                  <option value="admin">👑 Admin Account</option>
+                </select>
+              </div>
+            </>
           )}
 
           <div>
@@ -376,19 +447,17 @@ export default function LoginPage() {
               <FaEnvelope className="absolute left-3.5 top-3.5 text-slate-400 text-sm" />
               <input
                 type="email"
-                placeholder={
-                  selectedRole === "admin"
-                    ? "admin@gmail.com"
-                    : selectedRole === "client"
-                    ? "client@acmetech.com"
-                    : "student@gmail.com"
-                }
+                placeholder="name@company.com"
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full rounded-lg border border-slate-300 pl-10 pr-4 py-2.5 text-sm text-slate-900 outline-none focus:border-blue-600"
-                required
+                onChange={handleEmailChange}
+                className={`w-full rounded-lg border pl-10 pr-4 py-2.5 text-sm text-slate-900 outline-none focus:border-blue-600 ${
+                  errors.email ? "border-red-500 bg-red-50/30" : "border-slate-300"
+                }`}
               />
             </div>
+            {errors.email && (
+              <p className="mt-1 text-xs text-red-600 font-medium">{errors.email}</p>
+            )}
           </div>
 
           <div>
@@ -402,37 +471,50 @@ export default function LoginPage() {
                 type="password"
                 placeholder="••••••••"
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full rounded-lg border border-slate-300 pl-10 pr-4 py-2.5 text-sm text-slate-900 outline-none focus:border-blue-600"
-                required
+                onChange={handlePasswordChange}
+                className={`w-full rounded-lg border pl-10 pr-4 py-2.5 text-sm text-slate-900 outline-none focus:border-blue-600 ${
+                  errors.password ? "border-red-500 bg-red-50/30" : "border-slate-300"
+                }`}
               />
             </div>
+            {errors.password && (
+              <p className="mt-1 text-xs text-red-600 font-medium">{errors.password}</p>
+            )}
           </div>
 
           <button
             type="submit"
             disabled={loading}
-            className="w-full rounded-lg bg-blue-600 py-3 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:opacity-60 shadow-xs cursor-pointer"
+            className="w-full rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 py-3 text-sm font-bold text-white transition-all hover:from-blue-700 hover:to-indigo-700 disabled:opacity-60 shadow-lg cursor-pointer relative overflow-hidden group"
           >
-            {loading
-              ? "Processing..."
-              : isRegisterMode
-              ? "Register & Verify OTP"
-              : selectedRole === "client"
-              ? "Login to Client Progress Portal"
-              : selectedRole === "admin"
-              ? "Login to Admin Portal"
-              : "Login to Student Portal"}
+            {/* Shimmer sweep animation effect */}
+            <span className="absolute inset-0 w-1/2 h-full bg-white/20 transform -skew-x-12 -translate-x-full group-hover:animate-shimmer-pass"></span>
+            <span className="relative z-10">
+              {loading
+                ? "Authenticating Database..."
+                : isRegisterMode
+                ? "Register Account & Verify OTP"
+                : "Sign In to System Portal"}
+            </span>
           </button>
         </form>
 
-        {/* Client Access Notice */}
-        {selectedRole === "client" && (
-          <div className="rounded-lg bg-sky-50 border border-sky-200 p-3 text-center text-xs text-sky-800">
-            🔒 Client Portal is strictly restricted to <span className="font-bold">My Project Daily Progress</span> only.
-          </div>
-        )}
+        {/* Toggle Register / Sign In Option Below Submit Button */}
+        <div className="pt-2 text-center border-t border-slate-100">
+          <p className="text-xs text-slate-500 font-medium">
+            {isRegisterMode ? "Already have an account?" : "Don't have an account yet?"}{" "}
+            <button
+              type="button"
+              onClick={() => setIsRegisterMode(!isRegisterMode)}
+              className="font-bold text-blue-600 hover:underline cursor-pointer ml-1"
+            >
+              {isRegisterMode ? "Sign In Here" : "Register New Account"}
+            </button>
+          </p>
+        </div>
       </div>
+      {/* Global Toast Notification Engine */}
+      <ToastContainer />
     </div>
   );
 }

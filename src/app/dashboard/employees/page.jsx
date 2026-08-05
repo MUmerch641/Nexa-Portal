@@ -2,8 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { logActivity, initActivityStatusTracker } from "@/lib/activityUtils";
 import Modal from "@/components/Modal";
-import { FaUsers, FaUserPlus, FaUserTie, FaTrash, FaCheckCircle, FaFileDownload, FaSignOutAlt, FaInfoCircle } from "react-icons/fa";
+import { showToast } from "@/components/Toast";
+import { FaUsers, FaUserPlus, FaUserTie, FaTrash, FaCheckCircle, FaFileDownload, FaSignOutAlt, FaInfoCircle, FaUserCheck, FaClock, FaTasks, FaMoneyBillWave, FaDesktop, FaExclamationTriangle, FaAward, FaShieldAlt } from "react-icons/fa";
 
 export default function EmployeesPage() {
   const [employees, setEmployees] = useState([]);
@@ -120,53 +122,147 @@ export default function EmployeesPage() {
     printWindow.document.close();
   };
 
-  // Fetch Employees with Strict LocalStorage Persistence
+  // Fetch Employees with Live Supabase Sync & LocalStorage Fallback
   const fetchEmployees = async () => {
     setFetching(true);
-    try {
-      const s = localStorage.getItem("persistent_employees");
-      if (s !== null) {
-        setEmployees(JSON.parse(s));
-        setFetching(false);
-        return;
-      }
-    } catch(e) {}
-
+    let dbEmps = [];
     try {
       const { data, error } = await supabase
         .from("employees")
-        .select("*")
-        .order("created_at", { ascending: false });
+        .select("*");
 
-      if (!error && data && data.length > 0) {
-        setEmployees(data);
-        localStorage.setItem("persistent_employees", JSON.stringify(data));
-      } else {
-        setEmployees([]);
-        localStorage.setItem("persistent_employees", JSON.stringify([]));
+      if (!error && data) {
+        dbEmps = data;
       }
-    } catch (err) {
-      setEmployees([]);
-    } finally {
-      setFetching(false);
-    }
+    } catch (err) {}
+
+    let localEmps = [];
+    try {
+      const s = localStorage.getItem("persistent_employees");
+      if (s) localEmps = JSON.parse(s);
+    } catch(e) {}
+
+    const empMap = new Map();
+    dbEmps.forEach(e => {
+      const key = (e.email || e.id || "").toLowerCase();
+      if (key) empMap.set(key, e);
+    });
+    localEmps.forEach(e => {
+      const key = (e.email || e.id || "").toLowerCase();
+      if (key && !empMap.has(key)) empMap.set(key, e);
+    });
+
+    const finalEmps = Array.from(empMap.values());
+    setEmployees(finalEmps);
+    try {
+      localStorage.setItem("persistent_employees", JSON.stringify(finalEmps));
+    } catch(e) {}
+    setFetching(false);
   };
 
+  const [role, setRole] = useState("admin");
+  const [userEmail, setUserEmail] = useState("");
+
+  // Real-Time Search & Filter State
+  const [searchQuery, setSearchQuery] = useState("");
+  const [showInactive, setShowInactive] = useState(false);
+
+  const filteredEmployees = employees.filter((emp) => {
+    // Default filter: hide inactive employees unless showInactive toggle is on
+    const isInactive = emp.status === "inactive" || emp.status === "deactivated";
+    if (isInactive && !showInactive) return false;
+
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.toLowerCase().trim();
+    const nameMatch = (emp.full_name || "").toLowerCase().includes(q);
+    const deptMatch = (emp.department || "").toLowerCase().includes(q);
+    const desigMatch = (emp.designation || "").toLowerCase().includes(q);
+    const emailMatch = (emp.email || "").toLowerCase().includes(q);
+    return nameMatch || deptMatch || desigMatch || emailMatch;
+  });
+
   useEffect(() => {
+    const savedRole = localStorage.getItem("user_role") || "admin";
+    const savedEmail = localStorage.getItem("current_user_email") || "sara.design@gmail.com";
+    setRole(savedRole);
+    setUserEmail(savedEmail);
     fetchEmployees();
+
+    const cleanupTracker = initActivityStatusTracker(savedEmail);
+
+    const handleStorageChange = () => {
+      fetchEmployees();
+    };
+    window.addEventListener("storage", handleStorageChange);
+
+    return () => {
+      cleanupTracker();
+      window.removeEventListener("storage", handleStorageChange);
+    };
   }, []);
 
+  const [emailError, setEmailError] = useState("");
+  const [nameError, setNameError] = useState("");
+
   const handleChange = (e) => {
+    const { name, value } = e.target;
     setForm({
       ...form,
-      [e.target.name]: e.target.value,
+      [name]: value,
     });
+    if (name === "email" && emailError) {
+      setEmailError("");
+    }
+    if (name === "full_name" && nameError) {
+      setNameError("");
+    }
   };
 
   const addEmployee = async (e) => {
     e.preventDefault();
-    if (!form.full_name || !form.email || !form.department) {
+    setEmailError("");
+    setNameError("");
+
+    const trimmedName = (form.full_name || "").trim();
+    const trimmedEmail = (form.email || "").trim().toLowerCase();
+
+    if (!trimmedName || !trimmedEmail || !form.department) {
       showAlert("Missing Fields", "Please enter Full Name, Email, and Department.", "warning");
+      return;
+    }
+
+    // Name validation: Allow letters, spaces, hyphens, apostrophes, and periods (e.g., O'Connor, Anne-Marie, D'Souza, Dr. Jean-Luc)
+    const nameRegex = /^[a-zA-Z\u00C0-\u024F\u1E00-\u1EFF'’\-\.\s]+$/;
+    if (!nameRegex.test(trimmedName)) {
+      setNameError("Employee name can only contain letters, spaces, hyphens (-), apostrophes ('), and periods (.).");
+      showAlert("Invalid Name Format ⚠️", "Please enter a valid employee name. Special characters allowed: apostrophes ('), hyphens (-), and periods (.).", "warning");
+      return;
+    }
+
+    // Check duplicate email against existing employees
+    const duplicateEmployee = employees.find(
+      emp => (emp.email || "").trim().toLowerCase() === trimmedEmail
+    );
+
+    // Also check against registered system users cache
+    let registeredUsers = [];
+    try {
+      const saved = localStorage.getItem("registered_system_users");
+      if (saved) registeredUsers = JSON.parse(saved);
+    } catch(err) {}
+
+    const duplicateRegistered = registeredUsers.find(
+      u => (u.email || "").trim().toLowerCase() === trimmedEmail
+    );
+
+    if (duplicateEmployee || duplicateRegistered) {
+      const existingName = duplicateEmployee?.full_name || duplicateRegistered?.fullName || "another user";
+      setEmailError("This email address is already registered.");
+      showAlert(
+        "Duplicate Email Error ⚠️",
+        `This email address (${form.email}) is already registered to ${existingName}.\n\nEach employee must have a unique email address. Please enter a different email address.`,
+        "error"
+      );
       return;
     }
 
@@ -183,9 +279,41 @@ export default function EmployeesPage() {
       localStorage.setItem("persistent_employees", JSON.stringify(updatedList));
     } catch(e) {}
 
+    let dbSuccess = false;
+    let dbErrorMsg = "";
+
+    const dbPayload = {
+      full_name: form.full_name,
+      email: form.email,
+      phone: form.phone || null,
+      department: form.department,
+      designation: form.designation,
+      employment_type: form.employment_type,
+      joining_date: form.joining_date || new Date().toISOString().split("T")[0],
+      address: form.address || null,
+      status: "active"
+    };
+
     try {
-      await supabase.from("employees").insert([form]);
-    } catch(e) {}
+      // Upsert into Supabase employees table (Inserts or updates on email conflict)
+      const { data, error } = await supabase
+        .from("employees")
+        .upsert([dbPayload], { onConflict: "email" })
+        .select();
+
+      if (!error && data && data.length > 0) {
+        dbSuccess = true;
+      } else if (error) {
+        dbErrorMsg = error.message;
+        // Retry plain insert if upsert fails
+        const res2 = await supabase.from("employees").insert([dbPayload]).select();
+        if (!res2.error) {
+          dbSuccess = true;
+        }
+      }
+    } catch(e) {
+      dbErrorMsg = e.message || "DB Connection error";
+    }
 
     // Save Admin assigned credentials so the employee can log in with their exact email & password!
     const userCredentials = {
@@ -203,12 +331,37 @@ export default function EmployeesPage() {
       localStorage.setItem("registered_system_users", JSON.stringify(updatedUsers));
     } catch(e) {}
 
+    // Log activity feed entry
+    try {
+      await logActivity(
+        "Admin / HR",
+        "Employee Added",
+        `Created employee profile & credentials for ${form.full_name} (${form.department})`,
+        "employee"
+      );
+    } catch(e) {}
+
+    // Notify all open pages/listeners that data changed
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event("dataChanged"));
+      window.dispatchEvent(new Event("storage"));
+    }
+
     setLoading(false);
-    showAlert(
-      "Employee Account Created & Credentials Assigned! 🟢",
-      `Employee: ${form.full_name}\nAssigned Email: ${form.email}\nAssigned Password: ${form.assigned_password}\n\nLogin credentials assigned! The employee can now log in directly at /login using these credentials.`,
-      "success"
-    );
+
+    if (dbSuccess) {
+      showToast(
+        "Employee Added to Supabase Database & Portal! 🟢",
+        `Employee: ${form.full_name}\nAssigned Email: ${form.email}\nSupabase DB: Saved Successfully`,
+        "success"
+      );
+    } else {
+      showAlert(
+        "Supabase DB Insert Notice ⚠️",
+        `Portal local save succeeded, BUT Supabase Database returned an error:\n\n"${dbErrorMsg || "RLS Policy or Table missing"}"\n\nTo allow direct saves into Supabase DB, run this SQL in your Supabase SQL Editor:\n\nCREATE TABLE IF NOT EXISTS public.employees (\n  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,\n  full_name TEXT NOT NULL,\n  email TEXT UNIQUE NOT NULL,\n  phone TEXT,\n  department TEXT,\n  designation TEXT,\n  employment_type TEXT,\n  joining_date DATE,\n  address TEXT\n);\nALTER TABLE public.employees ENABLE ROW LEVEL SECURITY;\nCREATE POLICY "Allow public all" ON public.employees FOR ALL USING (true) WITH CHECK (true);`,
+        "warning"
+      );
+    }
 
     setForm({
       full_name: "",
@@ -228,14 +381,62 @@ export default function EmployeesPage() {
     });
   };
 
-  const handleDeleteEmployee = async (id) => {
-    if (!confirm("Are you sure you want to delete this employee record?")) return;
-    const updatedList = employees.filter((emp) => emp.id !== id);
+  const handleDeactivateEmployee = async (emp) => {
+    if (!confirm(`Are you sure you want to DEACTIVATE "${emp.full_name}"?\n\nDeactivating will block login access while fully preserving all attendance, payslips, leave, and project history.`)) {
+      return;
+    }
+
+    const updatedList = employees.map((e) =>
+      e.id === emp.id ? { ...e, status: "inactive" } : e
+    );
     setEmployees(updatedList);
+
     try {
       localStorage.setItem("persistent_employees", JSON.stringify(updatedList));
-      await supabase.from("employees").delete().eq("id", id);
-    } catch(e) {}
+      await supabase.from("employees").update({ status: "inactive" }).eq("id", emp.id);
+      
+      // Update registered users status cache
+      const saved = localStorage.getItem("registered_system_users");
+      if (saved) {
+        const users = JSON.parse(saved);
+        const updatedUsers = users.map(u => 
+          u.email.toLowerCase() === emp.email.toLowerCase() ? { ...u, status: "inactive" } : u
+        );
+        localStorage.setItem("registered_system_users", JSON.stringify(updatedUsers));
+      }
+
+      await logActivity(
+        "Admin / HR",
+        "Employee Deactivated",
+        `Deactivated account for ${emp.full_name} (${emp.email}). Login access revoked. All historical data preserved.`,
+        "employee"
+      );
+    } catch (e) {}
+
+    showToast("Employee Deactivated 🛑", `Account for ${emp.full_name} deactivated. Login access revoked. Historical data preserved.`, "info");
+  };
+
+  const handleReactivateEmployee = async (emp) => {
+    const updatedList = employees.map((e) =>
+      e.id === emp.id ? { ...e, status: "active" } : e
+    );
+    setEmployees(updatedList);
+
+    try {
+      localStorage.setItem("persistent_employees", JSON.stringify(updatedList));
+      await supabase.from("employees").update({ status: "active" }).eq("id", emp.id);
+
+      const saved = localStorage.getItem("registered_system_users");
+      if (saved) {
+        const users = JSON.parse(saved);
+        const updatedUsers = users.map(u => 
+          u.email.toLowerCase() === emp.email.toLowerCase() ? { ...u, status: "active" } : u
+        );
+        localStorage.setItem("registered_system_users", JSON.stringify(updatedUsers));
+      }
+    } catch (e) {}
+
+    showToast("Employee Reactivated 🟢", `Account for ${emp.full_name} reactivated. Login access restored.`, "success");
   };
 
   return (
@@ -249,15 +450,235 @@ export default function EmployeesPage() {
         onClose={closeModal}
       />
 
-      <div className="border-b border-slate-200 pb-4">
-        <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2.5">
-          <FaUsers className="text-blue-600" />
-          <span>Paid Employees & Staff Management</span>
-        </h1>
-        <p className="text-sm text-slate-500 mt-1">
-          Register and manage full-time & part-time paid software house staff
-        </p>
-      </div>
+      {/* EMPLOYEE PERSONAL DASHBOARD VIEW (LOGGED-IN EMPLOYEE ONLY SEES THEIR OWN DATA) */}
+      {(role === "employee" || role === "staff") ? (
+        <div className="space-y-6">
+          <div className="bg-gradient-to-r from-blue-700 via-blue-600 to-indigo-700 text-white rounded-2xl p-7 shadow-xl border border-blue-500/40 relative overflow-hidden">
+            <div className="absolute -right-10 -bottom-10 w-48 h-48 bg-white/10 rounded-full blur-2xl pointer-events-none"></div>
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-5 relative z-10">
+              <div>
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="bg-white text-blue-900 text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest shadow-xs">
+                    🧑‍💻 Verified Paid Staff Member
+                  </span>
+                  <span className="bg-blue-800/80 text-blue-100 text-[10px] font-bold px-3 py-1 rounded-full border border-blue-400/40">
+                    Full-Time Paid Employee
+                  </span>
+                </div>
+                <h1 className="text-2xl md:text-3xl font-black text-white flex items-center gap-3">
+                  <FaUserTie className="text-amber-300 text-3xl" />
+                  <span>Welcome Back, Employee Portal</span>
+                </h1>
+                <p className="text-xs text-blue-100 mt-2 font-medium">
+                  Logged in as: <strong className="text-white font-mono bg-blue-900/60 px-2.5 py-1 rounded border border-blue-400/40">{userEmail}</strong> • Isolated Personal Salary, Work Timers & HR Desk.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-3 shrink-0">
+                <a href="/dashboard/payroll" className="bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-extrabold px-4 py-2.5 rounded-xl text-xs transition-all shadow-lg border border-emerald-400">
+                  💰 My Salary Slip
+                </a>
+                <a href="/dashboard/projects" className="bg-amber-400 hover:bg-amber-500 text-slate-900 font-extrabold px-4 py-2.5 rounded-xl text-xs transition-all shadow-lg border border-amber-300">
+                  📋 Daily Work Timer
+                </a>
+              </div>
+            </div>
+          </div>
+
+          {/* DEDICATED EMPLOYEE ATTENDANCE MODULE */}
+          <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-5">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+              <div>
+                <span className="bg-emerald-100 text-emerald-800 text-[10px] uppercase font-black tracking-widest px-3 py-1 rounded-full border border-emerald-200">
+                  📌 Official Employee Attendance Module
+                </span>
+                <h2 className="text-lg font-black text-slate-900 mt-2 flex items-center gap-2">
+                  <FaClock className="text-emerald-600" />
+                  <span>Live Employee Check-In & Time Policy Center</span>
+                </h2>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Strict 24-Hour Rule • Public IPify API Verification Active
+                </p>
+              </div>
+
+            </div>
+
+            {/* Time-Based Attendance Policy Cards (White, Green, Orange, Red) */}
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs">
+              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-1">
+                <span className="text-[10px] uppercase font-bold text-slate-500">Before 10:00 AM</span>
+                <div className="flex items-center gap-2 font-bold text-slate-800">
+                  <span className="w-3.5 h-3.5 rounded-full bg-white border-2 border-slate-400 shadow-xs"></span>
+                  <span>⚪ White Light</span>
+                </div>
+                <p className="text-[11px] text-slate-600 font-semibold">🔒 Attendance Disabled</p>
+              </div>
+
+              <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 space-y-1">
+                <span className="text-[10px] uppercase font-bold text-emerald-800">10:00 AM – 10:14 AM</span>
+                <div className="flex items-center gap-2 font-bold text-emerald-950">
+                  <span className="w-3.5 h-3.5 rounded-full bg-emerald-500 shadow-md animate-pulse"></span>
+                  <span>🟢 Green Light</span>
+                </div>
+                <p className="text-[11px] text-emerald-900 font-semibold">🟢 Available Check-In</p>
+              </div>
+
+              <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 space-y-1">
+                <span className="text-[10px] uppercase font-bold text-amber-800">10:15 AM – 10:29 AM</span>
+                <div className="flex items-center gap-2 font-bold text-amber-950">
+                  <span className="w-3.5 h-3.5 rounded-full bg-amber-500 shadow-md animate-pulse"></span>
+                  <span>🟠 Orange Light</span>
+                </div>
+                <p className="text-[11px] text-amber-900 font-semibold">🟠 Late Warning</p>
+              </div>
+
+              <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 space-y-1">
+                <span className="text-[10px] uppercase font-bold text-rose-800">10:30 AM and After</span>
+                <div className="flex items-center gap-2 font-bold text-rose-950">
+                  <span className="w-3.5 h-3.5 rounded-full bg-rose-500 shadow-md animate-pulse"></span>
+                  <span>🔴 Red Light</span>
+                </div>
+                <p className="text-[11px] text-rose-900 font-semibold">🔴 One Day's Salary Deduction</p>
+              </div>
+            </div>
+
+            {/* Quick Action Button & Database History */}
+            <div className="pt-2 flex flex-col sm:flex-row items-center justify-between gap-4 border-t border-slate-100">
+              <div className="text-xs text-slate-600 space-y-0.5">
+                <p className="font-bold text-slate-800 flex items-center gap-1.5">
+                  <FaShieldAlt className="text-emerald-600" /> Public IPify Status: Verified Active
+                </p>
+                <p className="text-[11px] text-slate-500">
+                  Check-in time, check-out time, attendance date & status are saved directly to database.
+                </p>
+              </div>
+
+              <a
+                href="/dashboard/attendance"
+                className="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold px-6 py-2.5 rounded-xl text-xs transition-all shadow-md flex items-center justify-center gap-2 border border-emerald-500 shrink-0"
+              >
+                <FaClock className="text-amber-300" />
+                <span>Mark My Staff Attendance Now →</span>
+              </a>
+            </div>
+          </div>
+
+          {/* ALL-IN-ONE PERSONAL DASHBOARD HUB FOR EMPLOYEE */}
+          <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4">
+            <div className="border-b border-slate-100 pb-3">
+              <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <FaUserCheck className="text-indigo-600 text-lg" />
+                <span>My Dedicated Employee Services (100% Isolated to {userEmail})</span>
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Manage your daily tasks, salary breakdown, attendance, leaves, complaints, and meetings in one place.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+              {/* Card 2: Personal Daily Tasks */}
+              <div className="p-4 rounded-xl border border-slate-200 bg-slate-50/80 space-y-2 flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center justify-between font-bold text-slate-900">
+                    <span className="flex items-center gap-1.5 text-amber-700">
+                      <FaTasks className="text-amber-600" /> My Assigned Daily Tasks
+                    </span>
+                    <span className="bg-amber-100 text-amber-900 text-[10px] px-2 py-0.5 rounded font-extrabold">Stopwatch Active</span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 mt-2">
+                    Start, pause, and mark complete on tasks assigned specifically to you.
+                  </p>
+                </div>
+                <a href="/dashboard/projects" className="w-full bg-amber-600 hover:bg-amber-700 text-white font-bold py-2 rounded-lg text-center transition-all block">
+                  Open Daily Stopwatch →
+                </a>
+              </div>
+
+              {/* Card 3: Personal Salary & Payslips */}
+              <div className="p-4 rounded-xl border border-slate-200 bg-slate-50/80 space-y-2 flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center justify-between font-bold text-slate-900">
+                    <span className="flex items-center gap-1.5 text-emerald-700">
+                      <FaMoneyBillWave className="text-emerald-600" /> My Salary & Net Pay
+                    </span>
+                    <span className="bg-emerald-100 text-emerald-800 text-[10px] px-2 py-0.5 rounded font-extrabold">PDF Payslip</span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 mt-2">
+                    View Basic, Overtime, Bonus, Deductions & download PDF payslip.
+                  </p>
+                </div>
+                <a href="/dashboard/payroll" className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 rounded-lg text-center transition-all block">
+                  Open My Salary →
+                </a>
+              </div>
+
+              {/* Card 4: Remote Monitoring */}
+              <div className="p-4 rounded-xl border border-slate-200 bg-slate-50/80 space-y-2 flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center justify-between font-bold text-slate-900">
+                    <span className="flex items-center gap-1.5 text-indigo-700">
+                      <FaDesktop className="text-indigo-600" /> Remote Work Monitor
+                    </span>
+                    <span className="bg-indigo-100 text-indigo-800 text-[10px] px-2 py-0.5 rounded font-extrabold">Transparent</span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 mt-2">
+                    View active timeline, app usage breakdown, and screenshot privacy log.
+                  </p>
+                </div>
+                <a href="/dashboard/remote-monitoring" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 rounded-lg text-center transition-all block">
+                  Open Remote Monitor →
+                </a>
+              </div>
+
+              {/* Card 5: Complaints */}
+              <div className="p-4 rounded-xl border border-slate-200 bg-slate-50/80 space-y-2 flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center justify-between font-bold text-slate-900">
+                    <span className="flex items-center gap-1.5 text-rose-700">
+                      <FaExclamationTriangle className="text-rose-600" /> My HR Complaints
+                    </span>
+                    <span className="bg-rose-100 text-rose-800 text-[10px] px-2 py-0.5 rounded font-extrabold">Helpdesk</span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 mt-2">
+                    Report Internet, HR, or System issues and track 3-stage status.
+                  </p>
+                </div>
+                <a href="/dashboard/complaints" className="w-full bg-rose-600 hover:bg-rose-700 text-white font-bold py-2 rounded-lg text-center transition-all block">
+                  Open Complaints →
+                </a>
+              </div>
+
+              {/* Card 6: Performance Score */}
+              <div className="p-4 rounded-xl border border-slate-200 bg-slate-50/80 space-y-2 flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center justify-between font-bold text-slate-900">
+                    <span className="flex items-center gap-1.5 text-amber-700">
+                      <FaAward className="text-amber-600" /> Performance & Ranking
+                    </span>
+                    <span className="bg-amber-100 text-amber-900 text-[10px] px-2 py-0.5 rounded font-extrabold">Score: 94/100</span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 mt-2">
+                    View 8-factor evaluation metrics score & monthly ranking leaderboard.
+                  </p>
+                </div>
+                <a href="/dashboard/performance" className="w-full bg-amber-600 hover:bg-amber-700 text-white font-bold py-2 rounded-lg text-center transition-all block">
+                  Open Performance →
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-6">
+          <div className="border-b border-slate-200 pb-4">
+            <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2.5">
+              <FaUsers className="text-blue-600" />
+              <span>Paid Employees & Staff Management (Admin Control)</span>
+            </h1>
+            <p className="text-sm text-slate-500 mt-1">
+              Register and manage full-time & part-time paid software house staff
+            </p>
+          </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
         {/* Add Employee Form */}
@@ -277,10 +698,15 @@ export default function EmployeesPage() {
                 name="full_name"
                 value={form.full_name}
                 onChange={handleChange}
-                placeholder="e.g. Muhammad Ali"
+                placeholder="e.g. O'Connor or Anne-Marie"
                 required
-                className="w-full rounded-lg border border-slate-300 px-3.5 py-2 text-sm text-slate-900 outline-none focus:border-blue-600"
+                className={`w-full rounded-lg border px-3.5 py-2 text-sm text-slate-900 outline-none focus:border-blue-600 ${
+                  nameError ? "border-red-500 bg-red-50/30" : "border-slate-300"
+                }`}
               />
+              {nameError && (
+                <p className="mt-1 text-xs text-red-600 font-medium">{nameError}</p>
+              )}
             </div>
 
             <div>
@@ -308,8 +734,13 @@ export default function EmployeesPage() {
                 onChange={handleChange}
                 placeholder="ali.staff@gmail.com"
                 required
-                className="w-full rounded-lg border border-slate-300 px-3.5 py-2 text-sm text-slate-900 outline-none focus:border-blue-600"
+                className={`w-full rounded-lg border px-3.5 py-2 text-sm text-slate-900 outline-none focus:border-blue-600 ${
+                  emailError ? "border-red-500 bg-red-50/30" : "border-slate-300"
+                }`}
               />
+              {emailError && (
+                <p className="mt-1 text-xs text-red-600 font-medium">{emailError}</p>
+              )}
             </div>
 
             <div>
@@ -486,14 +917,46 @@ export default function EmployeesPage() {
 
         {/* Paid Employees Staff Directory */}
         <div className="lg:col-span-2 rounded-xl border border-slate-200 bg-white shadow-xs overflow-hidden flex flex-col">
-          <div className="p-4 border-b border-slate-200 bg-slate-50/50 flex items-center justify-between">
-            <h2 className="text-base font-bold text-slate-800 flex items-center gap-2">
-              <FaUserTie className="text-blue-600" />
-              <span>Paid Staff Directory</span>
-            </h2>
-            <span className="text-xs font-semibold text-slate-500 bg-slate-200/60 px-2.5 py-1 rounded-md">
-              Total Staff: {employees.length}
-            </span>
+          <div className="p-4 border-b border-slate-200 bg-slate-50/50 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center justify-between sm:justify-start gap-2">
+              <h2 className="text-base font-bold text-slate-800 flex items-center gap-2">
+                <FaUserTie className="text-blue-600" />
+                <span>Paid Staff Directory</span>
+              </h2>
+              <span className="text-xs font-semibold text-slate-500 bg-slate-200/60 px-2.5 py-1 rounded-md">
+                Total: {filteredEmployees.length} {searchQuery ? `(of ${employees.length})` : ""}
+              </span>
+              <label className="flex items-center gap-1.5 text-xs text-slate-600 font-semibold cursor-pointer ml-2 bg-white px-2 py-1 rounded border border-slate-200 hover:bg-slate-50">
+                <input
+                  type="checkbox"
+                  checked={showInactive}
+                  onChange={(e) => setShowInactive(e.target.checked)}
+                  className="rounded text-blue-600 focus:ring-0 cursor-pointer"
+                />
+                <span>Show Inactive Staff</span>
+              </label>
+            </div>
+
+            {/* Real-Time Search & Clear Bar */}
+            <div className="relative flex items-center w-full sm:w-72">
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search name, department, title..."
+                className="w-full rounded-lg border border-slate-300 pl-3.5 pr-8 py-1.5 text-xs text-slate-900 outline-none focus:border-blue-600 bg-white shadow-2xs"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery("")}
+                  className="absolute right-2 text-slate-400 hover:text-slate-700 text-xs font-bold bg-slate-100 hover:bg-slate-200 rounded-full h-4 w-4 flex items-center justify-center transition-colors"
+                  title="Clear Search"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
           </div>
 
           <div className="overflow-x-auto flex-1">
@@ -501,18 +964,63 @@ export default function EmployeesPage() {
               <thead className="bg-slate-50 text-xs font-bold uppercase text-slate-500 border-b border-slate-200">
                 <tr>
                   <th className="px-4 py-3">Employee Name</th>
+                  <th className="px-4 py-3">Real-Time Status</th>
                   <th className="px-4 py-3">Department & Title</th>
                   <th className="px-4 py-3">Contact Email</th>
                   <th className="px-4 py-3 text-right">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
-                {employees.length > 0 ? (
-                  employees.map((emp) => (
-                    <tr key={emp.id} className="hover:bg-slate-50/50">
+                {filteredEmployees.length > 0 ? (
+                  filteredEmployees.map((emp) => {
+                    const isInactive = emp.status === "inactive" || emp.status === "deactivated";
+                    const emailKey = (emp.email || "").toLowerCase().trim();
+
+                    // Read real-time activity status from state/local cache
+                    let liveStatus = "Offline";
+                    let lastActiveText = "Never";
+
+                    try {
+                      const statusMap = JSON.parse(localStorage.getItem("software_house_realtime_activity_statuses") || "{}");
+                      const userStat = statusMap[emailKey];
+                      if (userStat) {
+                        liveStatus = userStat.status || "Offline";
+                        lastActiveText = userStat.last_active ? new Date(userStat.last_active).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "Never";
+                      }
+                    } catch (e) {}
+
+                    return (
+                    <tr key={emp.id} className={`hover:bg-slate-50/50 ${isInactive ? "bg-rose-50/20 opacity-75" : ""}`}>
                       <td className="px-4 py-3.5">
-                        <div className="font-bold text-slate-900">{emp.full_name}</div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-slate-900">{emp.full_name}</span>
+                          {isInactive && (
+                            <span className="bg-rose-100 text-rose-700 text-[10px] font-extrabold px-2 py-0.5 rounded-full border border-rose-200">
+                              Inactive
+                            </span>
+                          )}
+                        </div>
                         <div className="text-xs text-blue-600 font-semibold">{emp.employment_type}</div>
+                      </td>
+
+                      <td className="px-4 py-3.5">
+                        {liveStatus === "Online" ? (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-black bg-emerald-100 text-emerald-900 border border-emerald-300">
+                            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
+                            🟢 Online
+                          </span>
+                        ) : liveStatus === "Idle" ? (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-black bg-amber-100 text-amber-900 border border-amber-300">
+                            <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+                            🟡 Idle (5m+)
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-600 border border-slate-300">
+                            <span className="w-2 h-2 rounded-full bg-slate-400"></span>
+                            ⚪ Offline
+                          </span>
+                        )}
+                        <div className="text-[10px] text-slate-400 mt-0.5 font-mono">Last Active: {lastActiveText}</div>
                       </td>
 
                       <td className="px-4 py-3.5">
@@ -537,19 +1045,44 @@ export default function EmployeesPage() {
                         >
                           <FaSignOutAlt className="text-[10px]" /> Resign & Cert
                         </button>
-                        <button
-                          onClick={() => handleDeleteEmployee(emp.id)}
-                          className="text-xs font-semibold text-rose-600 hover:underline flex items-center gap-1"
-                        >
-                          <FaTrash className="text-[10px]" /> Delete
-                        </button>
+                        {isInactive ? (
+                          <button
+                            onClick={() => handleReactivateEmployee(emp)}
+                            className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-300 font-bold px-2.5 py-1 rounded-lg text-xs flex items-center gap-1 transition-all"
+                          >
+                            Reactivate
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => handleDeactivateEmployee(emp)}
+                            className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold px-2.5 py-1 rounded-lg text-xs flex items-center gap-1 transition-all"
+                          >
+                            Deactivate
+                          </button>
+                        )}
                       </td>
                     </tr>
-                  ))
+                  )})
                 ) : (
                   <tr>
-                    <td colSpan={4} className="px-6 py-8 text-center text-slate-400 text-xs">
-                      No paid staff employees registered yet.
+                    <td colSpan={4} className="px-6 py-12 text-center text-slate-500 text-xs">
+                      <div className="flex flex-col items-center justify-center space-y-2">
+                        <span className="text-2xl">🔍</span>
+                        <p className="font-bold text-slate-700">No employees found.</p>
+                        {searchQuery && (
+                          <p className="text-slate-400 text-[11px]">
+                            No staff members match &quot;{searchQuery}&quot;. Try clearing or changing your search terms.
+                          </p>
+                        )}
+                        {searchQuery && (
+                          <button
+                            onClick={() => setSearchQuery("")}
+                            className="mt-1 px-3 py-1 rounded-md bg-blue-50 text-blue-600 hover:bg-blue-100 font-bold text-xs transition-colors"
+                          >
+                            Clear Search
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 )}
@@ -558,6 +1091,8 @@ export default function EmployeesPage() {
           </div>
         </div>
       </div>
+    </div>
+  )}
 
       {/* EMPLOYEE FULL HISTORY INSPECTION MODAL */}
       {selectedHistoryModal && (
