@@ -119,16 +119,26 @@ export default function AttendancePage() {
       userName
     });
 
-    const activeIp = res.currentPublicIp || "Live Connected Network";
+    const activeIp = res.currentPublicIp || "Offline";
     setUserIp(activeIp);
 
-    setIpVerificationResult({
-      success: true,
-      message: "Office Wi-Fi Verified Successfully.",
-      publicIp: activeIp,
-      officePublicIp: activeIp
-    });
-    showToast("Office Wi-Fi Verified 🟢", "Network Verified Successfully. You can now mark your attendance.", "success");
+    if (res.success) {
+      setIpVerificationResult({
+        success: true,
+        message: "Office Wi-Fi Verified Successfully.",
+        publicIp: activeIp,
+        officePublicIp: res.activeOfficeNetwork?.public_ip_address || activeIp
+      });
+      showToast("Office Wi-Fi Verified 🟢", "Network Verified Successfully. You can now mark your attendance.", "success");
+    } else {
+      setIpVerificationResult({
+        success: false,
+        message: res.errorMessage || "Network Mismatch! You are not connected to authorized Office Wi-Fi.",
+        publicIp: activeIp,
+        officePublicIp: res.activeOfficeNetwork?.public_ip_address || "Office Wi-Fi"
+      });
+      showToast("Network Mismatch 🛑", `Your connected Wi-Fi IP (${activeIp}) does not match Authorized Office Wi-Fi IP!`, "error");
+    }
     setIsVerifyingIp(false);
   };
 

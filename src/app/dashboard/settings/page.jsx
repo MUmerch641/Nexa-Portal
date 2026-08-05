@@ -157,7 +157,20 @@ export default function SettingsPage() {
       const json = await res.json();
       if (json.ip) {
         setOfficeIp(json.ip);
-        showAlert("Office Public IP Detected 📡", `Current Device Public IP (${json.ip}) set as Authorized Office Network.`, "success");
+        const updatedNet = [{
+          id: "net-101",
+          office_name: "Software House Main Office Wi-Fi",
+          wifi_name: "Campus High-Speed Office Wi-Fi",
+          authorized_ipv4: "192.168.100.144",
+          subnet_mask: "255.255.255.0",
+          default_gateway: "192.168.100.1",
+          public_ip_address: json.ip,
+          status: "Active",
+          created_at: new Date().toISOString().split("T")[0],
+          updated_at: new Date().toISOString().split("T")[0],
+        }];
+        localStorage.setItem("software_house_office_networks", JSON.stringify(updatedNet));
+        showAlert("Office Public IP Saved 📡", `Current Connected Device Public IP (${json.ip}) saved as Authorized Office Network IP.`, "success");
       }
     } catch (e) {
       showAlert("Error ❌", "Failed to get current public IP", "error");
