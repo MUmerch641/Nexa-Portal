@@ -124,8 +124,8 @@ export async function verifyOfficeWifiAttendance({ userId, userEmail, userRole, 
     };
   }
 
-  // Auto-sync or match: In production/remote deployment, auto-sync live IP or match office IP
-  const isMatch = currentPublicIp.trim() === registeredOfficePublicIp || process.env.NODE_ENV === "production" || currentPublicIp !== "Disconnected / Offline";
+  // Strict Comparison: Current IP must strictly match Registered Office IP
+  const isMatch = currentPublicIp.trim() === registeredOfficePublicIp;
 
   logAttendanceAttempt({
     userId,
@@ -136,10 +136,19 @@ export async function verifyOfficeWifiAttendance({ userId, userEmail, userRole, 
     officePublicIp: registeredOfficePublicIp,
     officeName: activeOfficeNetwork.office_name,
     wifiName: activeOfficeNetwork.wifi_name,
-    status: "VERIFIED ✅",
-    verificationStatus: "Verified",
-    timestamp: new Date().toISOString()
+    status: isMatch ? "VERIFIED ✅" : "FAILED ❌",
+    verificationStatus: isMatch ? "Verified" : "Failed",
+    reason: isMatch ? "ipify Public IP Matches Office Wi-Fi IP" : `IP Mismatch (Current: ${currentPublicIp} vs Office: ${registeredOfficePublicIp})`
   });
+
+  if (!isMatch) {
+    return {
+      success: false,
+      currentPublicIp,
+      activeOfficeNetwork,
+      errorMessage: `❌ Attendance Blocked: Your connected Wi-Fi IP (${currentPublicIp}) does not match company Authorized Office Wi-Fi IP (${registeredOfficePublicIp}). Access denied.`
+    };
+  }
 
   return {
     success: true,

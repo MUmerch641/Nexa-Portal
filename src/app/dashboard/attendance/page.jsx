@@ -147,7 +147,17 @@ export default function AttendancePage() {
 
   const handleAttendance = async (type) => {
     const role = user?.user_metadata?.role || userRole || "employee";
-    const minutes = getCurrentMinutes();
+    // Strict Check 1: Block attendance if browser / Wi-Fi is turned off
+    if (typeof window !== "undefined" && !window.navigator.onLine) {
+      setIpVerificationResult({
+        success: false,
+        message: "❌ Wi-Fi / Internet Disconnected! Please connect to authorized Wi-Fi network to mark attendance.",
+        publicIp: "Disconnected / Offline",
+        officePublicIp: "Office Wi-Fi"
+      });
+      showToast("Attendance Blocked 🛑", "Wi-Fi or Internet is turned off! Connect to Office Wi-Fi to mark attendance.", "error");
+      return;
+    }
 
     // IP Restriction Validation via attendanceIpUtils.js engine
     const verificationRes = await verifyOfficeWifiAttendance({
@@ -156,6 +166,27 @@ export default function AttendancePage() {
       userRole: role,
       userName
     });
+
+    if (!verificationRes.success) {
+      const activeNet = verificationRes.activeOfficeNetwork || getActiveOfficeNetworks()[0];
+      const registeredOfficeIp = (activeNet?.public_ip_address || "39.46.118.183").trim();
+      const currentIp = verificationRes.currentPublicIp || "Unknown IP";
+
+      setIpVerificationResult({
+        success: false,
+        message: verificationRes.errorMessage || `❌ Network Mismatch! Connected Wi-Fi IP (${currentIp}) does not match Authorized Office Wi-Fi IP (${registeredOfficeIp}).`,
+        publicIp: currentIp,
+        officePublicIp: registeredOfficeIp
+      });
+
+      const actionLabel = type === "check_in" ? "Clock In" : "Clock Out";
+      showToast(
+        `${actionLabel} Blocked 🛑`,
+        `Unauthorized Wi-Fi! Connected IP (${currentIp}) does not match authorized Office Wi-Fi IP (${registeredOfficeIp}). Attendance blocked!`,
+        "error"
+      );
+      return;
+    }
 
     const livePublicIp = verificationRes.currentPublicIp || "Live Connected Network";
 
