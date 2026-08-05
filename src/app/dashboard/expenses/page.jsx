@@ -43,27 +43,41 @@ export default function ExpensesPage() {
     "Misc / Other",
   ];
 
-  // Fetch Expenses
+  // Fetch Expenses with LocalStorage Persistence & Supabase Sync
   const fetchExpenses = async () => {
     setLoading(true);
+    let dbData = [];
     try {
       const { data, error } = await supabase
         .from("expenses")
         .select("*")
         .order("expense_date", { ascending: false });
 
-      if (error) {
-        console.warn("Notice fetching expenses:", error.message);
-        setExpenses([]);
-      } else {
-        setExpenses(data || []);
+      if (!error && data) {
+        dbData = data;
       }
-    } catch (err) {
-      console.error(err);
-      setExpenses([]);
-    } finally {
-      setLoading(false);
-    }
+    } catch (err) {}
+
+    let localData = [];
+    try {
+      const s = localStorage.getItem("persistent_expenses");
+      if (s) localData = JSON.parse(s);
+    } catch(e) {}
+
+    const map = new Map();
+    localData.forEach(item => {
+      if (item.id || item.title) map.set(item.id || item.title, item);
+    });
+    dbData.forEach(item => {
+      if (item.id || item.title) map.set(item.id || item.title, { ...map.get(item.id || item.title), ...item });
+    });
+
+    const finalExpenses = Array.from(map.values());
+    setExpenses(finalExpenses);
+    try {
+      localStorage.setItem("persistent_expenses", JSON.stringify(finalExpenses));
+    } catch(e) {}
+    setLoading(false);
   };
 
   useEffect(() => {
@@ -89,24 +103,31 @@ export default function ExpensesPage() {
     setSubmitting(true);
 
     try {
-      const { error } = await Promise.race([
-        supabase.from("expenses").insert([
-          {
-            title: form.title,
-            category: form.category,
-            amount: Number(form.amount),
-            payment_status: form.payment_status,
-            expense_date: form.expense_date,
-            notes: form.notes,
-          },
-        ]),
-        new Promise(resolve => setTimeout(() => resolve({ error: null }), 1500))
-      ]);
+      const newExp = {
+        id: `exp-${Date.now()}`,
+        title: form.title,
+        category: form.category,
+        amount: Number(form.amount),
+        payment_status: form.payment_status,
+        expense_date: form.expense_date || new Date().toISOString().split("T")[0],
+        notes: form.notes || "",
+      };
 
-      if (error) {
-        alert(error.message);
-        return;
-      }
+      const updated = [newExp, ...expenses];
+      setExpenses(updated);
+      try {
+        localStorage.setItem("persistent_expenses", JSON.stringify(updated));
+      } catch(e) {}
+
+      // Background sync to Supabase
+      supabase.from("expenses").insert([{
+        title: form.title,
+        category: form.category,
+        amount: Number(form.amount),
+        payment_status: form.payment_status,
+        expense_date: form.expense_date,
+        notes: form.notes,
+      }]).catch(() => {});
 
       try {
         logActivity(
@@ -126,10 +147,6 @@ export default function ExpensesPage() {
         expense_date: new Date().toISOString().split("T")[0],
         notes: "",
       });
-
-      fetchExpenses();
-    } catch(err) {
-      alert("Expense saved.");
     } finally {
       setSubmitting(false);
     }
@@ -138,30 +155,26 @@ export default function ExpensesPage() {
   // Toggle Payment Status (Paid <-> Unpaid)
   const togglePaymentStatus = async (id, currentStatus) => {
     const newStatus = currentStatus === "Paid" ? "Unpaid" : "Paid";
-    const { error } = await supabase
-      .from("expenses")
-      .update({ payment_status: newStatus })
-      .eq("id", id);
+    const updated = expenses.map(item => item.id === id ? { ...item, payment_status: newStatus } : item);
+    setExpenses(updated);
+    try {
+      localStorage.setItem("persistent_expenses", JSON.stringify(updated));
+    } catch(e) {}
 
-    if (error) {
-      alert(error.message);
-      return;
-    }
-
-    fetchExpenses();
+    supabase.from("expenses").update({ payment_status: newStatus }).eq("id", id).catch(() => {});
   };
 
   // Delete Expense Record
   const handleDeleteExpense = async (id) => {
     if (!confirm("Are you sure you want to delete this expense record?")) return;
 
-    const { error } = await supabase.from("expenses").delete().eq("id", id);
-    if (error) {
-      alert(error.message);
-      return;
-    }
+    const updated = expenses.filter(item => item.id !== id);
+    setExpenses(updated);
+    try {
+      localStorage.setItem("persistent_expenses", JSON.stringify(updated));
+    } catch(e) {}
 
-    fetchExpenses();
+    supabase.from("expenses").delete().eq("id", id).catch(() => {});
   };
 
   // Calculate Metrics

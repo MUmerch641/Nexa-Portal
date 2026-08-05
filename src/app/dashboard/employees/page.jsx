@@ -143,13 +143,13 @@ export default function EmployeesPage() {
     } catch(e) {}
 
     const empMap = new Map();
-    dbEmps.forEach(e => {
+    localEmps.forEach(e => {
       const key = (e.email || e.id || "").toLowerCase();
       if (key) empMap.set(key, e);
     });
-    localEmps.forEach(e => {
+    dbEmps.forEach(e => {
       const key = (e.email || e.id || "").toLowerCase();
-      if (key && !empMap.has(key)) empMap.set(key, e);
+      if (key) empMap.set(key, { ...empMap.get(key), ...e });
     });
 
     const finalEmps = Array.from(empMap.values());
