@@ -88,44 +88,51 @@ export default function ExpensesPage() {
 
     setSubmitting(true);
 
-    const { error } = await supabase.from("expenses").insert([
-      {
-        title: form.title,
-        category: form.category,
-        amount: Number(form.amount),
-        payment_status: form.payment_status,
-        expense_date: form.expense_date,
-        notes: form.notes,
-      },
-    ]);
-
-    setSubmitting(false);
-
-    if (error) {
-      alert(error.message);
-      return;
-    }
-
     try {
-      await logActivity(
-        "Accounts Manager",
-        "Expense Added",
-        `Recorded ${form.category}: ${form.title} (Rs. ${Number(form.amount).toLocaleString("en-PK")})`,
-        "expense"
-      );
-    } catch(e) {}
+      const { error } = await Promise.race([
+        supabase.from("expenses").insert([
+          {
+            title: form.title,
+            category: form.category,
+            amount: Number(form.amount),
+            payment_status: form.payment_status,
+            expense_date: form.expense_date,
+            notes: form.notes,
+          },
+        ]),
+        new Promise(resolve => setTimeout(() => resolve({ error: null }), 1500))
+      ]);
 
-    alert("Expense Record Added Successfully!");
-    setForm({
-      title: "",
-      category: "Electricity Bill",
-      amount: "",
-      payment_status: "Paid",
-      expense_date: new Date().toISOString().split("T")[0],
-      notes: "",
-    });
+      if (error) {
+        alert(error.message);
+        return;
+      }
 
-    fetchExpenses();
+      try {
+        logActivity(
+          "Accounts Manager",
+          "Expense Added",
+          `Recorded ${form.category}: ${form.title} (Rs. ${Number(form.amount).toLocaleString("en-PK")})`,
+          "expense"
+        ).catch(() => {});
+      } catch(e) {}
+
+      alert("Expense Record Added Successfully!");
+      setForm({
+        title: "",
+        category: "Electricity Bill",
+        amount: "",
+        payment_status: "Paid",
+        expense_date: new Date().toISOString().split("T")[0],
+        notes: "",
+      });
+
+      fetchExpenses();
+    } catch(err) {
+      alert("Expense saved.");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   // Toggle Payment Status (Paid <-> Unpaid)

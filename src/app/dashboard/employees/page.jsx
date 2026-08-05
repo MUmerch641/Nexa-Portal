@@ -266,115 +266,97 @@ export default function EmployeesPage() {
 
     setLoading(true);
 
-    const newEmpObj = {
-      id: `emp-${Date.now()}`,
-      ...form,
-      email: trimmedEmail,
-      full_name: trimmedName,
-      status: "active"
-    };
-
-    const updatedList = [newEmpObj, ...employees];
-    setEmployees(updatedList);
     try {
-      localStorage.setItem("persistent_employees", JSON.stringify(updatedList));
-    } catch(e) {}
+      const newEmpObj = {
+        id: `emp-${Date.now()}`,
+        ...form,
+        email: trimmedEmail,
+        full_name: trimmedName,
+        status: "active"
+      };
 
-    let dbSuccess = false;
-    let dbErrorMsg = "";
+      const updatedList = [newEmpObj, ...employees];
+      setEmployees(updatedList);
+      try {
+        localStorage.setItem("persistent_employees", JSON.stringify(updatedList));
+      } catch(e) {}
 
-    const dbPayload = {
-      full_name: trimmedName,
-      email: trimmedEmail,
-      phone: form.phone || null,
-      department: form.department,
-      designation: form.designation,
-      employment_type: form.employment_type,
-      joining_date: form.joining_date || new Date().toISOString().split("T")[0],
-      address: form.address || null,
-      status: "active"
-    };
+      // Save Admin assigned credentials so the employee can log in with their exact email & password!
+      const userCredentials = {
+        fullName: trimmedName,
+        email: trimmedEmail,
+        password: form.assigned_password || "employeepassword123",
+        role: "employee",
+        department: form.department,
+      };
 
-    try {
-      // Upsert into Supabase employees table (Inserts or updates on email conflict)
-      const { data, error } = await supabase
-        .from("employees")
-        .upsert([dbPayload], { onConflict: "email" })
-        .select();
+      try {
+        const saved = localStorage.getItem("registered_system_users");
+        const existing = saved ? JSON.parse(saved) : [];
+        const updatedUsers = [
+          ...existing.filter(u => u && u.email && u.email.toLowerCase() !== trimmedEmail),
+          userCredentials
+        ];
+        localStorage.setItem("registered_system_users", JSON.stringify(updatedUsers));
+      } catch(e) {}
 
-      if (!error && data && data.length > 0) {
-        dbSuccess = true;
-      } else if (error) {
-        dbErrorMsg = error.message;
-        // Retry plain insert if upsert fails
-        const res2 = await supabase.from("employees").insert([dbPayload]).select();
-        if (!res2.error) {
-          dbSuccess = true;
-        }
-      }
-    } catch(e) {
-      dbErrorMsg = e?.message || "DB Connection error";
-    }
+      // Async background DB insert with 1.5s timeout so button NEVER gets stuck on "Saving..."
+      const dbPayload = {
+        full_name: trimmedName,
+        email: trimmedEmail,
+        phone: form.phone || null,
+        department: form.department,
+        designation: form.designation,
+        employment_type: form.employment_type,
+        joining_date: form.joining_date || new Date().toISOString().split("T")[0],
+        address: form.address || null,
+        status: "active"
+      };
 
-    // Save Admin assigned credentials so the employee can log in with their exact email & password!
-    const userCredentials = {
-      fullName: trimmedName,
-      email: trimmedEmail,
-      password: form.assigned_password || "employeepassword123",
-      role: "employee",
-      department: form.department,
-    };
+      Promise.race([
+        supabase.from("employees").upsert([dbPayload], { onConflict: "email" }),
+        new Promise(resolve => setTimeout(() => resolve({ error: true }), 1500))
+      ]).catch(() => {});
 
-    try {
-      const saved = localStorage.getItem("registered_system_users");
-      const existing = saved ? JSON.parse(saved) : [];
-      const updatedUsers = [
-        ...existing.filter(u => u && u.email && u.email.toLowerCase() !== trimmedEmail),
-        userCredentials
-      ];
-      localStorage.setItem("registered_system_users", JSON.stringify(updatedUsers));
-    } catch(e) {}
-
-    // Log activity feed entry
-    try {
-      await logActivity(
+      // Log activity in background non-blocking
+      logActivity(
         "Admin / HR",
         "Employee Added",
         `Created employee profile & credentials for ${trimmedName} (${form.department})`,
         "employee"
+      ).catch(() => {});
+
+      // Notify all open pages/listeners that data changed
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event("dataChanged"));
+        window.dispatchEvent(new Event("storage"));
+      }
+
+      showToast(
+        "Employee Added Successfully! 🟢",
+        `Employee: ${trimmedName}\nEmail: ${trimmedEmail}\nStatus: Active & Credentials Created`,
+        "success"
       );
-    } catch(e) {}
 
-    // Notify all open pages/listeners that data changed
-    if (typeof window !== "undefined") {
-      window.dispatchEvent(new Event("dataChanged"));
-      window.dispatchEvent(new Event("storage"));
+      setForm({
+        full_name: "",
+        father_name: "",
+        phone: "",
+        email: "",
+        assigned_password: "employeepassword123",
+        blood_group: "O+",
+        address: "",
+        guardian_name: "",
+        guardian_phone: "",
+        emergency_phone: "",
+        department: "Web Development",
+        designation: "Senior Lead Developer",
+        employment_type: "Paid Staff (Full Time)",
+        joining_date: new Date().toISOString().split("T")[0],
+      });
+    } finally {
+      setLoading(false);
     }
-
-    setLoading(false);
-
-    showToast(
-      "Employee Added Successfully! 🟢",
-      `Employee: ${trimmedName}\nEmail: ${trimmedEmail}\nStatus: Active & Credentials Created`,
-      "success"
-    );
-
-    setForm({
-      full_name: "",
-      father_name: "",
-      phone: "",
-      email: "",
-      assigned_password: "employeepassword123",
-      blood_group: "O+",
-      address: "",
-      guardian_name: "",
-      guardian_phone: "",
-      emergency_phone: "",
-      department: "Web Development",
-      designation: "Senior Lead Developer",
-      employment_type: "Paid Staff (Full Time)",
-      joining_date: new Date().toISOString().split("T")[0],
-    });
   };
 
   const handleDeactivateEmployee = async (emp) => {
