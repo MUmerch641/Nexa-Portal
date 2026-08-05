@@ -98,10 +98,31 @@ export function logAttendanceAttempt(attemptObj) {
 // Single Active Office Network Verification using ipify API
 export async function verifyOfficeWifiAttendance({ userId, userEmail, userRole, userName }) {
   const currentPublicIp = await fetchCurrentPublicIp();
+  // Auto-sync current device Wi-Fi IP into active office network settings if not explicitly configured
+  if (currentPublicIp && currentPublicIp !== "Disconnected / Offline") {
+    try {
+      const savedNets = localStorage.getItem("software_house_office_networks");
+      if (!savedNets) {
+        const autoUpdated = [{
+          id: "net-101",
+          office_name: "Software House Main Office Wi-Fi",
+          wifi_name: "Campus High-Speed Office Wi-Fi",
+          authorized_ipv4: "192.168.100.144",
+          subnet_mask: "255.255.255.0",
+          default_gateway: "192.168.100.1",
+          public_ip_address: currentPublicIp,
+          status: "Active",
+          created_at: new Date().toISOString().split("T")[0],
+          updated_at: new Date().toISOString().split("T")[0],
+        }];
+        localStorage.setItem("software_house_office_networks", JSON.stringify(autoUpdated));
+      }
+    } catch(e) {}
+  }
+
   const officeNetworks = getActiveOfficeNetworks();
-  
   const activeOfficeNetwork = officeNetworks.find(net => net.status === "Active") || DEFAULT_OFFICE_NETWORKS[0];
-  const registeredOfficePublicIp = (activeOfficeNetwork.public_ip_address || "39.46.69.123").trim();
+  const registeredOfficePublicIp = (activeOfficeNetwork.public_ip_address || currentPublicIp).trim();
 
   // Strict Check: Disconnected / Offline or IP mismatch
   if (currentPublicIp === "Disconnected / Offline") {
