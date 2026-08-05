@@ -219,30 +219,14 @@ export default function LoginPage() {
     );
 
     let supabaseAuthSuccess = false;
-    let isNetworkError = false;
     try {
       const { error } = await login(email, password);
       if (!error) {
         supabaseAuthSuccess = true;
-      } else if (error.status === 500 || error.message?.includes("fetch") || error.message?.includes("NetworkError")) {
-        isNetworkError = true;
       }
-    } catch(e) {
-      isNetworkError = true;
-    }
+    } catch(e) {}
 
-    if (isNetworkError && !matchedUser) {
-      setLoading(false);
-      showToast("Connection Issue ⚠️", "Unable to reach auth server. Please check your network connection.", "warning");
-      showAlert(
-        "Network Connection Warning ⚠️",
-        "Unable to reach the authentication server. Please check your internet connection and try again.",
-        "warning"
-      );
-      return;
-    }
-
-    // Strict Credentials Check: Must match exact email and password
+    // Allow instant seamless login if credentials match local/seed records or Supabase Auth
     if (matchedUser || supabaseAuthSuccess) {
       // Determine exact role assigned by Admin (employee gets employee features, student gets student features)
       const activeRole = matchedUser ? (matchedUser.role || selectedRole) : selectedRole;
