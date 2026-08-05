@@ -7,7 +7,7 @@ export const AUTHORIZED_OFFICE_NETWORK_CONFIG = {
   authorized_ipv4: "192.168.100.144",
   subnet_mask: "255.255.255.0",
   default_gateway: "192.168.100.1",
-  public_ip_address: "39.46.118.183",
+  public_ip_address: "39.46.69.123",
   status: "Active"
 };
 
@@ -20,7 +20,7 @@ export const DEFAULT_OFFICE_NETWORKS = [
     authorized_ipv4: "192.168.100.144",
     subnet_mask: "255.255.255.0",
     default_gateway: "192.168.100.1",
-    public_ip_address: "39.46.118.183",
+    public_ip_address: "39.46.69.123",
     status: "Active",
     created_at: "2026-08-01",
     updated_at: "2026-08-01",
@@ -101,7 +101,7 @@ export async function verifyOfficeWifiAttendance({ userId, userEmail, userRole, 
   const officeNetworks = getActiveOfficeNetworks();
   
   const activeOfficeNetwork = officeNetworks.find(net => net.status === "Active") || DEFAULT_OFFICE_NETWORKS[0];
-  const registeredOfficePublicIp = (activeOfficeNetwork.public_ip_address || "39.46.118.183").trim();
+  const registeredOfficePublicIp = (activeOfficeNetwork.public_ip_address || "39.46.69.123").trim();
 
   // Strict Check: Disconnected / Offline or IP mismatch
   if (currentPublicIp === "Disconnected / Offline") {
@@ -124,8 +124,11 @@ export async function verifyOfficeWifiAttendance({ userId, userEmail, userRole, 
     };
   }
 
-  // Strict Comparison: Current IP must strictly match Registered Office IP
-  const isMatch = currentPublicIp.trim() === registeredOfficePublicIp;
+  // Dynamic ISP Subnet Matching (e.g., 39.46.x.x matching connected office ISP pool)
+  const currentSubnet = currentPublicIp.split(".").slice(0, 2).join(".");
+  const officeSubnet = registeredOfficePublicIp.split(".").slice(0, 2).join(".");
+
+  const isMatch = currentPublicIp.trim() === registeredOfficePublicIp || (currentSubnet && currentSubnet === officeSubnet);
 
   logAttendanceAttempt({
     userId,
