@@ -108,13 +108,13 @@ export default function DashboardPage() {
         }
 
         const empMap = new Map();
-        dbEmps.forEach(e => {
+        localEmps.forEach(e => {
           const key = (e.email || e.id || "").toLowerCase();
           if (key) empMap.set(key, e);
         });
-        localEmps.forEach(e => {
+        dbEmps.forEach(e => {
           const key = (e.email || e.id || "").toLowerCase();
-          if (key && !empMap.has(key)) empMap.set(key, e);
+          if (key) empMap.set(key, { ...empMap.get(key), ...e });
         });
 
         const allEmps = Array.from(empMap.values());
@@ -141,48 +141,47 @@ export default function DashboardPage() {
       // 3. Monthly Revenue (Sum of current month paid incomes)
       try {
         const currentYearMonth = new Date().toISOString().slice(0, 7);
+        let incList = [];
         const { data, error } = await supabase.from("incomes").select("amount, date, status");
         if (!error && data && data.length > 0) {
-          monthlyRevenue = data
-            .filter(item => {
-              const isCurrentMonth = item.date && item.date.startsWith(currentYearMonth);
-              const isPaid = !item.status || item.status.toLowerCase() === "paid";
-              return isCurrentMonth && isPaid;
-            })
-            .reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+          incList = data;
         } else {
-          const saved = localStorage.getItem("persistent_incomes");
+          const saved = localStorage.getItem("persistent_incomes") || localStorage.getItem("software_house_finance_incomes");
           if (saved) {
-            const parsed = JSON.parse(saved);
-            if (Array.isArray(parsed)) {
-              monthlyRevenue = parsed
-                .filter(item => {
-                  const isCurrentMonth = item.date && item.date.startsWith(currentYearMonth);
-                  const isPaid = !item.status || item.status.toLowerCase() === "paid";
-                  return isCurrentMonth && isPaid;
-                })
-                .reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
-            }
+            try {
+              const parsed = JSON.parse(saved);
+              if (Array.isArray(parsed)) incList = parsed;
+            } catch(e) {}
           }
         }
+
+        monthlyRevenue = incList
+          .filter(item => {
+            const isCurrentMonth = item.date && item.date.startsWith(currentYearMonth);
+            const isPaid = !item.status || item.status.toLowerCase() === "paid";
+            return isCurrentMonth && isPaid;
+          })
+          .reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
       } catch(e) {
         monthlyRevenue = 0;
       }
 
       // 4. Pending Leaves (Count status = "pending")
       try {
+        let leaveList = [];
         const { data, error } = await supabase.from("leaves").select("*");
-        if (!error && data) {
-          pendingLeavesCount = data.filter(l => (l.status || "").toLowerCase() === "pending").length;
+        if (!error && data && data.length > 0) {
+          leaveList = data;
         } else {
-          const saved = localStorage.getItem("persistent_leaves");
+          const saved = localStorage.getItem("software_house_leaves") || localStorage.getItem("persistent_leaves");
           if (saved) {
-            const parsed = JSON.parse(saved);
-            if (Array.isArray(parsed)) {
-              pendingLeavesCount = parsed.filter(l => (l.status || "").toLowerCase() === "pending").length;
-            }
+            try {
+              const parsed = JSON.parse(saved);
+              if (Array.isArray(parsed)) leaveList = parsed;
+            } catch(e) {}
           }
         }
+        pendingLeavesCount = leaveList.filter(l => (l.status || "").toLowerCase() === "pending").length;
       } catch(e) {
         pendingLeavesCount = 0;
       }
@@ -191,12 +190,12 @@ export default function DashboardPage() {
       let totalExpensesAmount = 0;
       let categoryBreakdown = [];
       try {
-        const { data, error } = await supabase.from("expenses").select("amount, category");
         let expList = [];
-        if (!error && data) {
+        const { data, error } = await supabase.from("expenses").select("amount, category");
+        if (!error && data && data.length > 0) {
           expList = data;
         } else {
-          const saved = localStorage.getItem("persistent_expenses");
+          const saved = localStorage.getItem("persistent_expenses") || localStorage.getItem("software_house_finance_expenses");
           if (saved) {
             try { expList = JSON.parse(saved); } catch(e) {}
           }
