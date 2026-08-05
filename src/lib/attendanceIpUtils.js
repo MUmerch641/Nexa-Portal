@@ -99,8 +99,20 @@ export function logAttendanceAttempt(attemptObj) {
 export async function verifyOfficeWifiAttendance({ userId, userEmail, userRole, userName }) {
   const currentPublicIp = await fetchCurrentPublicIp();
   const officeNetworks = getActiveOfficeNetworks();
-  const activeOfficeNetwork = officeNetworks.find(net => net.status === "Active") || DEFAULT_OFFICE_NETWORKS[0];
-  const registeredOfficePublicIp = (activeOfficeNetwork.public_ip_address || "39.46.69.123").trim();
+  let activeOfficeNetwork = officeNetworks.find(net => net.status === "Active") || DEFAULT_OFFICE_NETWORKS[0];
+
+  // Auto-sync connected modem IP to database / storage on active setup if not saved
+  if (currentPublicIp && currentPublicIp !== "Disconnected / Offline") {
+    try {
+      const savedNets = localStorage.getItem("software_house_office_networks");
+      if (!savedNets) {
+        activeOfficeNetwork.public_ip_address = currentPublicIp;
+        localStorage.setItem("software_house_office_networks", JSON.stringify([activeOfficeNetwork]));
+      }
+    } catch(e) {}
+  }
+
+  const registeredOfficePublicIp = (activeOfficeNetwork.public_ip_address || currentPublicIp).trim();
 
   // Strict Check 1: Disconnected / Offline
   if (currentPublicIp === "Disconnected / Offline") {
@@ -123,7 +135,7 @@ export async function verifyOfficeWifiAttendance({ userId, userEmail, userRole, 
     };
   }
 
-  // Strict 100% Exact Character-for-Character IP Comparison
+  // Strict 100% Exact Character-for-Character Modem IP Comparison
   const isMatch = currentPublicIp.trim() === registeredOfficePublicIp;
 
   logAttendanceAttempt({
