@@ -122,6 +122,12 @@ export default function EmployeesPage() {
     printWindow.document.close();
   };
 
+  const INITIAL_DEMO_EMPLOYEES = [
+    { id: "emp-101", full_name: "Muhammad Ali", email: "ali.staff@gmail.com", department: "Web Development", designation: "Senior Lead Developer", employment_type: "Paid Staff (Full Time)", joining_date: "2025-01-15", status: "active" },
+    { id: "emp-102", full_name: "Sara Khan", email: "sara.design@gmail.com", department: "UI/UX Design", designation: "Lead Designer", employment_type: "Paid Staff (Full Time)", joining_date: "2025-02-01", status: "active" },
+    { id: "emp-103", full_name: "Muhammad Rahim Bugti", email: "rahim.staff@gmail.com", department: "Engineering", designation: "Senior Full-Stack Developer", employment_type: "Paid Staff (Full Time)", joining_date: "2025-01-01", status: "active" }
+  ];
+
   // Fetch Employees with Live Supabase Sync & LocalStorage Fallback
   const fetchEmployees = async () => {
     setFetching(true);
@@ -131,7 +137,7 @@ export default function EmployeesPage() {
         .from("employees")
         .select("*");
 
-      if (!error && data) {
+      if (!error && data && data.length > 0) {
         dbEmps = data;
       }
     } catch (err) {}
@@ -143,13 +149,18 @@ export default function EmployeesPage() {
     } catch(e) {}
 
     const empMap = new Map();
-    localEmps.forEach(e => {
+    const baseEmps = localEmps.length > 0 ? localEmps : INITIAL_DEMO_EMPLOYEES;
+    baseEmps.forEach(e => {
       const key = (e.email || e.id || "").toLowerCase();
-      if (key) empMap.set(key, e);
+      if (key) empMap.set(key, { status: "active", ...e });
     });
+
     dbEmps.forEach(e => {
       const key = (e.email || e.id || "").toLowerCase();
-      if (key) empMap.set(key, { ...empMap.get(key), ...e });
+      if (key) {
+        const existing = empMap.get(key) || {};
+        empMap.set(key, { ...existing, ...e, status: e.status || existing.status || "active" });
+      }
     });
 
     const finalEmps = Array.from(empMap.values());

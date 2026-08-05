@@ -180,9 +180,10 @@ export default function CoursesPage() {
     }
   };
 
-  // Fetch Paid Course Students directly from Supabase Database (Single Source of Truth)
+  // Fetch Paid Course Students with Local Storage Fallback & Supabase Sync
   const fetchStudents = async () => {
     setLoading(true);
+    let dbStudents = [];
     try {
       const { data, error } = await supabase
         .from("students")
@@ -190,18 +191,33 @@ export default function CoursesPage() {
         .order("created_at", { ascending: false });
 
       if (!error && data) {
-        setStudents(data);
-        autoDispatchFeeReminders(data);
-      } else {
-        const saved = localStorage.getItem("persistent_courses");
-        setStudents(saved ? JSON.parse(saved) : []);
+        dbStudents = data;
       }
-    } catch (err) {
+    } catch (err) {}
+
+    let localStudents = [];
+    try {
       const saved = localStorage.getItem("persistent_courses");
-      setStudents(saved ? JSON.parse(saved) : []);
-    } finally {
-      setLoading(false);
-    }
+      if (saved) localStudents = JSON.parse(saved);
+    } catch(e) {}
+
+    const studentMap = new Map();
+    localStudents.forEach(s => {
+      const key = (s.id || s.email || "").toLowerCase();
+      if (key) studentMap.set(key, s);
+    });
+    dbStudents.forEach(s => {
+      const key = (s.id || s.email || "").toLowerCase();
+      if (key) studentMap.set(key, { ...studentMap.get(key), ...s });
+    });
+
+    const finalStudents = Array.from(studentMap.values());
+    setStudents(finalStudents);
+    autoDispatchFeeReminders(finalStudents);
+    try {
+      localStorage.setItem("persistent_courses", JSON.stringify(finalStudents));
+    } catch(e) {}
+    setLoading(false);
   };
 
   const handleClearAllLocalData = () => {
