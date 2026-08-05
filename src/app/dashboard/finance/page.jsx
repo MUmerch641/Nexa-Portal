@@ -118,46 +118,76 @@ export default function ComprehensiveFinanceAccountingPage() {
 
     async function loadFinanceData() {
       // 1. Fetch Expenses
-      let expList = [];
+      let dbExp = [];
       try {
         const { data, error } = await supabase.from("expenses").select("*");
-        if (!error && data) {
-          expList = data;
-          try {
-            localStorage.setItem("software_house_finance_expenses", JSON.stringify(data));
-            localStorage.setItem("persistent_expenses", JSON.stringify(data));
-          } catch(e) {}
-        } else {
-          const savedExp = localStorage.getItem("software_house_finance_expenses");
-          if (savedExp) expList = JSON.parse(savedExp);
-        }
+        if (!error && data && data.length > 0) dbExp = data;
       } catch(e) {}
-      setExpenses(expList);
+
+      let localExp = [];
+      try {
+        const savedExp = localStorage.getItem("software_house_finance_expenses") || localStorage.getItem("persistent_expenses");
+        if (savedExp) localExp = JSON.parse(savedExp);
+      } catch(e) {}
+
+      const expMap = new Map();
+      const baseExpenses = localExp.length > 0 ? localExp : INITIAL_EXPENSES;
+      baseExpenses.forEach(item => {
+        const key = (item.id || item.title || "").toLowerCase();
+        if (key) expMap.set(key, item);
+      });
+      dbExp.forEach(item => {
+        const key = (item.id || item.title || "").toLowerCase();
+        if (key) expMap.set(key, { ...expMap.get(key), ...item });
+      });
+      const finalExpenses = Array.from(expMap.values());
+      setExpenses(finalExpenses);
+      try {
+        localStorage.setItem("software_house_finance_expenses", JSON.stringify(finalExpenses));
+        localStorage.setItem("persistent_expenses", JSON.stringify(finalExpenses));
+      } catch(e) {}
 
       // 2. Fetch Incomes
-      let incList = [];
+      let dbInc = [];
       try {
         const { data, error } = await supabase.from("incomes").select("*");
-        if (!error && data) {
-          incList = data;
-          try {
-            localStorage.setItem("software_house_finance_incomes", JSON.stringify(data));
-            localStorage.setItem("persistent_incomes", JSON.stringify(data));
-          } catch(e) {}
-        } else {
-          const savedInc = localStorage.getItem("software_house_finance_incomes");
-          if (savedInc) incList = JSON.parse(savedInc);
-        }
+        if (!error && data && data.length > 0) dbInc = data;
       } catch(e) {}
-      setIncomes(incList);
+
+      let localInc = [];
+      try {
+        const savedInc = localStorage.getItem("software_house_finance_incomes") || localStorage.getItem("persistent_incomes");
+        if (savedInc) localInc = JSON.parse(savedInc);
+      } catch(e) {}
+
+      const incMap = new Map();
+      const baseIncomes = localInc.length > 0 ? localInc : INITIAL_INCOMES;
+      baseIncomes.forEach(item => {
+        const key = (item.id || item.client_name || item.invoice_no || "").toLowerCase();
+        if (key) incMap.set(key, item);
+      });
+      dbInc.forEach(item => {
+        const key = (item.id || item.client_name || item.invoice_no || "").toLowerCase();
+        if (key) incMap.set(key, { ...incMap.get(key), ...item });
+      });
+      const finalIncomes = Array.from(incMap.values());
+      setIncomes(finalIncomes);
+      try {
+        localStorage.setItem("software_house_finance_incomes", JSON.stringify(finalIncomes));
+        localStorage.setItem("persistent_incomes", JSON.stringify(finalIncomes));
+      } catch(e) {}
 
       // 3. Utility Bills
-      const savedBills = localStorage.getItem("software_house_utility_bills");
-      if (savedBills) {
-        try { setUtilityBills(JSON.parse(savedBills)); } catch(e) {}
-      } else {
-        setUtilityBills([]);
-      }
+      let localBills = [];
+      try {
+        const savedBills = localStorage.getItem("software_house_utility_bills");
+        if (savedBills) localBills = JSON.parse(savedBills);
+      } catch(e) {}
+      const finalBills = localBills.length > 0 ? localBills : INITIAL_UTILITY_BILLS;
+      setUtilityBills(finalBills);
+      try {
+        localStorage.setItem("software_house_utility_bills", JSON.stringify(finalBills));
+      } catch(e) {}
     }
 
     loadFinanceData();

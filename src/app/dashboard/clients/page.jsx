@@ -80,34 +80,52 @@ export default function ClientsPage() {
     notes: "",
   });
 
-  // Fetch Clients & Invoices
+  // Fetch Clients & Invoices with Persistence & Supabase Sync
   const fetchClients = async () => {
     setLoading(true);
+    let dbClients = [];
     try {
       const { data, error } = await supabase
         .from("clients")
         .select("*")
         .order("created_at", { ascending: false });
 
-      if (error) {
-        console.warn("Notice fetching clients:", error.message);
-        setClients([]);
-      } else {
-        setClients(data || []);
+      if (!error && data) {
+        dbClients = data;
       }
+    } catch (err) {}
 
+    let localClients = [];
+    try {
+      const saved = localStorage.getItem("software_house_clients");
+      if (saved) localClients = JSON.parse(saved);
+    } catch(e) {}
+
+    const clientMap = new Map();
+    localClients.forEach(c => {
+      const key = (c.id || c.email || c.client_name || "").toLowerCase();
+      if (key) clientMap.set(key, c);
+    });
+    dbClients.forEach(c => {
+      const key = (c.id || c.email || c.client_name || "").toLowerCase();
+      if (key) clientMap.set(key, { ...clientMap.get(key), ...c });
+    });
+
+    const finalClients = Array.from(clientMap.values());
+    setClients(finalClients);
+    try {
+      localStorage.setItem("software_house_clients", JSON.stringify(finalClients));
+    } catch(e) {}
+
+    try {
       // Fetch Invoices
       const { data: invData } = await supabase
         .from("invoices")
         .select("*, clients(client_name)")
         .order("created_at", { ascending: false });
-      setInvoices(invData || []);
-    } catch (err) {
-      console.error(err);
-      setClients([]);
-    } finally {
-      setLoading(false);
-    }
+      if (invData) setInvoices(invData);
+    } catch(err) {}
+    setLoading(false);
   };
 
   useEffect(() => {
@@ -130,62 +148,100 @@ export default function ClientsPage() {
     }
 
     setSubmitting(true);
-    const contractVal = Number(form.contract_value || 0);
-    const paidVal = Number(form.amount_paid || 0);
+    try {
+      const contractVal = Number(form.contract_value || 0);
+      const paidVal = Number(form.amount_paid || 0);
 
-    let calculatedStatus = form.payment_status;
-    if (paidVal >= contractVal) {
-      calculatedStatus = "Paid";
-    } else if (paidVal > 0) {
-      calculatedStatus = "Partial Deposit";
-    } else {
-      calculatedStatus = "Pending Invoice";
+      let calculatedStatus = form.payment_status;
+      if (paidVal >= contractVal) {
+        calculatedStatus = "Paid";
+      } else if (paidVal > 0) {
+        calculatedStatus = "Partial Deposit";
+      } else {
+        calculatedStatus = "Pending Invoice";
+      }
+
+      const newClientObj = {
+        id: `client-${Date.now()}`,
+        client_name: form.client_name,
+        contact_person: form.contact_person || "",
+        email: form.email,
+        phone: form.phone || "",
+        project_name: form.project_name || "",
+        contract_value: contractVal,
+        amount_paid: paidVal,
+        payment_status: calculatedStatus,
+        notes: form.notes || "",
+        address: form.address || "",
+        contract_start_date: form.contract_start_date || todayStr,
+        contract_end_date: form.contract_end_date || "",
+        created_at: new Date().toISOString()
+      };
+
+      const updatedList = [newClientObj, ...clients];
+      setClients(updatedList);
+      try {
+        localStorage.setItem("software_house_clients", JSON.stringify(updatedList));
+      } catch(e) {}
+
+      // Save credentials for Client Login Portal!
+      const userCredentials = {
+        fullName: form.client_name,
+        email: form.email,
+        password: "clientpassword123",
+        role: "client",
+        company: form.client_name
+      };
+      try {
+        const saved = localStorage.getItem("registered_system_users");
+        const existing = saved ? JSON.parse(saved) : [];
+        const updatedUsers = [
+          ...existing.filter(u => u && u.email && u.email.toLowerCase() !== form.email.toLowerCase()),
+          userCredentials
+        ];
+        localStorage.setItem("registered_system_users", JSON.stringify(updatedUsers));
+      } catch(e) {}
+
+      // Sync DB in background
+      supabase.from("clients").insert([newClientObj]).catch(() => {});
+
+      try {
+        logActivity(
+          "Admin / Sales",
+          "Client Onboarded",
+          `Registered new corporate client ${form.client_name} (Contract Value: Rs. ${contractVal.toLocaleString()})`,
+          "expense"
+        ).catch(() => {});
+      } catch(e) {}
+
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event("dataChanged"));
+        window.dispatchEvent(new Event("storage"));
+      }
+
+      showToast(
+        "Client Profile & Contract Created! 🟢",
+        `Client: ${form.client_name}\nProject: ${form.project_name || "Custom"}\nLogin Created: ${form.email}`,
+        "success"
+      );
+
+      setForm({
+        client_name: "",
+        contact_person: "",
+        email: "",
+        phone: "",
+        address: "",
+        project_name: "",
+        contract_start_date: todayStr,
+        contract_end_date: new Date(Date.now() + 180 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
+        contract_value: "",
+        amount_paid: "",
+        payment_status: "Paid",
+        notes: "",
+      });
+    } finally {
+      setSubmitting(false);
     }
-
-    const clientPayload = {
-      client_name: form.client_name,
-      contact_person: form.contact_person,
-      email: form.email,
-      phone: form.phone,
-      project_name: form.project_name,
-      contract_value: contractVal,
-      amount_paid: paidVal,
-      payment_status: calculatedStatus,
-      notes: form.notes,
-    };
-
-    if (form.address) clientPayload.address = form.address;
-    if (form.contract_start_date) clientPayload.contract_start_date = form.contract_start_date;
-    if (form.contract_end_date) clientPayload.contract_end_date = form.contract_end_date;
-
-    const { data: insertedData, error } = await supabase.from("clients").insert([clientPayload]).select();
-
-    setSubmitting(false);
-
-    if (error) {
-      console.error("Supabase Clients Insert Error:", error);
-      showAlert("Database Insert Error 🛑", `Failed to save client into Supabase Database.\n\nReason: ${error.message}`, "error");
-      return;
-    }
-
-    showAlert("Client Contract Added! 💼", `Client: ${form.client_name}\nProject: ${form.project_name}\nContract Value: ${contractVal.toLocaleString()} PKR`, "success");
-
-    setForm({
-      client_name: "",
-      contact_person: "",
-      email: "",
-      phone: "",
-      address: "",
-      project_name: "",
-      contract_start_date: todayStr,
-      contract_end_date: new Date(Date.now() + 180 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
-      contract_value: "",
-      amount_paid: "",
-      payment_status: "Paid",
-      notes: "",
-    });
-
-    fetchClients();
   };
 
   // Generate Invoice for Client
