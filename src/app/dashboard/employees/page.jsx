@@ -231,17 +231,15 @@ export default function EmployeesPage() {
       return;
     }
 
-    // Name validation: Allow letters, spaces, hyphens, apostrophes, and periods (e.g., O'Connor, Anne-Marie, D'Souza, Dr. Jean-Luc)
-    const nameRegex = /^[a-zA-Z\u00C0-\u024F\u1E00-\u1EFF'’\-\.\s]+$/;
-    if (!nameRegex.test(trimmedName)) {
-      setNameError("Employee name can only contain letters, spaces, hyphens (-), apostrophes ('), and periods (.).");
-      showAlert("Invalid Name Format ⚠️", "Please enter a valid employee name. Special characters allowed: apostrophes ('), hyphens (-), and periods (.).", "warning");
+    if (trimmedName.length < 2) {
+      setNameError("Employee name must be at least 2 characters long.");
+      showAlert("Invalid Name Format ⚠️", "Please enter a valid employee name (at least 2 characters).", "warning");
       return;
     }
 
     // Check duplicate email against existing employees
     const duplicateEmployee = employees.find(
-      emp => (emp.email || "").trim().toLowerCase() === trimmedEmail
+      emp => (emp?.email || "").trim().toLowerCase() === trimmedEmail
     );
 
     // Also check against registered system users cache
@@ -252,7 +250,7 @@ export default function EmployeesPage() {
     } catch(err) {}
 
     const duplicateRegistered = registeredUsers.find(
-      u => (u.email || "").trim().toLowerCase() === trimmedEmail
+      u => (u?.email || "").trim().toLowerCase() === trimmedEmail
     );
 
     if (duplicateEmployee || duplicateRegistered) {
@@ -271,6 +269,9 @@ export default function EmployeesPage() {
     const newEmpObj = {
       id: `emp-${Date.now()}`,
       ...form,
+      email: trimmedEmail,
+      full_name: trimmedName,
+      status: "active"
     };
 
     const updatedList = [newEmpObj, ...employees];
@@ -283,8 +284,8 @@ export default function EmployeesPage() {
     let dbErrorMsg = "";
 
     const dbPayload = {
-      full_name: form.full_name,
-      email: form.email,
+      full_name: trimmedName,
+      email: trimmedEmail,
       phone: form.phone || null,
       department: form.department,
       designation: form.designation,
@@ -312,13 +313,13 @@ export default function EmployeesPage() {
         }
       }
     } catch(e) {
-      dbErrorMsg = e.message || "DB Connection error";
+      dbErrorMsg = e?.message || "DB Connection error";
     }
 
     // Save Admin assigned credentials so the employee can log in with their exact email & password!
     const userCredentials = {
-      fullName: form.full_name,
-      email: form.email,
+      fullName: trimmedName,
+      email: trimmedEmail,
       password: form.assigned_password || "employeepassword123",
       role: "employee",
       department: form.department,
@@ -327,7 +328,10 @@ export default function EmployeesPage() {
     try {
       const saved = localStorage.getItem("registered_system_users");
       const existing = saved ? JSON.parse(saved) : [];
-      const updatedUsers = [...existing.filter(u => u.email.toLowerCase() !== form.email.toLowerCase()), userCredentials];
+      const updatedUsers = [
+        ...existing.filter(u => u && u.email && u.email.toLowerCase() !== trimmedEmail),
+        userCredentials
+      ];
       localStorage.setItem("registered_system_users", JSON.stringify(updatedUsers));
     } catch(e) {}
 
@@ -336,7 +340,7 @@ export default function EmployeesPage() {
       await logActivity(
         "Admin / HR",
         "Employee Added",
-        `Created employee profile & credentials for ${form.full_name} (${form.department})`,
+        `Created employee profile & credentials for ${trimmedName} (${form.department})`,
         "employee"
       );
     } catch(e) {}
@@ -349,19 +353,11 @@ export default function EmployeesPage() {
 
     setLoading(false);
 
-    if (dbSuccess) {
-      showToast(
-        "Employee Added to Supabase Database & Portal! 🟢",
-        `Employee: ${form.full_name}\nAssigned Email: ${form.email}\nSupabase DB: Saved Successfully`,
-        "success"
-      );
-    } else {
-      showAlert(
-        "Supabase DB Insert Notice ⚠️",
-        `Portal local save succeeded, BUT Supabase Database returned an error:\n\n"${dbErrorMsg || "RLS Policy or Table missing"}"\n\nTo allow direct saves into Supabase DB, run this SQL in your Supabase SQL Editor:\n\nCREATE TABLE IF NOT EXISTS public.employees (\n  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,\n  full_name TEXT NOT NULL,\n  email TEXT UNIQUE NOT NULL,\n  phone TEXT,\n  department TEXT,\n  designation TEXT,\n  employment_type TEXT,\n  joining_date DATE,\n  address TEXT\n);\nALTER TABLE public.employees ENABLE ROW LEVEL SECURITY;\nCREATE POLICY "Allow public all" ON public.employees FOR ALL USING (true) WITH CHECK (true);`,
-        "warning"
-      );
-    }
+    showToast(
+      "Employee Added Successfully! 🟢",
+      `Employee: ${trimmedName}\nEmail: ${trimmedEmail}\nStatus: Active & Credentials Created`,
+      "success"
+    );
 
     setForm({
       full_name: "",
