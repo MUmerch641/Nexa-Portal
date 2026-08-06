@@ -616,14 +616,28 @@ export default function InternshipsPage() {
       )}
 
       {/* Header */}
-      <div className="border-b border-slate-200 pb-4">
-        <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2.5">
-          <FaLaptopCode className="text-blue-600" />
-          <span>3-Month Free Internships (On-Site & Remote Screen Stream)</span>
-        </h1>
-        <p className="text-sm text-slate-500 mt-1">
-          Support for On-Site (Office IP) vs Remote (Live Screen Access Stream Link) Internships
-        </p>
+      <div className="border-b border-slate-200 pb-4 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2.5">
+            <FaLaptopCode className="text-blue-600" />
+            <span>3-Month Free Internships (On-Site & Remote Screen Stream)</span>
+          </h1>
+          <p className="text-sm text-slate-500 mt-1">
+            Support for On-Site (Office IP) vs Remote (Live Screen Access Stream Link) Internships
+          </p>
+        </div>
+
+        {role === "admin" && (
+          <button
+            type="button"
+            onClick={handleClearAllInterns}
+            className="inline-flex items-center gap-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs px-4 py-2.5 shadow-md transition-all cursor-pointer border border-rose-500 shrink-0"
+            title="Clear all intern records permanently from Database and Local Storage"
+          >
+            <FaTrash className="text-sm" />
+            <span>Clear All Records 🗑️</span>
+          </button>
+        )}
       </div>
 
       {/* Quick Actions Navigation Bar */}
