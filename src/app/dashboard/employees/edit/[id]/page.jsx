@@ -2,18 +2,14 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { dbFetch, dbSaveRecord } from "@/lib/dbPersistence";
 import { useParams, useRouter } from "next/navigation";
 
 
 
 export default function EditEmployee(){
-
-  
-
   const { id } = useParams();
-
   const router = useRouter();
-
 
   const [form,setForm] = useState({
     full_name:"",
@@ -27,80 +23,32 @@ export default function EditEmployee(){
     status:""
   });
 
-
-
   const getEmployee = async()=>{
-
-    const {data,error}=await supabase
-      .from("employees")
-      .select("*")
-      .eq("id",id)
-      .single();
-
-
-
-    if(error){
-
-      console.log(error);
-      return;
-
+    const all = await dbFetch("employees");
+    const found = all.find(e => String(e.id) === String(id) || String(e.email).toLowerCase() === String(id).toLowerCase());
+    if(found){
+      setForm(found);
     }
-
-
-    setForm(data);
-
   };
 
-
-
   useEffect(()=>{
-
     if(id){
       getEmployee();
     }
-
   },[id]);
 
-
-
-
   const handleChange=(e)=>{
-
     setForm({
       ...form,
       [e.target.name]:e.target.value
     });
-
   };
 
-
-
-
   const updateEmployee=async(e)=>{
-
     e.preventDefault();
-
-
-    const {error}=await supabase
-      .from("employees")
-      .update(form)
-      .eq("id",id);
-
-
-
-    if(error){
-
-      alert(error.message);
-      return;
-
-    }
-
-
+    await dbSaveRecord("employees", form);
     alert("Employee Updated");
-
-
-    router.push("/dashboard/employees/list");
-
+    router.push("/dashboard/employees");
   };
 
 

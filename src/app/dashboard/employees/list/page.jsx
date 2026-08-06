@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { dbFetch, dbDeleteRecord } from "@/lib/dbPersistence";
 import Link from "next/link";
 
 
@@ -11,25 +12,8 @@ export default function EmployeeList() {
 
 
   const getEmployees = async () => {
-
-    const { data, error } = await supabase
-      .from("employees")
-      .select("*")
-      .order("created_at", {
-        ascending:false
-      });
-
-
-    if(error){
-
-      console.log(error);
-      return;
-
-    }
-
-
+    const data = await dbFetch("employees");
     setEmployees(data);
-
   };
 
 
@@ -43,38 +27,14 @@ export default function EmployeeList() {
 
 
   const deleteEmployee = async(id)=>{
-
-
     const confirmDelete = confirm(
       "Delete this employee?"
     );
 
-
     if(!confirmDelete) return;
 
-
-
-    const {error} = await supabase
-      .from("employees")
-      .delete()
-      .eq("id",id);
-
-
-
-    if(error){
-
-      alert(error.message);
-      return;
-
-    }
-
-
-    alert("Employee Deleted");
-
-
+    await dbDeleteRecord("employees", id);
     getEmployees();
-
-
   };
 
 
