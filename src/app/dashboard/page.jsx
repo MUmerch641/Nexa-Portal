@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
+import { dbFetch } from "@/lib/dbPersistence";
 import { showToast } from "@/components/Toast";
 import { fetchRecentActivities, formatTimeAgo, clearActivityLogs } from "@/lib/activityUtils";
 import FinancialChart from "@/components/FinancialChart";
@@ -94,30 +95,7 @@ export default function DashboardPage() {
 
       // 1. Total Employees (Combine DB & local persistent employees)
       try {
-        let dbEmps = [];
-        const { data, error } = await supabase.from("employees").select("*");
-        if (!error && data) dbEmps = data;
-
-        let localEmps = [];
-        const saved = localStorage.getItem("persistent_employees");
-        if (saved) {
-          try {
-            const parsed = JSON.parse(saved);
-            if (Array.isArray(parsed)) localEmps = parsed;
-          } catch(e) {}
-        }
-
-        const empMap = new Map();
-        localEmps.forEach(e => {
-          const key = (e.email || e.id || "").toLowerCase();
-          if (key) empMap.set(key, e);
-        });
-        dbEmps.forEach(e => {
-          const key = (e.email || e.id || "").toLowerCase();
-          if (key) empMap.set(key, { ...empMap.get(key), ...e });
-        });
-
-        const allEmps = Array.from(empMap.values());
+        const allEmps = await dbFetch("employees");
         employeeCount = allEmps.filter(e => (e.status || "").toLowerCase() !== "inactive" && (e.status || "").toLowerCase() !== "terminated").length;
       } catch(e) {
         employeeCount = 0;
@@ -125,15 +103,11 @@ export default function DashboardPage() {
 
       // 2. Total Active Projects (Count status = "active" / "in progress")
       try {
-        const resProj = await supabase.from("projects").select("*").order("id", { ascending: false });
-        if (resProj.data) {
-          projData = resProj.data;
-          const activeFiltered = resProj.data.filter(p => {
-            const st = (p.status || "").toLowerCase();
-            return st === "active" || st === "in progress" || st === "in_progress" || st === "ongoing";
-          });
-          activeProjectCount = activeFiltered.length;
-        }
+        const fullProjList = await dbFetch("projects");
+        activeProjectCount = fullProjList.filter(p => {
+          const st = (p.status || p.currentStatus || "").toLowerCase();
+          return st === "active" || st === "in progress" || st === "in_progress" || st === "ongoing" || st === "development";
+        }).length;
       } catch(e) {
         activeProjectCount = 0;
       }
@@ -141,19 +115,7 @@ export default function DashboardPage() {
       // 3. Monthly Revenue (Sum of current month paid incomes)
       try {
         const currentYearMonth = new Date().toISOString().slice(0, 7);
-        let incList = [];
-        const { data, error } = await supabase.from("incomes").select("amount, date, status");
-        if (!error && data && data.length > 0) {
-          incList = data;
-        } else {
-          const saved = localStorage.getItem("persistent_incomes") || localStorage.getItem("software_house_finance_incomes");
-          if (saved) {
-            try {
-              const parsed = JSON.parse(saved);
-              if (Array.isArray(parsed)) incList = parsed;
-            } catch(e) {}
-          }
-        }
+        const incList = await dbFetch("incomes");
 
         monthlyRevenue = incList
           .filter(item => {
@@ -168,19 +130,7 @@ export default function DashboardPage() {
 
       // 4. Pending Leaves (Count status = "pending")
       try {
-        let leaveList = [];
-        const { data, error } = await supabase.from("leaves").select("*");
-        if (!error && data && data.length > 0) {
-          leaveList = data;
-        } else {
-          const saved = localStorage.getItem("software_house_leaves") || localStorage.getItem("persistent_leaves");
-          if (saved) {
-            try {
-              const parsed = JSON.parse(saved);
-              if (Array.isArray(parsed)) leaveList = parsed;
-            } catch(e) {}
-          }
-        }
+        const leaveList = await dbFetch("leaves");
         pendingLeavesCount = leaveList.filter(l => (l.status || "").toLowerCase() === "pending").length;
       } catch(e) {
         pendingLeavesCount = 0;
@@ -190,17 +140,7 @@ export default function DashboardPage() {
       let totalExpensesAmount = 0;
       let categoryBreakdown = [];
       try {
-        let expList = [];
-        const { data, error } = await supabase.from("expenses").select("amount, category");
-        if (!error && data && data.length > 0) {
-          expList = data;
-        } else {
-          const saved = localStorage.getItem("persistent_expenses") || localStorage.getItem("software_house_finance_expenses");
-          if (saved) {
-            try { expList = JSON.parse(saved); } catch(e) {}
-          }
-        }
-
+        const expList = await dbFetch("expenses");
         totalExpensesAmount = expList.reduce((sum, i) => sum + (Number(i.amount) || 0), 0);
         const catMap = new Map();
         expList.forEach(i => {
@@ -213,15 +153,7 @@ export default function DashboardPage() {
 
       // Load live assigned tasks into projects progress list
       try {
-        let liveTasks = [];
-        const { data: dbTasks } = await supabase.from("daily_tasks").select("*").order("id", { ascending: false });
-        if (dbTasks && dbTasks.length > 0) {
-          liveTasks = dbTasks;
-        } else {
-          const savedTasks = localStorage.getItem("software_house_daily_tasks");
-          if (savedTasks) liveTasks = JSON.parse(savedTasks);
-        }
-        
+        const liveTasks = await dbFetch("daily_tasks");
         projData = liveTasks.map(t => ({
           id: t.id,
           title: t.task || t.task_name,
