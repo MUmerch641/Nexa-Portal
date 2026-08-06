@@ -97,75 +97,28 @@ export function logAttendanceAttempt(attemptObj) {
 
 // Helper to detect if a student or employee is assigned to Remote Work / Online Learning
 export function checkIsRemoteUser(userEmail, userRole) {
-  if (!userEmail) return false;
-  const emailLower = String(userEmail).toLowerCase().trim();
+  const emailLower = String(userEmail || "").toLowerCase().trim();
   const roleLower = String(userRole || "").toLowerCase().trim();
 
-  // Explicit role or email check
-  if (roleLower.includes("remote") || roleLower.includes("online") || roleLower.includes("wfh")) {
-    return true;
-  }
-  if (emailLower.includes("remote")) {
-    return true;
-  }
-
-  // Local override check
-  try {
-    const override = localStorage.getItem(`remote_attendance_override_${emailLower}`);
-    if (override === "true") return true;
-  } catch(e) {}
-
-  const isRemoteString = (str) => {
-    if (!str) return false;
-    const s = String(str).toLowerCase();
-    return s.includes("remote") || s.includes("wfh") || s.includes("online") || s.includes("home");
-  };
-
-  // 1. Check registered system users cache
+  // If user is explicitly set to On-Site in registered users or employee cache, require Office Wi-Fi
   try {
     const registered = JSON.parse(localStorage.getItem("registered_system_users") || "[]");
     const foundUser = registered.find(u => (u.email || "").toLowerCase().trim() === emailLower);
-    if (foundUser) {
-      if (foundUser.is_remote === true || isRemoteString(foundUser.work_mode) || isRemoteString(foundUser.employment_type) || isRemoteString(foundUser.department) || isRemoteString(foundUser.role)) {
-        return true;
-      }
+    if (foundUser && (foundUser.work_mode === "onsite" || foundUser.employment_type === "On-Site")) {
+      return false;
     }
   } catch (e) {}
 
-  // 2. Check employee profiles cache
   try {
     const emps = JSON.parse(localStorage.getItem("persistent_employees") || "[]");
     const foundEmp = emps.find(e => (e.email || "").toLowerCase().trim() === emailLower);
-    if (foundEmp) {
-      if (foundEmp.is_remote === true || isRemoteString(foundEmp.employment_type) || isRemoteString(foundEmp.department) || isRemoteString(foundEmp.designation) || isRemoteString(foundEmp.status)) {
-        return true;
-      }
+    if (foundEmp && (foundEmp.work_mode === "onsite" || foundEmp.employment_type === "On-Site (Full Time)")) {
+      return false;
     }
   } catch (e) {}
 
-  // 3. Check student profiles cache (course students & internships)
-  try {
-    const students = JSON.parse(localStorage.getItem("persistent_students") || localStorage.getItem("persistent_courses") || "[]");
-    const foundStu = students.find(s => (s.email || "").toLowerCase().trim() === emailLower);
-    if (foundStu) {
-      if (foundStu.is_remote === true || isRemoteString(foundStu.employment_type) || isRemoteString(foundStu.course_mode) || isRemoteString(foundStu.department) || isRemoteString(foundStu.status)) {
-        return true;
-      }
-    }
-  } catch (e) {}
-
-  // 4. Check intern profiles cache
-  try {
-    const interns = JSON.parse(localStorage.getItem("persistent_interns") || "[]");
-    const foundIntern = interns.find(i => (i.email || "").toLowerCase().trim() === emailLower);
-    if (foundIntern) {
-      if (foundIntern.is_remote === true || isRemoteString(foundIntern.employment_type) || isRemoteString(foundIntern.department) || isRemoteString(foundIntern.status)) {
-        return true;
-      }
-    }
-  } catch (e) {}
-
-  return false;
+  // BY DEFAULT: Remote Mode is ACTIVE for all accounts (Ipify API OFF - Attendance Allowed Anywhere)!
+  return true;
 }
 
 // Single Active Office Network Verification using ipify API
