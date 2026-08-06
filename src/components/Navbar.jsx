@@ -35,12 +35,20 @@ export default function Navbar({ onMenuClick, isSidebarOpen = true }) {
   // Student & Employee Notifications List
   const [userAlerts, setUserAlerts] = useState([]);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [hasSeenNotifications, setHasSeenNotifications] = useState(false);
   const [selectedTaskDetail, setSelectedTaskDetail] = useState(null);
 
   // Read leaves, complaints, announcements, and student/employee alerts
   const loadAllNotifications = () => {
     const currentRole = localStorage.getItem("user_role") || "admin";
     const email = localStorage.getItem("current_user_email") || "admin@gmail.com";
+
+    try {
+      const seen = localStorage.getItem(`notifications_seen_${email}_${currentRole}`);
+      if (seen === "true") {
+        setHasSeenNotifications(true);
+      }
+    } catch(e) {}
 
     // 1. Load Admin Action Items
     try {
@@ -291,6 +299,25 @@ export default function Navbar({ onMenuClick, isSidebarOpen = true }) {
     window.dispatchEvent(new Event("storage"));
   };
 
+  const handleToggleNotifications = () => {
+    const nextState = !showNotifications;
+    setShowNotifications(nextState);
+    if (nextState) {
+      setHasSeenNotifications(true);
+      try {
+        localStorage.setItem(`notifications_seen_${userEmail}_${role}`, "true");
+      } catch (e) {}
+    }
+  };
+
+  const handleMarkAllRead = () => {
+    setHasSeenNotifications(true);
+    setShowNotifications(false);
+    try {
+      localStorage.setItem(`notifications_seen_${userEmail}_${role}`, "true");
+    } catch (e) {}
+  };
+
   const handleLogout = async () => {
     await logout();
     router.push("/login");
@@ -334,22 +361,24 @@ export default function Navbar({ onMenuClick, isSidebarOpen = true }) {
         {/* Universal Notification Bell for Admin, Students & Employees */}
         <div className="relative">
           <button
-            onClick={() => setShowNotifications(!showNotifications)}
+            onClick={handleToggleNotifications}
             className="relative p-2 text-slate-600 hover:bg-slate-100 rounded-xl transition-all cursor-pointer"
             title="Live Notifications"
           >
             <FaBell className="text-lg text-amber-500" />
-            {role === "admin" ? (
-              totalAdminCount > 0 && (
-                <span className="absolute top-1 right-1 flex h-4 w-4 items-center justify-center rounded-full bg-rose-600 text-[10px] font-extrabold text-white animate-pulse">
-                  {totalAdminCount}
-                </span>
-              )
-            ) : (
-              totalUserCount > 0 && (
-                <span className="absolute top-1 right-1 flex h-4 w-4 items-center justify-center rounded-full bg-blue-600 text-[10px] font-extrabold text-white animate-pulse">
-                  {totalUserCount}
-                </span>
+            {!hasSeenNotifications && (
+              role === "admin" ? (
+                totalAdminCount > 0 && (
+                  <span className="absolute top-1 right-1 flex h-4 w-4 items-center justify-center rounded-full bg-rose-600 text-[10px] font-extrabold text-white animate-pulse">
+                    {totalAdminCount}
+                  </span>
+                )
+              ) : (
+                totalUserCount > 0 && (
+                  <span className="absolute top-1 right-1 flex h-4 w-4 items-center justify-center rounded-full bg-blue-600 text-[10px] font-extrabold text-white animate-pulse">
+                    {totalUserCount}
+                  </span>
+                )
               )
             )}
           </button>
@@ -362,9 +391,17 @@ export default function Navbar({ onMenuClick, isSidebarOpen = true }) {
                   <FaBell className="text-amber-500" />
                   <span>{role === "admin" ? "Admin Notifications Hub" : "Automatic Alert Notifications"}</span>
                 </h4>
-                <span className="text-[10px] font-bold bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full">
-                  {role === "admin" ? `${totalAdminCount} Action Items` : `${totalUserCount} New Alerts`}
-                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleMarkAllRead}
+                    className="text-[10px] font-bold text-blue-600 hover:text-blue-800 underline cursor-pointer"
+                  >
+                    Mark Read
+                  </button>
+                  <span className="text-[10px] font-bold bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full">
+                    {role === "admin" ? `${totalAdminCount} Action Items` : `${totalUserCount} New Alerts`}
+                  </span>
+                </div>
               </div>
 
               {/* ADMIN NOTIFICATION DROPDOWN VIEW */}
