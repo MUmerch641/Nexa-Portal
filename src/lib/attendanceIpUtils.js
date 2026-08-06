@@ -95,8 +95,94 @@ export function logAttendanceAttempt(attemptObj) {
   }
 }
 
+// Helper to detect if a student or employee is assigned to Remote Work / Online Learning
+export function checkIsRemoteUser(userEmail, userRole) {
+  if (!userEmail) return false;
+  const emailLower = String(userEmail).toLowerCase().trim();
+
+  // Explicit role check
+  if (userRole === "remote" || userRole === "remote_employee" || userRole === "remote_student") {
+    return true;
+  }
+
+  // 1. Check registered system users cache
+  try {
+    const registered = JSON.parse(localStorage.getItem("registered_system_users") || "[]");
+    const foundUser = registered.find(u => (u.email || "").toLowerCase().trim() === emailLower);
+    if (foundUser) {
+      const mode = (foundUser.work_mode || foundUser.employment_type || foundUser.department || "").toLowerCase();
+      if (mode.includes("remote") || mode.includes("wfh") || mode.includes("online") || foundUser.is_remote === true) {
+        return true;
+      }
+    }
+  } catch (e) {}
+
+  // 2. Check employee profiles cache
+  try {
+    const emps = JSON.parse(localStorage.getItem("persistent_employees") || "[]");
+    const foundEmp = emps.find(e => (e.email || "").toLowerCase().trim() === emailLower);
+    if (foundEmp) {
+      const mode = (foundEmp.employment_type || foundEmp.department || foundEmp.designation || "").toLowerCase();
+      if (mode.includes("remote") || mode.includes("wfh") || mode.includes("online") || foundEmp.is_remote === true) {
+        return true;
+      }
+    }
+  } catch (e) {}
+
+  // 3. Check student profiles cache (course students & internships)
+  try {
+    const students = JSON.parse(localStorage.getItem("persistent_students") || localStorage.getItem("persistent_courses") || "[]");
+    const foundStu = students.find(s => (s.email || "").toLowerCase().trim() === emailLower);
+    if (foundStu) {
+      const mode = (foundStu.employment_type || foundStu.course_mode || foundStu.department || foundStu.status || "").toLowerCase();
+      if (mode.includes("remote") || mode.includes("online") || mode.includes("wfh") || foundStu.is_remote === true) {
+        return true;
+      }
+    }
+  } catch (e) {}
+
+  // 4. Check intern profiles cache
+  try {
+    const interns = JSON.parse(localStorage.getItem("persistent_interns") || "[]");
+    const foundIntern = interns.find(i => (i.email || "").toLowerCase().trim() === emailLower);
+    if (foundIntern) {
+      const mode = (foundIntern.employment_type || foundIntern.department || foundIntern.status || "").toLowerCase();
+      if (mode.includes("remote") || mode.includes("online") || mode.includes("wfh") || foundIntern.is_remote === true) {
+        return true;
+      }
+    }
+  } catch (e) {}
+
+  return false;
+}
+
 // Single Active Office Network Verification using ipify API
-export async function verifyOfficeWifiAttendance({ userId, userEmail, userRole, userName }) {
+export async function verifyOfficeWifiAttendance({ userId, userEmail, userRole, userName, isRemoteOverride }) {
+  const isRemote = isRemoteOverride || checkIsRemoteUser(userEmail || userId, userRole);
+
+  if (isRemote) {
+    // Ipify API / Wi-Fi restriction OFF for Remote Student / Member!
+    logAttendanceAttempt({
+      userId: userId || userEmail,
+      userEmail: userEmail || userId,
+      userName,
+      userRole,
+      attemptIp: "Remote / Anywhere Access",
+      officePublicIp: "Remote Work Mode",
+      status: "REMOTE VERIFIED 🌐",
+      verificationStatus: "Remote Mode Active",
+      reason: "Ipify / Wi-Fi Restriction Disabled for Remote Student / Staff"
+    });
+
+    return {
+      success: true,
+      isRemote: true,
+      currentPublicIp: "Remote Access (Anywhere)",
+      activeOfficeNetwork: { office_name: "Remote Mode (Ipify OFF)", wifi_name: "Remote Student Access" },
+      message: "🌐 Remote Student / Member Mode Active: Wi-Fi & Ipify IP Restriction Disabled. You can mark attendance directly from anywhere!"
+    };
+  }
+
   const currentPublicIp = await fetchCurrentPublicIp();
   const officeNetworks = getActiveOfficeNetworks();
   let activeOfficeNetwork = officeNetworks.find(net => net.status === "Active") || DEFAULT_OFFICE_NETWORKS[0];

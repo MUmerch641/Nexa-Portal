@@ -118,7 +118,8 @@ export default function AttendancePage() {
       if (res.success) {
         setIpVerificationResult({
           success: true,
-          message: "Office Wi-Fi Verified Successfully.",
+          isRemote: res.isRemote || false,
+          message: res.isRemote ? "🌐 Remote Student / Member Mode Active: Wi-Fi Restriction Disabled." : "Office Wi-Fi Verified Successfully.",
           publicIp: activeIp,
           officePublicIp: res.activeOfficeNetwork?.public_ip_address || activeIp
         });
@@ -153,12 +154,17 @@ export default function AttendancePage() {
     if (res.success) {
       setIpVerificationResult({
         success: true,
-        message: "Office Wi-Fi Verified Successfully.",
+        isRemote: res.isRemote || false,
+        message: res.isRemote ? "🌐 Remote Student / Member Mode Active: Wi-Fi Restriction Disabled." : "Office Wi-Fi Verified Successfully.",
         publicIp: activeIp,
         officePublicIp: res.activeOfficeNetwork?.public_ip_address || activeIp
       });
       if (!silent) {
-        showToast("Office Wi-Fi Verified 🟢", "Network Verified Successfully. You can now mark your attendance.", "success");
+        showToast(
+          res.isRemote ? "Remote Mode Active 🌐" : "Office Wi-Fi Verified 🟢",
+          res.isRemote ? "Ipify Wi-Fi Restriction Disabled for Remote Student. Attendance Unlocked!" : "Network Verified Successfully. You can now mark your attendance.",
+          "success"
+        );
       }
     } else {
       setIpVerificationResult({
