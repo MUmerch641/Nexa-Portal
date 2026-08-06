@@ -278,9 +278,12 @@ export async function dbDeleteRecord(table, id, emailField = "") {
     } catch(e) {}
   }
 
+  let backendSuccess = true;
+  let backendError = null;
+
   try {
     if (typeof fetch !== "undefined") {
-      await fetch("/api/persistence", {
+      const res = await fetch("/api/persistence", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -288,14 +291,32 @@ export async function dbDeleteRecord(table, id, emailField = "") {
           action: "delete",
           record: { id, email: emailField, full_name: emailField },
         }),
-      }).catch(() => {});
+      }).catch((err) => {
+        backendError = err.message;
+      });
+
+      if (res && res.ok) {
+        const json = await res.json();
+        if (json && json.success === false) {
+          backendSuccess = false;
+          backendError = json.error || "Backend database deletion failed";
+        }
+      }
     }
-  } catch(e) {}
+  } catch(e) {
+    backendError = e.message;
+  }
 
   if (typeof window !== "undefined") {
     window.dispatchEvent(new Event("dataChanged"));
     window.dispatchEvent(new Event("storage"));
   }
+
+  if (backendError && !backendSuccess) {
+    return { success: false, error: backendError };
+  }
+
+  return { success: true };
 }
 
 

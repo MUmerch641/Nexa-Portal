@@ -54,19 +54,26 @@ export async function POST(request) {
 
     if (action === "delete") {
       const { id, email, full_name, name, enrollment_type } = record || {};
+      let deleted = false;
+      let errRes = null;
+
       if (id) {
-        await supabase.from(table).delete().eq("id", id).catch(() => {});
+        const { error } = await supabase.from(table).delete().eq("id", id);
+        if (!error) deleted = true; else errRes = error;
       }
       if (email) {
-        await supabase.from(table).delete().eq("email", email).catch(() => {});
+        const { error } = await supabase.from(table).delete().eq("email", email);
+        if (!error) deleted = true; else if (!errRes) errRes = error;
       }
       if (full_name || name) {
-        await supabase.from(table).delete().eq("full_name", full_name || name).catch(() => {});
+        const { error } = await supabase.from(table).delete().eq("full_name", full_name || name);
+        if (!error) deleted = true; else if (!errRes) errRes = error;
       }
       if (enrollment_type) {
-        await supabase.from(table).delete().eq("enrollment_type", enrollment_type).catch(() => {});
+        const { error } = await supabase.from(table).delete().eq("enrollment_type", enrollment_type);
+        if (!error) deleted = true; else if (!errRes) errRes = error;
       }
-      return NextResponse.json({ success: true });
+      return NextResponse.json({ success: true, deleted, error: errRes ? errRes.message : null });
     }
 
     if (record) {

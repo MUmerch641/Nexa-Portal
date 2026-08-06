@@ -379,12 +379,22 @@ export default function InternshipsPage() {
 
   // Delete Single Intern
   const handleDeleteIntern = async (id, email = "", fullName = "") => {
-    if (!confirm("Are you sure you want to delete this intern record?")) return;
+    if (!confirm("Are you sure you want to delete this intern record permanently?")) return;
     const target = interns.find(i => String(i.id || "") === String(id || "") || (email && String(i.email || "").toLowerCase() === String(email).toLowerCase()));
     const targetEmail = String(email || target?.email || "").toLowerCase().trim();
     const targetName = String(fullName || target?.full_name || target?.name || "").toLowerCase().trim();
     const targetId = String(id || target?.id || "").toLowerCase().trim();
 
+    // 1. Send deletion command to Database
+    const dbRes = await dbDeleteRecord("students", targetId, targetEmail);
+    await dbDeleteRecord("interns", targetId, targetEmail);
+
+    if (dbRes && dbRes.success === false) {
+      showAlert("Deletion Failed ❌", `Database error: ${dbRes.error || "Unable to delete record from backend"}`, "error");
+      return;
+    }
+
+    // 2. Filter local state
     const updated = interns.filter((i) => {
       const iId = String(i.id || "").toLowerCase().trim();
       const iEmail = String(i.email || "").toLowerCase().trim();
@@ -396,23 +406,18 @@ export default function InternshipsPage() {
     });
     setInterns(updated);
 
-    // 1. Update persistent_interns
+    // 3. Sync local storage stores
     try {
       localStorage.setItem("persistent_interns", JSON.stringify(updated));
-    } catch(e) {}
 
-    // 2. Remove from persistent_courses
-    try {
       const savedCourses = localStorage.getItem("persistent_courses");
       if (savedCourses) {
         const currentCourses = JSON.parse(savedCourses);
         const filteredCourses = currentCourses.filter(c => String(c.id || "") !== targetId && (c.email || "").toLowerCase().trim() !== targetEmail);
         localStorage.setItem("persistent_courses", JSON.stringify(filteredCourses));
       }
-    } catch(e) {}
 
-    // 3. Add target ID, email, and name to permanent blacklist
-    try {
+      // Add to permanent blacklist
       const savedDeleted = localStorage.getItem("deleted_intern_ids");
       let deletedList = savedDeleted ? JSON.parse(savedDeleted) : [];
       if (targetId && !deletedList.includes(targetId)) deletedList.push(targetId);
@@ -420,7 +425,7 @@ export default function InternshipsPage() {
       if (targetName && !deletedList.includes(targetName)) deletedList.push(targetName);
       localStorage.setItem("deleted_intern_ids", JSON.stringify(deletedList));
 
-      // Also purge from registered_system_users store so Remote Monitoring removes them immediately
+      // Purge registered_system_users
       const savedUsers = localStorage.getItem("registered_system_users");
       if (savedUsers) {
         const users = JSON.parse(savedUsers);
@@ -436,9 +441,7 @@ export default function InternshipsPage() {
       }
     } catch(e) {}
 
-    // 5. Delete from DB & sync dataChanged event
-    await dbDeleteRecord("students", id, targetEmail).catch(() => {});
-    await dbDeleteRecord("interns", id, targetEmail).catch(() => {});
+    showAlert("Record Deleted 🗑️", `Intern record (${targetName || targetEmail || targetId}) deleted permanently from Database & UI.`, "success");
   };
 
   // 1-Click Clear ALL Interns
