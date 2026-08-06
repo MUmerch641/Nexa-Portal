@@ -189,13 +189,11 @@ export default function InternshipsPage() {
       const itemEmail = String(item.email || "").toLowerCase().trim();
       const itemName = String(item.full_name || item.name || "").toLowerCase().trim();
 
-      if (deletedIds.some(d => {
+      return deletedIds.some(d => {
         const del = String(d).toLowerCase().trim();
         if (!del) return false;
         return (itemId && itemId === del) || (itemEmail && itemEmail === del) || (itemName && itemName === del) || (itemName && del && itemName.includes(del));
-      })) {
-        return true;
-      }
+      });
     };
 
     // Read stored items from localStorage (Single Source of Truth)
@@ -380,19 +378,20 @@ export default function InternshipsPage() {
   };
 
   // Delete Single Intern
-  const handleDeleteIntern = async (id) => {
+  const handleDeleteIntern = async (id, email = "", fullName = "") => {
     if (!confirm("Are you sure you want to delete this intern record?")) return;
-    const target = interns.find(i => i.id === id);
-    const targetEmail = (target?.email || "").toLowerCase().trim();
-    const targetName = (target?.full_name || target?.name || "").toLowerCase().trim();
+    const target = interns.find(i => String(i.id || "") === String(id || "") || (email && String(i.email || "").toLowerCase() === String(email).toLowerCase()));
+    const targetEmail = String(email || target?.email || "").toLowerCase().trim();
+    const targetName = String(fullName || target?.full_name || target?.name || "").toLowerCase().trim();
+    const targetId = String(id || target?.id || "").toLowerCase().trim();
 
     const updated = interns.filter((i) => {
       const iId = String(i.id || "").toLowerCase().trim();
       const iEmail = String(i.email || "").toLowerCase().trim();
       const iName = String(i.full_name || i.name || "").toLowerCase().trim();
-      if (id && iId === String(id).toLowerCase().trim()) return false;
+      if (targetId && iId === targetId) return false;
       if (targetEmail && iEmail === targetEmail) return false;
-      if (targetName && iName === targetName) return false;
+      if (targetName && (iName === targetName || iName.includes(targetName) || targetName.includes(iName))) return false;
       return true;
     });
     setInterns(updated);
@@ -407,34 +406,18 @@ export default function InternshipsPage() {
       const savedCourses = localStorage.getItem("persistent_courses");
       if (savedCourses) {
         const currentCourses = JSON.parse(savedCourses);
-        const filteredCourses = currentCourses.filter(c => c.id !== id && (c.email || "").toLowerCase().trim() !== targetEmail);
+        const filteredCourses = currentCourses.filter(c => String(c.id || "") !== targetId && (c.email || "").toLowerCase().trim() !== targetEmail);
         localStorage.setItem("persistent_courses", JSON.stringify(filteredCourses));
       }
     } catch(e) {}
 
-    // 3. Remove from registered_system_users
-    try {
-      const savedUsers = localStorage.getItem("registered_system_users");
-      if (savedUsers) {
-        const currentUsers = JSON.parse(savedUsers);
-        const filteredUsers = currentUsers.filter(u => (u.email || "").toLowerCase().trim() !== targetEmail);
-        localStorage.setItem("registered_system_users", JSON.stringify(filteredUsers));
-      }
-    } catch(e) {}
-
-    // 4. Add target ID, email, and name to permanent blacklist
+    // 3. Add target ID, email, and name to permanent blacklist
     try {
       const savedDeleted = localStorage.getItem("deleted_intern_ids");
       let deletedList = savedDeleted ? JSON.parse(savedDeleted) : [];
-      if (id && !deletedList.includes(String(id))) {
-        deletedList.push(String(id));
-      }
-      if (targetEmail && !deletedList.includes(targetEmail)) {
-        deletedList.push(targetEmail);
-      }
-      if (targetName && !deletedList.includes(targetName)) {
-        deletedList.push(targetName);
-      }
+      if (targetId && !deletedList.includes(targetId)) deletedList.push(targetId);
+      if (targetEmail && !deletedList.includes(targetEmail)) deletedList.push(targetEmail);
+      if (targetName && !deletedList.includes(targetName)) deletedList.push(targetName);
       localStorage.setItem("deleted_intern_ids", JSON.stringify(deletedList));
 
       // Also purge from registered_system_users store so Remote Monitoring removes them immediately
@@ -948,7 +931,7 @@ export default function InternshipsPage() {
 
                       {role === "admin" && (
                         <button
-                          onClick={() => handleDeleteIntern(st.id)}
+                          onClick={() => handleDeleteIntern(st.id, st.email, st.full_name)}
                           className="text-[11px] font-semibold text-rose-600 hover:underline"
                         >
                           Delete Intern Record
