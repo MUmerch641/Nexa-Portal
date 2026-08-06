@@ -218,18 +218,9 @@ export default function LoginPage() {
       (u) => u.email.toLowerCase() === email.toLowerCase() && u.password === password
     );
 
-    let supabaseAuthSuccess = false;
-    try {
-      const { error } = await login(email, password);
-      if (!error) {
-        supabaseAuthSuccess = true;
-      }
-    } catch(e) {}
-
-    // Allow instant seamless login if credentials match local/seed records or Supabase Auth
-    if (matchedUser || supabaseAuthSuccess) {
-      // Determine exact role assigned by Admin (employee gets employee features, student gets student features)
-      const activeRole = matchedUser ? (matchedUser.role || selectedRole) : selectedRole;
+    // 1. Check if user credentials match registered local/seed accounts first
+    if (matchedUser) {
+      const activeRole = matchedUser.role || selectedRole;
       localStorage.setItem("isLoggedIn", "true");
       localStorage.setItem("user_role", activeRole);
       localStorage.setItem("current_user_email", email);
@@ -241,10 +232,36 @@ export default function LoginPage() {
       if (activeRole === "client") {
         setTimeout(() => router.replace("/dashboard/client-portal"), 800);
       } else if (activeRole === "admin") {
-        // Admin Master Control Operations Dashboard
         setTimeout(() => router.replace("/dashboard"), 800);
       } else {
-        // REQUIREMENT 1: For Students, Employees, Staff & Interns - First display Attendance Verification & Check-In Page before dashboard!
+        setTimeout(() => router.replace("/dashboard/attendance"), 800);
+      }
+      return;
+    }
+
+    // 2. Fallback: Try Supabase Auth API login
+    let supabaseAuthSuccess = false;
+    try {
+      const { error } = await login(email, password);
+      if (!error) {
+        supabaseAuthSuccess = true;
+      }
+    } catch(e) {}
+
+    if (supabaseAuthSuccess) {
+      localStorage.setItem("isLoggedIn", "true");
+      localStorage.setItem("user_role", selectedRole);
+      localStorage.setItem("current_user_email", email);
+      window.dispatchEvent(new Event("roleChanged"));
+
+      setLoading(false);
+      showToast("Login Successful 🟢", `Welcome back! Logging into ${selectedRole.toUpperCase()} Portal...`, "success");
+
+      if (selectedRole === "client") {
+        setTimeout(() => router.replace("/dashboard/client-portal"), 800);
+      } else if (selectedRole === "admin") {
+        setTimeout(() => router.replace("/dashboard"), 800);
+      } else {
         setTimeout(() => router.replace("/dashboard/attendance"), 800);
       }
     } else {
