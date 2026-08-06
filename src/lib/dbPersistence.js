@@ -88,14 +88,31 @@ export async function dbFetch(table, defaultData = []) {
     }
   } catch (e) {}
 
-  // 3. Load Supabase Database Data asynchronously
+  // 3. Load Supabase Database Data asynchronously with Server API Proxy fallback
   let dbData = [];
   try {
     const { data, error } = await supabase.from(table).select("*");
     if (!error && data && Array.isArray(data)) {
       dbData = data;
+    } else if (typeof window !== "undefined") {
+      // Fallback to Server Proxy route (bypasses browser extension blocks)
+      const res = await fetch(`/api/persistence?table=${encodeURIComponent(table)}`).catch(() => null);
+      if (res && res.ok) {
+        const json = await res.json();
+        if (json && Array.isArray(json.data)) dbData = json.data;
+      }
     }
-  } catch (e) {}
+  } catch (e) {
+    if (typeof window !== "undefined") {
+      try {
+        const res = await fetch(`/api/persistence?table=${encodeURIComponent(table)}`).catch(() => null);
+        if (res && res.ok) {
+          const json = await res.json();
+          if (json && Array.isArray(json.data)) dbData = json.data;
+        }
+      } catch (err) {}
+    }
+  }
 
   // 4. Deduplicate and Merge Datasets (Defaults -> Local -> DB)
   const map = new Map();
@@ -160,6 +177,12 @@ export async function dbSaveList(table, list = []) {
   } catch(e) {}
 
   if (typeof window !== "undefined") {
+    fetch("/api/persistence", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ table, record: list[0], action: "save" })
+    }).catch(() => {});
+
     window.dispatchEvent(new Event("dataChanged"));
     window.dispatchEvent(new Event("storage"));
   }
@@ -192,17 +215,30 @@ export async function dbSaveRecord(table, record) {
     } catch(e) {}
   }
 
-  // 2. Write to Supabase DB safely with clean payload
+  // 2. Write to Supabase DB safely with clean payload & Server Proxy fallback
   try {
     const cleanedPayload = cleanPayloadForDb(record);
 
     const { error: insertErr } = await supabase.from(table).insert([cleanedPayload]);
     if (insertErr) {
-      // Fallback to upsert if insert encounters primary key duplicate
       await supabase.from(table).upsert([cleanedPayload]).catch(() => {});
     }
+
+    if (typeof window !== "undefined") {
+      fetch("/api/persistence", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ table, record, action: "save" })
+      }).catch(() => {});
+    }
   } catch(e) {
-    console.warn(`Database insert notice for ${table}:`, e);
+    if (typeof window !== "undefined") {
+      fetch("/api/persistence", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ table, record, action: "save" })
+      }).catch(() => {});
+    }
   }
 
   // 3. Trigger cross-tab/window event
