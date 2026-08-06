@@ -185,6 +185,20 @@ export default function InternshipsPage() {
       },
     ];
 
+    // Read blacklisted deleted IDs/emails
+    let deletedIds = [];
+    try {
+      const d = localStorage.getItem("deleted_intern_ids");
+      if (d) deletedIds = JSON.parse(d);
+    } catch (e) {}
+
+    const isDeleted = (item) => {
+      if (!item) return true;
+      const itemId = String(item.id || "");
+      const itemEmail = String(item.email || "").toLowerCase().trim();
+      return deletedIds.includes(itemId) || (itemEmail && deletedIds.includes(itemEmail));
+    };
+
     // Read stored items from localStorage
     let stored = null;
     try {
@@ -194,12 +208,10 @@ export default function InternshipsPage() {
 
     let finalList = [];
     if (stored !== null) {
-      // User has persistent_interns saved! Use stored list directly so DELETED items STAY DELETED!
-      finalList = stored;
+      finalList = stored.filter(i => !isDeleted(i));
     } else {
-      // First time initialization
-      finalList = demoData;
-      localStorage.setItem("persistent_interns", JSON.stringify(demoData));
+      finalList = demoData.filter(i => !isDeleted(i));
+      localStorage.setItem("persistent_interns", JSON.stringify(finalList));
     }
 
     try {
@@ -209,14 +221,20 @@ export default function InternshipsPage() {
         .order("created_at", { ascending: false });
 
       if (data && data.length > 0) {
-        const freeOnly = data.filter((s) => s.enrollment_type === "3-Month Free Internship");
+        const freeOnly = data.filter((s) => s.enrollment_type === "3-Month Free Internship" && !isDeleted(s));
         if (freeOnly.length > 0) {
           const uniqueMap = new Map();
-          [...freeOnly, ...finalList].forEach((item) => uniqueMap.set(item.id || item.email, item));
+          [...freeOnly, ...finalList].forEach((item) => {
+            if (!isDeleted(item)) {
+              uniqueMap.set(item.id || item.email, item);
+            }
+          });
           finalList = Array.from(uniqueMap.values());
         }
       }
     } catch (err) {}
+
+    finalList = finalList.filter(i => !isDeleted(i));
 
     setInterns(finalList);
     setLoading(false);
@@ -247,6 +265,8 @@ export default function InternshipsPage() {
 
     setSubmitting(true);
 
+    const isRemoteMode = form.internship_mode.includes("Remote");
+
     const newInternObj = {
       id: `i-${Date.now()}`,
       full_name: form.full_name,
@@ -254,6 +274,8 @@ export default function InternshipsPage() {
       email: form.email,
       phone: form.phone,
       internship_mode: form.internship_mode,
+      is_remote: isRemoteMode,
+      work_mode: form.internship_mode,
       enrollment_type: "3-Month Free Internship",
       course_name: form.course_name,
       instructor: form.instructor,
@@ -268,7 +290,7 @@ export default function InternshipsPage() {
         {
           id: `l-${Date.now()}`,
           date: new Date().toLocaleString(),
-          author: `${form.full_name} (${form.internship_mode.includes("Remote") ? "Remote Intern" : "On-Site Intern"})`,
+          author: `${form.full_name} (${isRemoteMode ? "Remote Intern" : "On-Site Intern"})`,
           task: `Enrolled in ${form.internship_mode} 3-Month Free Internship for ${form.course_name}. Training started.`,
         },
       ],
@@ -281,35 +303,22 @@ export default function InternshipsPage() {
       localStorage.setItem("persistent_interns", JSON.stringify(currentList));
     } catch (e) {}
 
+    // Save to PostgreSQL / Supabase Database via Persistence Engine Proxy
     try {
-      await supabase.from("students").insert([
-          {
-            full_name: form.full_name,
-            email: form.email,
-            phone: form.phone,
-            enrollment_type: "3-Month Free Internship",
-            course_name: form.course_name,
-            instructor: form.instructor,
-            resources_url: form.resources_url,
-            start_date: form.start_date,
-            end_date: form.end_date,
-            progress: Number(form.progress || 0),
-            course_fee: 0,
-            fee_paid: 0,
-            fee_status: "Free Internship (0 PKR)",
-          },
-        ]).throwOnError();
+      await dbSaveRecord("students", newInternObj);
     } catch (dbErr) {
-      console.warn("Supabase insert notice:", dbErr);
+      console.warn("Database save notice:", dbErr);
     }
 
-    // Auto-save credentials for registered intern so they can log in directly with their email!
+    // Auto-save credentials & user profile for registered remote intern
     const userCredentials = {
       fullName: form.full_name,
       email: form.email,
       password: "internpassword", // Default access password provided by Admin
       role: "employee",
       department: form.course_name,
+      is_remote: isRemoteMode,
+      work_mode: form.internship_mode,
     };
 
     try {
@@ -318,6 +327,11 @@ export default function InternshipsPage() {
       const updated = [...existing.filter(u => u.email.toLowerCase() !== form.email.toLowerCase()), userCredentials];
       localStorage.setItem("registered_system_users", JSON.stringify(updated));
     } catch(e) {}
+
+    // Dispatch global dataChanged event to sync Remote Monitoring Portal
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event("dataChanged"));
+    }
 
     setSubmitting(false);
 
@@ -395,6 +409,19 @@ export default function InternshipsPage() {
 
     try {
       localStorage.setItem("persistent_interns", JSON.stringify(updated));
+    } catch(e) {}
+
+    // Add target ID & email to permanent blacklist
+    try {
+      const savedDeleted = localStorage.getItem("deleted_intern_ids");
+      let deletedList = savedDeleted ? JSON.parse(savedDeleted) : [];
+      if (id && !deletedList.includes(String(id))) {
+        deletedList.push(String(id));
+      }
+      if (target?.email && !deletedList.includes(target.email.toLowerCase().trim())) {
+        deletedList.push(target.email.toLowerCase().trim());
+      }
+      localStorage.setItem("deleted_intern_ids", JSON.stringify(deletedList));
     } catch(e) {}
 
     dbDeleteRecord("students", id, target?.email || "").catch(() => {});
