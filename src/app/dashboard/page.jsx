@@ -84,91 +84,59 @@ export default function DashboardPage() {
   }, []);
 
   const loadDashboardData = async () => {
-    setLoading(true);
     try {
-      let employeeCount = 0;
-      let activeProjectCount = 0;
-      let monthlyRevenue = 0;
-      let pendingLeavesCount = 0;
-      let projData = [];
-      let attData = [];
+      const currentYearMonth = new Date().toISOString().slice(0, 7);
 
-      // 1. Total Employees (Combine DB & local persistent employees)
-      try {
-        const allEmps = await dbFetch("employees");
-        employeeCount = allEmps.filter(e => (e.status || "").toLowerCase() !== "inactive" && (e.status || "").toLowerCase() !== "terminated").length;
-      } catch(e) {
-        employeeCount = 0;
-      }
+      // Execute all dataset fetches in PARALLEL simultaneously instead of slow sequential calls
+      const [allEmps, fullProjList, incList, leaveList, expList, liveTasks] = await Promise.all([
+        dbFetch("employees").catch(() => []),
+        dbFetch("projects").catch(() => []),
+        dbFetch("incomes").catch(() => []),
+        dbFetch("leaves").catch(() => []),
+        dbFetch("expenses").catch(() => []),
+        dbFetch("daily_tasks").catch(() => [])
+      ]);
 
-      // 2. Total Active Projects (Count status = "active" / "in progress")
-      try {
-        const fullProjList = await dbFetch("projects");
-        activeProjectCount = fullProjList.filter(p => {
-          const st = (p.status || p.currentStatus || "").toLowerCase();
-          return st === "active" || st === "in progress" || st === "in_progress" || st === "ongoing" || st === "development";
-        }).length;
-      } catch(e) {
-        activeProjectCount = 0;
-      }
+      const employeeCount = (allEmps || []).filter(e => (e.status || "").toLowerCase() !== "inactive" && (e.status || "").toLowerCase() !== "terminated").length;
 
-      // 3. Monthly Revenue (Sum of current month paid incomes)
-      try {
-        const currentYearMonth = new Date().toISOString().slice(0, 7);
-        const incList = await dbFetch("incomes");
+      const activeProjectCount = (fullProjList || []).filter(p => {
+        const st = (p.status || p.currentStatus || "").toLowerCase();
+        return st === "active" || st === "in progress" || st === "in_progress" || st === "ongoing" || st === "development";
+      }).length;
 
-        monthlyRevenue = incList
-          .filter(item => {
-            const isCurrentMonth = item.date && item.date.startsWith(currentYearMonth);
-            const isPaid = !item.status || item.status.toLowerCase() === "paid";
-            return isCurrentMonth && isPaid;
-          })
-          .reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
-      } catch(e) {
-        monthlyRevenue = 0;
-      }
+      const monthlyRevenue = (incList || [])
+        .filter(item => {
+          const isCurrentMonth = item.date && item.date.startsWith(currentYearMonth);
+          const isPaid = !item.status || item.status.toLowerCase() === "paid";
+          return isCurrentMonth && isPaid;
+        })
+        .reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
 
-      // 4. Pending Leaves (Count status = "pending")
-      try {
-        const leaveList = await dbFetch("leaves");
-        pendingLeavesCount = leaveList.filter(l => (l.status || "").toLowerCase() === "pending").length;
-      } catch(e) {
-        pendingLeavesCount = 0;
-      }
+      const pendingLeavesCount = (leaveList || []).filter(l => (l.status || "").toLowerCase() === "pending").length;
 
-      // 5. Monthly Expenses & Category Distribution
-      let totalExpensesAmount = 0;
-      let categoryBreakdown = [];
-      try {
-        const expList = await dbFetch("expenses");
-        totalExpensesAmount = expList.reduce((sum, i) => sum + (Number(i.amount) || 0), 0);
-        const catMap = new Map();
-        expList.forEach(i => {
-          const cat = i.category || "General Expense";
-          const amt = Number(i.amount) || 0;
-          catMap.set(cat, (catMap.get(cat) || 0) + amt);
-        });
-        categoryBreakdown = Array.from(catMap.entries()).map(([category, amount]) => ({ category, amount }));
-      } catch(e) {}
+      const totalExpensesAmount = (expList || []).reduce((sum, i) => sum + (Number(i.amount) || 0), 0);
+      const catMap = new Map();
+      (expList || []).forEach(i => {
+        const cat = i.category || "General Expense";
+        const amt = Number(i.amount) || 0;
+        catMap.set(cat, (catMap.get(cat) || 0) + amt);
+      });
+      const categoryBreakdown = Array.from(catMap.entries()).map(([category, amount]) => ({ category, amount }));
 
-      // Load live assigned tasks into projects progress list
-      try {
-        const liveTasks = await dbFetch("daily_tasks");
-        projData = liveTasks.map(t => ({
-          id: t.id,
-          title: t.task || t.task_name,
-          client_name: t.assignedTo || t.assigned_to || "Assigned Task",
-          progress: t.status === "Completed" ? 100 : t.status === "In Progress" ? 50 : 20,
-          status: t.status || "In Progress"
-        }));
-      } catch(e) {}
+      const projData = (liveTasks || []).map(t => ({
+        id: t.id,
+        title: t.task || t.task_name,
+        client_name: t.assignedTo || t.assigned_to || "Assigned Task",
+        progress: t.status === "Completed" ? 100 : t.status === "In Progress" ? 50 : 20,
+        status: t.status || "In Progress"
+      }));
 
       setProjectsProgressList(projData || []);
 
       const savedEmpAtt = localStorage.getItem("today_attendance_employee");
       const savedStuAtt = localStorage.getItem("today_attendance_student");
       
-      let combinedAttendance = attData || [];
+      let combinedAttendance = [];
       if (savedEmpAtt) {
         try {
           const parsed = JSON.parse(savedEmpAtt);
@@ -200,14 +168,16 @@ export default function DashboardPage() {
   };
 
   useEffect(() => {
+    // Unblock initial screen instantly
+    setLoading(false);
+
     loadDashboardData();
     loadAllMembers();
-    handleRefreshFeed();
+    fetchRecentActivities().then(data => setRecentActivities(data || []));
 
     const handleUpdate = () => {
       loadDashboardData();
       loadAllMembers();
-      handleRefreshFeed();
     };
 
     window.addEventListener("storage", handleUpdate);
