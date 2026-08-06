@@ -231,6 +231,16 @@ export default function InternshipsPage() {
     const finalList = Array.from(map.values()).filter(i => !isDeleted(i));
     localStorage.setItem("persistent_interns", JSON.stringify(finalList));
 
+    // Also purge legacy sample users from registered_system_users store
+    try {
+      const savedUsers = localStorage.getItem("registered_system_users");
+      if (savedUsers) {
+        const users = JSON.parse(savedUsers);
+        const filteredUsers = users.filter(u => !isDeleted(u));
+        localStorage.setItem("registered_system_users", JSON.stringify(filteredUsers));
+      }
+    } catch(e) {}
+
     setInterns(finalList);
     setLoading(false);
   };
