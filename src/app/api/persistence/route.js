@@ -53,7 +53,7 @@ export async function POST(request) {
     }
 
     if (action === "delete") {
-      const { id, email, full_name, name, enrollment_type } = record || {};
+      const { id, email, full_name, name } = record || {};
       let deleted = false;
       let errRes = null;
 
@@ -67,10 +67,6 @@ export async function POST(request) {
       }
       if (full_name || name) {
         const { error } = await supabase.from(table).delete().eq("full_name", full_name || name);
-        if (!error) deleted = true; else if (!errRes) errRes = error;
-      }
-      if (enrollment_type) {
-        const { error } = await supabase.from(table).delete().eq("enrollment_type", enrollment_type);
         if (!error) deleted = true; else if (!errRes) errRes = error;
       }
       return NextResponse.json({ success: true, deleted, error: errRes ? errRes.message : null });

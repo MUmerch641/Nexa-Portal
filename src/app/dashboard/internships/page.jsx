@@ -205,12 +205,11 @@ export default function InternshipsPage() {
 
     let finalList = [];
     if (stored !== null) {
-      // User has persistent_interns stored! Use stored list directly so DELETED items STAY DELETED!
       finalList = stored.filter(i => !isDeleted(i));
-    } else {
-      // First time initialization ONLY
-      finalList = demoData.filter(i => !isDeleted(i));
       localStorage.setItem("persistent_interns", JSON.stringify(finalList));
+    } else {
+      finalList = [];
+      localStorage.setItem("persistent_interns", JSON.stringify([]));
     }
 
     setInterns(finalList);
