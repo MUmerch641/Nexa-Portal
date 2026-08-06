@@ -212,31 +212,20 @@ export async function dbSaveRecord(table, record) {
     } catch(e) {}
   }
 
-  // 2. Write to Supabase DB safely with clean payload & Server Proxy fallback
+  // 2. Write to Supabase DB safely via Server Proxy (prevents browser PostgREST 400 errors)
   try {
     const cleanedPayload = cleanPayloadForDb(record, table);
 
-    const { error: insertErr } = await supabase.from(table).insert([cleanedPayload]);
-    if (insertErr) {
-      await supabase.from(table).upsert([cleanedPayload]).catch(() => {});
-    }
-
     if (typeof window !== "undefined") {
-      fetch("/api/persistence", {
+      await fetch("/api/persistence", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ table, record, action: "save" })
+        body: JSON.stringify({ table, record: cleanedPayload, action: "save" })
       }).catch(() => {});
+    } else {
+      await supabase.from(table).insert([cleanedPayload]).catch(() => {});
     }
-  } catch(e) {
-    if (typeof window !== "undefined") {
-      fetch("/api/persistence", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ table, record, action: "save" })
-      }).catch(() => {});
-    }
-  }
+  } catch(e) {}
 
   // 3. Trigger cross-tab/window event
   if (typeof window !== "undefined") {
