@@ -1152,6 +1152,7 @@ export default function InternshipsPage() {
                 </div>
               </div>
             </div>
+          </div>
         </div>
       )}
 
