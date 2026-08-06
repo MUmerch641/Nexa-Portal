@@ -36,6 +36,11 @@ export function cleanPayloadForDb(record) {
     if (typeof value === "function" || typeof value === "symbol") return;
     if (value && typeof value === "object" && !Array.isArray(value) && !(value instanceof Date)) return;
 
+    // If ID is a custom frontend string like "emp-178540..." or "s-123", strip it so PostgreSQL auto-assigns integer ID
+    if (key === "id" && typeof value === "string" && isNaN(Number(value))) {
+      return;
+    }
+
     // Preserve valid primitive values and primitive arrays
     cleaned[key] = value;
   });
@@ -191,14 +196,10 @@ export async function dbSaveRecord(table, record) {
   try {
     const cleanedPayload = cleanPayloadForDb(record);
 
-    const { error: upsertErr } = await supabase.from(table).upsert([cleanedPayload], { onConflict: "id" });
-    if (upsertErr) {
-      const { error: insertErr } = await supabase.from(table).insert([cleanedPayload]);
-      if (insertErr && cleanedPayload.id) {
-        // If string custom ID failed (e.g. DB expects auto-increment integer or UUID), try inserting without ID
-        const { id, ...payloadWithoutId } = cleanedPayload;
-        await supabase.from(table).insert([payloadWithoutId]).catch(() => {});
-      }
+    const { error: insertErr } = await supabase.from(table).insert([cleanedPayload]);
+    if (insertErr) {
+      // Fallback to upsert if insert encounters primary key duplicate
+      await supabase.from(table).upsert([cleanedPayload]).catch(() => {});
     }
   } catch(e) {
     console.warn(`Database insert notice for ${table}:`, e);
