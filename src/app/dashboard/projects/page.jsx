@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import Modal from "@/components/Modal";
 import { showToast } from "@/components/Toast";
+import { dbFetch, dbSaveList } from "@/lib/dbPersistence";
 import {
   FaProjectDiagram,
   FaTasks,
@@ -141,25 +142,18 @@ export default function ProjectsPage() {
       }
     } catch(e) {}
 
-    const savedTasks = localStorage.getItem("software_house_daily_tasks");
-    if (savedTasks) {
-      try { setDailyTasks(JSON.parse(savedTasks)); } catch (e) {}
-    }
-
-    const savedProjects = localStorage.getItem("software_house_full_projects");
-    if (savedProjects) {
-      try { setProjects(JSON.parse(savedProjects)); } catch (e) {}
-    }
+    dbFetch("daily_tasks").then(tasks => setDailyTasks(tasks));
+    dbFetch("projects").then(projs => setProjects(projs));
   }, []);
 
   const saveTasksState = (newList) => {
     setDailyTasks(newList);
-    localStorage.setItem("software_house_daily_tasks", JSON.stringify(newList));
+    dbSaveList("daily_tasks", newList);
   };
 
   const saveProjectsState = (newList) => {
     setProjects(newList);
-    localStorage.setItem("software_house_full_projects", JSON.stringify(newList));
+    dbSaveList("projects", newList);
   };
 
   // Timer interval for active tasks

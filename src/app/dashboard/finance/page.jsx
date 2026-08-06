@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabase";
 import { logActivity } from "@/lib/activityUtils";
 import { showToast } from "@/components/Toast";
 import Modal from "@/components/Modal";
+import { dbFetch, dbSaveRecord, dbDeleteRecord } from "@/lib/dbPersistence";
 import {
   EXPENSE_CATEGORIES,
   INCOME_CATEGORIES,
@@ -118,72 +119,15 @@ export default function ComprehensiveFinanceAccountingPage() {
 
     async function loadFinanceData() {
       // 1. Fetch Expenses
-      let dbExp = [];
-      try {
-        const { data, error } = await supabase.from("expenses").select("*");
-        if (!error && data && data.length > 0) dbExp = data;
-      } catch(e) {}
-
-      let localExp = [];
-      try {
-        const savedExp = localStorage.getItem("software_house_finance_expenses") || localStorage.getItem("persistent_expenses");
-        if (savedExp) localExp = JSON.parse(savedExp);
-      } catch(e) {}
-
-      const expMap = new Map();
-      const baseExpenses = localExp.length > 0 ? localExp : INITIAL_EXPENSES;
-      baseExpenses.forEach(item => {
-        const key = (item.id || item.title || "").toLowerCase();
-        if (key) expMap.set(key, item);
-      });
-      dbExp.forEach(item => {
-        const key = (item.id || item.title || "").toLowerCase();
-        if (key) expMap.set(key, { ...expMap.get(key), ...item });
-      });
-      const finalExpenses = Array.from(expMap.values());
+      const finalExpenses = await dbFetch("expenses", INITIAL_EXPENSES);
       setExpenses(finalExpenses);
-      try {
-        localStorage.setItem("software_house_finance_expenses", JSON.stringify(finalExpenses));
-        localStorage.setItem("persistent_expenses", JSON.stringify(finalExpenses));
-      } catch(e) {}
 
       // 2. Fetch Incomes
-      let dbInc = [];
-      try {
-        const { data, error } = await supabase.from("incomes").select("*");
-        if (!error && data && data.length > 0) dbInc = data;
-      } catch(e) {}
-
-      let localInc = [];
-      try {
-        const savedInc = localStorage.getItem("software_house_finance_incomes") || localStorage.getItem("persistent_incomes");
-        if (savedInc) localInc = JSON.parse(savedInc);
-      } catch(e) {}
-
-      const incMap = new Map();
-      const baseIncomes = localInc.length > 0 ? localInc : INITIAL_INCOMES;
-      baseIncomes.forEach(item => {
-        const key = (item.id || item.client_name || item.invoice_no || "").toLowerCase();
-        if (key) incMap.set(key, item);
-      });
-      dbInc.forEach(item => {
-        const key = (item.id || item.client_name || item.invoice_no || "").toLowerCase();
-        if (key) incMap.set(key, { ...incMap.get(key), ...item });
-      });
-      const finalIncomes = Array.from(incMap.values());
+      const finalIncomes = await dbFetch("incomes", INITIAL_INCOMES);
       setIncomes(finalIncomes);
-      try {
-        localStorage.setItem("software_house_finance_incomes", JSON.stringify(finalIncomes));
-        localStorage.setItem("persistent_incomes", JSON.stringify(finalIncomes));
-      } catch(e) {}
 
       // 3. Utility Bills
-      let localBills = [];
-      try {
-        const savedBills = localStorage.getItem("software_house_utility_bills");
-        if (savedBills) localBills = JSON.parse(savedBills);
-      } catch(e) {}
-      const finalBills = localBills.length > 0 ? localBills : INITIAL_UTILITY_BILLS;
+      const finalBills = await dbFetch("utility_bills", INITIAL_UTILITY_BILLS);
       setUtilityBills(finalBills);
       try {
         localStorage.setItem("software_house_utility_bills", JSON.stringify(finalBills));

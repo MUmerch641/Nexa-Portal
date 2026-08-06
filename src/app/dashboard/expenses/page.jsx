@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { logActivity } from "@/lib/activityUtils";
+import { dbFetch, dbSaveRecord, dbDeleteRecord } from "@/lib/dbPersistence";
 import {
   FaWallet,
   FaBolt,
@@ -46,37 +47,8 @@ export default function ExpensesPage() {
   // Fetch Expenses with LocalStorage Persistence & Supabase Sync
   const fetchExpenses = async () => {
     setLoading(true);
-    let dbData = [];
-    try {
-      const { data, error } = await supabase
-        .from("expenses")
-        .select("*")
-        .order("expense_date", { ascending: false });
-
-      if (!error && data) {
-        dbData = data;
-      }
-    } catch (err) {}
-
-    let localData = [];
-    try {
-      const s = localStorage.getItem("persistent_expenses");
-      if (s) localData = JSON.parse(s);
-    } catch(e) {}
-
-    const map = new Map();
-    localData.forEach(item => {
-      if (item.id || item.title) map.set(item.id || item.title, item);
-    });
-    dbData.forEach(item => {
-      if (item.id || item.title) map.set(item.id || item.title, { ...map.get(item.id || item.title), ...item });
-    });
-
-    const finalExpenses = Array.from(map.values());
+    const finalExpenses = await dbFetch("expenses");
     setExpenses(finalExpenses);
-    try {
-      localStorage.setItem("persistent_expenses", JSON.stringify(finalExpenses));
-    } catch(e) {}
     setLoading(false);
   };
 
@@ -113,22 +85,9 @@ export default function ExpensesPage() {
         notes: form.notes || "",
       };
 
-      const updated = [newExp, ...expenses];
+      await dbSaveRecord("expenses", newExp);
+      const updated = await dbFetch("expenses");
       setExpenses(updated);
-      try {
-        localStorage.setItem("persistent_expenses", JSON.stringify(updated));
-        localStorage.setItem("software_house_finance_expenses", JSON.stringify(updated));
-      } catch(e) {}
-
-      // Background sync to Supabase
-      supabase.from("expenses").insert([{
-        title: form.title,
-        category: form.category,
-        amount: Number(form.amount),
-        payment_status: form.payment_status,
-        expense_date: form.expense_date,
-        notes: form.notes,
-      }]).catch(() => {});
 
       try {
         logActivity(

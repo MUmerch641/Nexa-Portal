@@ -83,39 +83,8 @@ export default function ClientsPage() {
   // Fetch Clients & Invoices with Persistence & Supabase Sync
   const fetchClients = async () => {
     setLoading(true);
-    let dbClients = [];
-    try {
-      const { data, error } = await supabase
-        .from("clients")
-        .select("*")
-        .order("created_at", { ascending: false });
-
-      if (!error && data) {
-        dbClients = data;
-      }
-    } catch (err) {}
-
-    let localClients = [];
-    try {
-      const saved = localStorage.getItem("software_house_clients");
-      if (saved) localClients = JSON.parse(saved);
-    } catch(e) {}
-
-    const clientMap = new Map();
-    localClients.forEach(c => {
-      const key = (c.id || c.email || c.client_name || "").toLowerCase();
-      if (key) clientMap.set(key, c);
-    });
-    dbClients.forEach(c => {
-      const key = (c.id || c.email || c.client_name || "").toLowerCase();
-      if (key) clientMap.set(key, { ...clientMap.get(key), ...c });
-    });
-
-    const finalClients = Array.from(clientMap.values());
+    const finalClients = await dbFetch("clients");
     setClients(finalClients);
-    try {
-      localStorage.setItem("software_house_clients", JSON.stringify(finalClients));
-    } catch(e) {}
 
     try {
       // Fetch Invoices
@@ -178,11 +147,9 @@ export default function ClientsPage() {
         created_at: new Date().toISOString()
       };
 
-      const updatedList = [newClientObj, ...clients];
+      await dbSaveRecord("clients", newClientObj);
+      const updatedList = await dbFetch("clients");
       setClients(updatedList);
-      try {
-        localStorage.setItem("software_house_clients", JSON.stringify(updatedList));
-      } catch(e) {}
 
       // Save credentials for Client Login Portal!
       const userCredentials = {

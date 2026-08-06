@@ -131,41 +131,8 @@ export default function EmployeesPage() {
   // Fetch Employees with Live Supabase Sync & LocalStorage Fallback
   const fetchEmployees = async () => {
     setFetching(true);
-    let localEmps = [];
-    try {
-      const s = localStorage.getItem("persistent_employees");
-      if (s) localEmps = JSON.parse(s);
-    } catch(e) {}
-
-    let dbEmps = [];
-    try {
-      const { data, error } = await supabase.from("employees").select("*");
-      if (!error && data && data.length > 0) {
-        dbEmps = data;
-      }
-    } catch (err) {}
-
-    const empMap = new Map();
-    const baseEmps = localEmps.length > 0 ? localEmps : INITIAL_DEMO_EMPLOYEES;
-
-    baseEmps.forEach(e => {
-      const key = (e.email || e.id || "").toLowerCase().trim();
-      if (key) empMap.set(key, { ...e, status: e.status || "active" });
-    });
-
-    dbEmps.forEach(e => {
-      const key = (e.email || e.id || "").toLowerCase().trim();
-      if (key) {
-        const existing = empMap.get(key) || {};
-        empMap.set(key, { ...existing, ...e, status: e.status || existing.status || "active" });
-      }
-    });
-
-    const finalEmps = Array.from(empMap.values());
+    const finalEmps = await dbFetch("employees", INITIAL_DEMO_EMPLOYEES);
     setEmployees(finalEmps);
-    try {
-      localStorage.setItem("persistent_employees", JSON.stringify(finalEmps));
-    } catch(e) {}
     setFetching(false);
   };
 
@@ -290,26 +257,11 @@ export default function EmployeesPage() {
         status: "active"
       };
 
-      // 1. Get current list directly from localStorage to prevent closure/stale state bugs!
-      let currentLocal = [];
-      try {
-        const s = localStorage.getItem("persistent_employees");
-        if (s) currentLocal = JSON.parse(s);
-      } catch(e) {}
-
-      // Deduplicate by email
-      const filteredCurrent = currentLocal.filter(emp => (emp.email || "").toLowerCase().trim() !== trimmedEmail);
-      const newFullList = [newEmpObj, ...filteredCurrent];
-
-      // 2. Save directly to localStorage
-      try {
-        localStorage.setItem("persistent_employees", JSON.stringify(newFullList));
-      } catch(e) {}
-
-      // 3. Update React State
+      await dbSaveRecord("employees", newEmpObj);
+      const newFullList = await dbFetch("employees", INITIAL_DEMO_EMPLOYEES);
       setEmployees(newFullList);
 
-      // 4. Save to System Users credentials cache
+      // Save to System Users credentials cache
       const userCredentials = {
         fullName: trimmedName,
         email: trimmedEmail,
@@ -327,22 +279,6 @@ export default function EmployeesPage() {
         ];
         localStorage.setItem("registered_system_users", JSON.stringify(updatedUsers));
       } catch(e) {}
-
-      // 5. Upsert into Supabase DB
-      try {
-        await supabase.from("employees").upsert([{
-          id: newEmpObj.id,
-          full_name: trimmedName,
-          email: trimmedEmail,
-          phone: form.phone || null,
-          department: form.department,
-          designation: form.designation,
-          employment_type: form.employment_type,
-          joining_date: form.joining_date || new Date().toISOString().split("T")[0],
-          address: form.address || null,
-          status: "active"
-        }], { onConflict: "email" });
-      } catch(err) {}
 
       // 6. Log activity
       try {

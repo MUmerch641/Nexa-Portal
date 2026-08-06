@@ -183,40 +183,9 @@ export default function CoursesPage() {
   // Fetch Paid Course Students with Local Storage Fallback & Supabase Sync
   const fetchStudents = async () => {
     setLoading(true);
-    let dbStudents = [];
-    try {
-      const { data, error } = await supabase
-        .from("students")
-        .select("*")
-        .order("created_at", { ascending: false });
-
-      if (!error && data) {
-        dbStudents = data;
-      }
-    } catch (err) {}
-
-    let localStudents = [];
-    try {
-      const saved = localStorage.getItem("persistent_courses");
-      if (saved) localStudents = JSON.parse(saved);
-    } catch(e) {}
-
-    const studentMap = new Map();
-    localStudents.forEach(s => {
-      const key = (s.id || s.email || "").toLowerCase();
-      if (key) studentMap.set(key, s);
-    });
-    dbStudents.forEach(s => {
-      const key = (s.id || s.email || "").toLowerCase();
-      if (key) studentMap.set(key, { ...studentMap.get(key), ...s });
-    });
-
-    const finalStudents = Array.from(studentMap.values());
+    const finalStudents = await dbFetch("students");
     setStudents(finalStudents);
     autoDispatchFeeReminders(finalStudents);
-    try {
-      localStorage.setItem("persistent_courses", JSON.stringify(finalStudents));
-    } catch(e) {}
     setLoading(false);
   };
 
@@ -309,46 +278,11 @@ export default function CoursesPage() {
       next_due_date: form.next_due_date,
       fee_status: feePaidAmount >= totalFeeAmount ? "Paid" : "Pending Due",
       reminder_sent: false,
-      receipt: receiptObj,
     };
 
-    const studentMap = new Map();
-    [newStudentObj, ...students].forEach(s => {
-      const emailKey = (s.email || "").trim().toLowerCase();
-      const courseKey = (s.course_name || "").trim().toLowerCase();
-      studentMap.set(`${emailKey}_${courseKey}`, s);
-    });
-
-    const currentList = Array.from(studentMap.values());
-    setStudents(currentList);
-    try {
-      localStorage.setItem("persistent_courses", JSON.stringify(currentList));
-    } catch (e) {}
-
-    try {
-      const dbInsertObj = {
-        full_name: form.full_name,
-        email: form.email,
-        phone: form.phone,
-        course_name: form.course_name,
-        course_fee: totalFeeAmount,
-        fee_paid: feePaidAmount,
-        fee_status: feePaidAmount >= totalFeeAmount ? "Paid" : "Pending Due",
-      };
-
-      const { data: insertRes, error: insertErr } = await supabase
-        .from("students")
-        .insert([dbInsertObj])
-        .select();
-
-      if (insertErr) {
-        console.warn("Supabase student insert notice:", insertErr);
-      } else {
-        await fetchStudents();
-      }
-    } catch (dbErr) {
-      console.warn("Supabase insert notice:", dbErr);
-    }
+    await dbSaveRecord("students", newStudentObj);
+    const updatedList = await dbFetch("students");
+    setStudents(updatedList);
 
     // Auto-save credentials for registered student
     const userCredentials = {

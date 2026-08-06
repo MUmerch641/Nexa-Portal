@@ -23,6 +23,43 @@ export const TABLE_STORAGE_KEYS = {
 };
 
 /**
+ * Clean UI/transient fields before sending payload to Supabase DB.
+ * Prevents HTTP 400 bad request errors caused by unknown columns or invalid string IDs.
+ */
+export function cleanPayloadForDb(record) {
+  if (!record || typeof record !== "object") return {};
+  const cleaned = {};
+
+  Object.keys(record).forEach((key) => {
+    const value = record[key];
+    // Skip functions, DOM nodes, React components, and complex nested objects (e.g. receipt, icon)
+    if (typeof value === "function" || typeof value === "symbol") return;
+    if (value && typeof value === "object" && !Array.isArray(value) && !(value instanceof Date)) return;
+
+    // Preserve valid primitive values and primitive arrays
+    cleaned[key] = value;
+  });
+
+  return cleaned;
+}
+
+/**
+ * Unique key helper for deduplicating records across DB & Local Storage datasets.
+ */
+function getDedupeKey(item) {
+  if (!item) return "";
+  return String(
+    item.id ||
+    item.email ||
+    item.title ||
+    item.full_name ||
+    item.name ||
+    item.client_name ||
+    ""
+  ).toLowerCase().trim();
+}
+
+/**
  * Fetch records from Supabase DB merged with local storage fallback.
  * Ensures 100% data persistence on page refresh, offline, or DB errors.
  */
@@ -48,23 +85,29 @@ export async function dbFetch(table, defaultData = []) {
     }
   } catch (e) {}
 
-  // 3. Deduplicate and Merge Datasets (Local + DB + Defaults)
+  // 3. Deduplicate and Merge Datasets (Defaults -> Local -> DB)
   const map = new Map();
-  // Start with localData if present; else defaultData
-  const baseList = localData.length > 0 ? localData : defaultData;
 
-  baseList.forEach(item => {
-    if (!item) return;
-    const key = String(item.id || item.email || item.title || item.client_name || "").toLowerCase().trim();
-    if (key) map.set(key, item);
+  if (Array.isArray(defaultData)) {
+    defaultData.forEach(item => {
+      const k = getDedupeKey(item);
+      if (k) map.set(k, item);
+    });
+  }
+
+  localData.forEach(item => {
+    const k = getDedupeKey(item);
+    if (k) {
+      const existing = map.get(k) || {};
+      map.set(k, { ...existing, ...item });
+    }
   });
 
   dbData.forEach(item => {
-    if (!item) return;
-    const key = String(item.id || item.email || item.title || item.client_name || "").toLowerCase().trim();
-    if (key) {
-      const existing = map.get(key) || {};
-      map.set(key, { ...existing, ...item });
+    const k = getDedupeKey(item);
+    if (k) {
+      const existing = map.get(k) || {};
+      map.set(k, { ...existing, ...item });
     }
   });
 
@@ -93,7 +136,11 @@ export async function dbSaveList(table, list = []) {
 
   try {
     if (Array.isArray(list) && list.length > 0) {
-      await supabase.from(table).upsert(list, { onConflict: "id" }).catch(() => {});
+      const cleanedList = list.map(cleanPayloadForDb);
+      await supabase.from(table).upsert(cleanedList, { onConflict: "id" }).catch(async () => {
+        // Fallback: Insert without conflict constraint
+        await supabase.from(table).insert(cleanedList).catch(() => {});
+      });
     }
   } catch(e) {}
 
@@ -109,6 +156,7 @@ export async function dbSaveList(table, list = []) {
  * Insert or Upsert record to Database AND Local Storage synchronously.
  */
 export async function dbSaveRecord(table, record) {
+  if (!record) return null;
   const storageKey = TABLE_STORAGE_KEYS[table] || `persistent_${table}`;
   
   // 1. Synchronously update Local Storage
@@ -119,12 +167,8 @@ export async function dbSaveRecord(table, record) {
       if (saved) currentLocal = JSON.parse(saved);
     } catch(e) {}
 
-    const recKey = String(record.id || record.email || record.title || "").toLowerCase().trim();
-    const filtered = currentLocal.filter(item => {
-      if (!item) return false;
-      const k = String(item.id || item.email || item.title || "").toLowerCase().trim();
-      return k !== recKey;
-    });
+    const recKey = getDedupeKey(record);
+    const filtered = currentLocal.filter(item => getDedupeKey(item) !== recKey);
 
     const updated = [record, ...filtered];
     try {
@@ -132,17 +176,22 @@ export async function dbSaveRecord(table, record) {
     } catch(e) {}
   }
 
-  // 2. Write to Supabase DB safely
+  // 2. Write to Supabase DB safely with clean payload
   try {
-    const { error: upsertErr } = await supabase.from(table).upsert([record], { onConflict: "id" });
+    const cleanedPayload = cleanPayloadForDb(record);
+
+    const { error: upsertErr } = await supabase.from(table).upsert([cleanedPayload], { onConflict: "id" });
     if (upsertErr) {
-      const { error: insertErr } = await supabase.from(table).insert([record]);
-      if (insertErr && record.id) {
-        const { id, ...cleanPayload } = record;
-        await supabase.from(table).insert([cleanPayload]).catch(() => {});
+      const { error: insertErr } = await supabase.from(table).insert([cleanedPayload]);
+      if (insertErr && cleanedPayload.id) {
+        // If string custom ID failed (e.g. DB expects auto-increment integer or UUID), try inserting without ID
+        const { id, ...payloadWithoutId } = cleanedPayload;
+        await supabase.from(table).insert([payloadWithoutId]).catch(() => {});
       }
     }
-  } catch(e) {}
+  } catch(e) {
+    console.warn(`Database insert notice for ${table}:`, e);
+  }
 
   // 3. Trigger cross-tab/window event
   if (typeof window !== "undefined") {
@@ -164,14 +213,24 @@ export async function dbDeleteRecord(table, id, emailField = "") {
       const saved = localStorage.getItem(storageKey);
       if (saved) {
         const current = JSON.parse(saved);
-        const filtered = current.filter(item => item && item.id !== id && item.email !== emailField);
+        const targetKey = String(id || emailField).toLowerCase().trim();
+        const filtered = current.filter(item => {
+          if (!item) return false;
+          const k = String(item.id || item.email || "").toLowerCase().trim();
+          return k !== targetKey && item.id !== id;
+        });
         localStorage.setItem(storageKey, JSON.stringify(filtered));
       }
     } catch(e) {}
   }
 
   try {
-    await supabase.from(table).delete().eq("id", id).catch(() => {});
+    if (id) {
+      await supabase.from(table).delete().eq("id", id).catch(() => {});
+    }
+    if (emailField) {
+      await supabase.from(table).delete().eq("email", emailField).catch(() => {});
+    }
   } catch(e) {}
 
   if (typeof window !== "undefined") {
@@ -179,4 +238,5 @@ export async function dbDeleteRecord(table, id, emailField = "") {
     window.dispatchEvent(new Event("storage"));
   }
 }
+
 

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { generatePrintablePayslipPdf } from "@/lib/generatePayslipPdf";
 import Modal from "@/components/Modal";
+import { dbFetch, dbSaveRecord, dbDeleteRecord } from "@/lib/dbPersistence";
 import {
   FaMoneyBillWave,
   FaCalculator,
@@ -224,42 +225,16 @@ export default function PayrollDashboardPage() {
     setUserEmail(savedEmail);
 
     const loadPayrolls = async () => {
-      let dbRecords = [];
-      try {
-        const { data, error } = await supabase.from("payrolls").select("*").order("created_at", { ascending: false });
-        if (!error && data) {
-          dbRecords = data;
-        }
-      } catch (e) {}
-
-      let localRecords = [];
-      try {
-        const saved = localStorage.getItem("software_house_payrolls");
-        if (saved) localRecords = JSON.parse(saved);
-      } catch (e) {}
-
-      const pMap = new Map();
-      const basePayrolls = localRecords.length > 0 ? localRecords : [
+      const defaultPayrolls = [
         { id: "p-1", employee_id: "emp-101", employee_name: "Muhammad Ali", department: "Web Development", designation: "Senior Lead Developer", email: "ali.staff@gmail.com", month: "2026-08", basic_salary: 120000, overtime_hours: 10, overtime_amount: 6000, leave_deduction: 0, late_penalty: 500, bonus_amount: 5000, incentive_amount: 3000, advance_deduction: 0, loan_deduction: 5000, final_payable_salary: 128500, status: "processed" },
         { id: "p-2", employee_id: "emp-102", employee_name: "Sara Khan", department: "UI/UX Design", designation: "Lead Designer", email: "sara.design@gmail.com", month: "2026-08", basic_salary: 95000, overtime_hours: 0, overtime_amount: 0, leave_deduction: 3650, late_penalty: 0, bonus_amount: 4000, incentive_amount: 2000, advance_deduction: 10000, loan_deduction: 0, final_payable_salary: 87350, status: "processed" },
         { id: "p-3", employee_id: "emp-103", employee_name: "Muhammad Rahim Bugti", department: "Engineering", designation: "Senior Full-Stack Developer", email: "rahim.staff@gmail.com", month: "2026-08", basic_salary: 150000, overtime_hours: 15, overtime_amount: 11250, leave_deduction: 0, late_penalty: 0, bonus_amount: 10000, incentive_amount: 5000, advance_deduction: 0, loan_deduction: 0, final_payable_salary: 176250, status: "processed" },
         { id: "p-4", employee_id: "emp-104", employee_name: "Usman Tariq", department: "QA Testing", designation: "Automation QA Engineer", email: "usman.qa@gmail.com", month: "2026-08", basic_salary: 80000, overtime_hours: 5, overtime_amount: 2500, leave_deduction: 2600, late_penalty: 500, bonus_amount: 3000, incentive_amount: 0, advance_deduction: 0, loan_deduction: 0, final_payable_salary: 82400, status: "processed" }
       ];
 
-      basePayrolls.forEach(p => {
-        const key = (p.id || p.email || "").toLowerCase();
-        if (key) pMap.set(key, p);
-      });
-      dbRecords.forEach(p => {
-        const key = (p.id || p.email || "").toLowerCase();
-        if (key) pMap.set(key, { ...pMap.get(key), ...p });
-      });
-
-      const finalPayrolls = Array.from(pMap.values());
+      const finalPayrolls = await dbFetch("payrolls", defaultPayrolls);
       setPayrolls(finalPayrolls);
-      try {
-        localStorage.setItem("software_house_payrolls", JSON.stringify(finalPayrolls));
-      } catch(e) {}
+      setLoading(false);
     };
 
     loadPayrolls();
