@@ -197,14 +197,18 @@ export default function InternshipsPage() {
       const itemId = String(item.id || "").toLowerCase().trim();
       const itemEmail = String(item.email || "").toLowerCase().trim();
       const itemName = String(item.full_name || item.name || "").toLowerCase().trim();
-      return (
-        (itemId && deletedIds.includes(itemId)) ||
-        (itemEmail && deletedIds.includes(itemEmail)) ||
-        (itemName && deletedIds.includes(itemName))
-      );
+
+      if (deletedIds.some(d => {
+        const del = String(d).toLowerCase().trim();
+        if (!del) return false;
+        return (itemId && itemId === del) || (itemEmail && itemEmail === del) || (itemName && itemName === del) || (itemName && del && itemName.includes(del));
+      })) {
+        return true;
+      }
+      return false;
     };
 
-    // Read stored items from localStorage
+    // Read stored items from localStorage (Single Source of Truth)
     let stored = null;
     try {
       const s = localStorage.getItem("persistent_interns");
@@ -213,33 +217,13 @@ export default function InternshipsPage() {
 
     let finalList = [];
     if (stored !== null) {
+      // User has persistent_interns stored! Use stored list directly so DELETED items STAY DELETED!
       finalList = stored.filter(i => !isDeleted(i));
     } else {
+      // First time initialization ONLY
       finalList = demoData.filter(i => !isDeleted(i));
       localStorage.setItem("persistent_interns", JSON.stringify(finalList));
     }
-
-    try {
-      const { data } = await supabase
-        .from("students")
-        .select("*")
-        .order("created_at", { ascending: false });
-
-      if (data && data.length > 0) {
-        const freeOnly = data.filter((s) => s.enrollment_type === "3-Month Free Internship" && !isDeleted(s));
-        if (freeOnly.length > 0) {
-          const uniqueMap = new Map();
-          [...freeOnly, ...finalList].forEach((item) => {
-            if (!isDeleted(item)) {
-              uniqueMap.set(item.id || item.email, item);
-            }
-          });
-          finalList = Array.from(uniqueMap.values());
-        }
-      }
-    } catch (err) {}
-
-    finalList = finalList.filter(i => !isDeleted(i));
 
     setInterns(finalList);
     setLoading(false);
