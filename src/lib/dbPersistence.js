@@ -88,38 +88,26 @@ export async function dbFetch(table, defaultData = []) {
     }
   } catch (e) {}
 
-  // 3. Load Supabase Database Data asynchronously with Server API Proxy fallback
+  // 3. Load Database Data via Server Persistence Proxy API (Always returns 200 OK)
   let dbData = [];
   try {
-    const { data, error } = await supabase.from(table).select("*");
-    if (!error && data && Array.isArray(data)) {
-      dbData = data;
-    } else {
-      // If table is daily_tasks and returns error, fallback to 'tasks' table
-      if (table === "daily_tasks") {
-        const { data: taskData, error: taskErr } = await supabase.from("tasks").select("*");
-        if (!taskErr && taskData) dbData = taskData;
-      }
-
-      if (dbData.length === 0 && typeof window !== "undefined") {
-        const res = await fetch(`/api/persistence?table=${encodeURIComponent(table)}`).catch(() => null);
-        if (res && res.ok) {
-          const json = await res.json();
-          if (json && Array.isArray(json.data)) dbData = json.data;
-        }
-      }
-    }
-  } catch (e) {
     if (typeof window !== "undefined") {
-      try {
-        const res = await fetch(`/api/persistence?table=${encodeURIComponent(table)}`).catch(() => null);
-        if (res && res.ok) {
-          const json = await res.json();
-          if (json && Array.isArray(json.data)) dbData = json.data;
+      const res = await fetch(`/api/persistence?table=${encodeURIComponent(table)}`).catch(() => null);
+      if (res && res.ok) {
+        const json = await res.json();
+        if (json && Array.isArray(json.data)) {
+          dbData = json.data;
         }
-      } catch (err) {}
+      }
     }
-  }
+
+    if (dbData.length === 0) {
+      const { data, error } = await supabase.from(table).select("*");
+      if (!error && data && Array.isArray(data)) {
+        dbData = data;
+      }
+    }
+  } catch (e) {}
 
   // 4. Deduplicate and Merge Datasets (Defaults -> Local -> DB)
   const map = new Map();
