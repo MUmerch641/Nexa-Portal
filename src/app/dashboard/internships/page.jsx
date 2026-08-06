@@ -365,22 +365,29 @@ export default function InternshipsPage() {
     });
 
     setInterns(updated);
+    const targetIntern = updated.find(i => String(i.id) === String(selectedInternId));
+    if (targetIntern) {
+      await dbSaveRecord("students", targetIntern).catch(() => {});
+    }
+
     try {
       localStorage.setItem("persistent_interns", JSON.stringify(updated));
     } catch (e) {}
 
     setDailyLogText("");
     setSelectedInternId(null);
-    showAlert("Daily Progress Logged!", "Work progress update has been saved to your timeline log!", "success");
+    showAlert("Daily Progress Logged!", "Work progress update has been saved to Database and timeline log!", "success");
   };
 
   // Update Progress (0-100%)
   const updateInternProgress = async (id, newProgress) => {
     const pVal = Number(newProgress);
-    const updated = interns.map((i) => (i.id === id ? { ...i, progress: pVal } : i));
+    const updated = interns.map((i) => (String(i.id) === String(id) ? { ...i, progress: pVal } : i));
     setInterns(updated);
-    const targetIntern = updated.find(i => i.id === id);
-    if (targetIntern) dbSaveRecord("students", targetIntern).catch(() => {});
+    const targetIntern = updated.find(i => String(i.id) === String(id));
+    if (targetIntern) {
+      await dbSaveRecord("students", targetIntern).catch(() => {});
+    }
   };
 
   // Delete Single Intern
