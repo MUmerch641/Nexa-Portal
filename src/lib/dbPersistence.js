@@ -30,9 +30,10 @@ export function cleanPayloadForDb(record, table = "") {
   if (!record || typeof record !== "object") return {};
   const cleaned = {};
 
-  const knownStudentColumns = [
-    "full_name", "email", "phone", "enrollment_type", "course_name", 
-    "instructor", "progress", "course_fee", "fee_paid", "fee_status", "created_at"
+  const invalidColumns = [
+    "cnic", "internship_mode", "resources_url", "screen_access_url",
+    "start_date", "end_date", "daily_logs", "work_mode", "is_remote",
+    "course_mode", "reminder_sent", "assigned_password", "enrollment_mode"
   ];
 
   Object.keys(record).forEach((key) => {
@@ -46,8 +47,8 @@ export function cleanPayloadForDb(record, table = "") {
       return;
     }
 
-    // Strip unmapped custom frontend columns for students table to avoid schema cache 400 errors
-    if (table === "students" && !knownStudentColumns.includes(key)) {
+    // Strip unmapped custom frontend columns to prevent Supabase PostgREST 400 schema errors
+    if (invalidColumns.includes(key)) {
       return;
     }
 
@@ -165,11 +166,14 @@ export async function dbSaveList(table, list = []) {
 
   try {
     if (Array.isArray(list) && list.length > 0) {
-      const cleanedList = list.map(cleanPayloadForDb);
-      await supabase.from(table).upsert(cleanedList, { onConflict: "id" }).catch(async () => {
-        // Fallback: Insert without conflict constraint
-        await supabase.from(table).insert(cleanedList).catch(() => {});
-      });
+      const cleanedList = list.map(item => cleanPayloadForDb(item, table));
+      if (typeof window !== "undefined") {
+        fetch("/api/persistence", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ table, record: cleanedList[0], action: "save" })
+        }).catch(() => {});
+      }
     }
   } catch(e) {}
 
