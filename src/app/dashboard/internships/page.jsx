@@ -224,6 +224,17 @@ export default function InternshipsPage() {
     fetchInterns();
   }, []);
 
+  // Open Internship Certificate Modal & Print Handler
+  const openCertificate = (intern) => {
+    setCertificateModal({ isOpen: true, intern });
+  };
+
+  const printCertificate = () => {
+    if (typeof window !== "undefined") {
+      window.print();
+    }
+  };
+
   // Register 3-Month Free Intern (On-Site vs Remote)
   const handleAddIntern = async (e) => {
     e.preventDefault();
@@ -917,6 +928,88 @@ export default function InternshipsPage() {
           )}
         </div>
       </div>
+
+      {/* OFFICIAL 3-MONTH INTERNSHIP CERTIFICATE MODAL */}
+      {certificateModal.isOpen && certificateModal.intern && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-md p-4 overflow-y-auto">
+          <div className="bg-white rounded-3xl max-w-3xl w-full p-8 shadow-2xl space-y-6 border-4 border-amber-500 text-slate-900 relative">
+            <div className="flex justify-between items-center border-b border-slate-200 pb-4">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-black uppercase tracking-widest text-amber-700 bg-amber-100 px-3 py-1 rounded-full border border-amber-300">
+                  Official Completion Certificate
+                </span>
+                <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
+                  Verified & Issued
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={printCertificate}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold px-4 py-2 rounded-xl text-xs flex items-center gap-1.5 shadow-md cursor-pointer transition-all"
+                >
+                  <FaPrint /> <span>Print / Save PDF Certificate</span>
+                </button>
+                <button
+                  onClick={() => setCertificateModal({ isOpen: false, intern: null })}
+                  className="text-slate-400 hover:text-slate-700 text-xl font-bold p-1"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            {/* CERTIFICATE CANVAS TEMPLATE */}
+            <div className="p-8 border-8 border-double border-amber-600 bg-amber-50/30 rounded-2xl text-center space-y-6 shadow-inner print:p-0 print:border-none print:bg-white">
+              <div className="flex items-center justify-center gap-3">
+                <img src="/logo.jpeg" alt="Company Logo" className="h-14 w-14 rounded-xl border border-slate-300 shadow-md object-cover" />
+                <div className="text-left">
+                  <h2 className="text-xl font-black tracking-tight text-slate-900 uppercase">Nexa Innovation and Technology</h2>
+                  <p className="text-xs text-slate-600 font-extrabold uppercase tracking-widest">Official Certificate of Internship Completion</p>
+                </div>
+              </div>
+
+              <div className="space-y-2 py-4">
+                <p className="text-xs font-serif italic text-slate-600">This is to proudly certify that</p>
+                <h1 className="text-3xl font-black text-amber-950 underline decoration-amber-500 decoration-2 underline-offset-8">
+                  {certificateModal.intern.full_name}
+                </h1>
+                <p className="text-xs text-slate-600 font-mono mt-1">CNIC / ID: {certificateModal.intern.cnic || "31202-9876543-1"}</p>
+              </div>
+
+              <p className="text-sm text-slate-800 leading-relaxed max-w-xl mx-auto font-medium">
+                has successfully completed the <strong>3-Month Free Professional Internship</strong> in{" "}
+                <span className="font-extrabold text-blue-900 bg-blue-100 px-2 py-0.5 rounded">{certificateModal.intern.course_name}</span>{" "}
+                ({certificateModal.intern.internship_mode || "On-Site"}) with outstanding performance, practical project contributions, and software development standards.
+              </p>
+
+              <div className="grid grid-cols-3 gap-4 pt-6 border-t border-amber-200 text-xs">
+                <div>
+                  <p className="text-slate-500 text-[10px] font-bold uppercase">Internship Period</p>
+                  <p className="font-bold text-slate-900">{certificateModal.intern.start_date} to {certificateModal.intern.end_date}</p>
+                </div>
+                <div>
+                  <p className="text-slate-500 text-[10px] font-bold uppercase">Instructor / Supervisor</p>
+                  <p className="font-bold text-slate-900">{certificateModal.intern.instructor || "Software House Lead"}</p>
+                </div>
+                <div>
+                  <p className="text-slate-500 text-[10px] font-bold uppercase">Certificate ID</p>
+                  <p className="font-mono font-bold text-amber-800">NEXA-INT-2026-{(certificateModal.intern.id || "").replace(/[^0-9]/g, "") || "8921"}</p>
+                </div>
+              </div>
+
+              <div className="pt-4 flex justify-between items-end border-t border-slate-300 text-xs">
+                <div className="text-left">
+                  <p className="text-[10px] font-bold text-slate-400">ISSUING AUTHORITY</p>
+                  <p className="font-extrabold text-slate-900">Director of Engineering & Technology</p>
+                </div>
+                <div className="flex items-center gap-1.5 text-emerald-800 bg-emerald-100 px-3 py-1.5 rounded-lg border border-emerald-300 font-extrabold text-xs">
+                  <FaAward className="text-emerald-700 text-base" /> Verified Authentic Certificate
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
