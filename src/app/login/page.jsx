@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { login } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
+import { dbSaveRecord } from "@/lib/dbPersistence";
 import Modal from "@/components/Modal";
 import ToastContainer, { showToast } from "@/components/Toast";
 import { FaUserTie, FaBuilding, FaLock, FaEnvelope, FaKey, FaGraduationCap, FaShieldAlt, FaUserCheck } from "react-icons/fa";
@@ -18,6 +19,7 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [department, setDepartment] = useState("Software Engineering");
+  const [workMode, setWorkMode] = useState("remote"); // 'remote' (Ipify OFF) or 'onsite'
   const [loading, setLoading] = useState(false);
 
   // Form Validation Errors State
@@ -165,7 +167,10 @@ export default function LoginPage() {
           email,
           password,
           role: selectedRole,
-          department
+          department,
+          work_mode: workMode,
+          employment_type: workMode === "remote" ? "Remote Staff / Student" : "On-Site Staff / Student",
+          is_remote: workMode === "remote"
         }
       });
 
@@ -221,6 +226,22 @@ export default function LoginPage() {
     // 1. Check if user credentials match registered local/seed accounts first
     if (matchedUser) {
       const activeRole = matchedUser.role || selectedRole;
+      const emailLower = email.trim().toLowerCase();
+
+      // Check if matched user account is Remote
+      const isRemoteUser = (
+        matchedUser.is_remote === true ||
+        (matchedUser.work_mode && String(matchedUser.work_mode).toLowerCase().includes("remote")) ||
+        (matchedUser.employment_type && String(matchedUser.employment_type).toLowerCase().includes("remote")) ||
+        (matchedUser.department && String(matchedUser.department).toLowerCase().includes("remote")) ||
+        emailLower.includes("remote")
+      );
+
+      if (isRemoteUser) {
+        localStorage.setItem(`is_remote_user_${emailLower}`, "true");
+        localStorage.setItem(`remote_attendance_override_${emailLower}`, "true");
+      }
+
       localStorage.setItem("isLoggedIn", "true");
       localStorage.setItem("user_role", activeRole);
       localStorage.setItem("current_user_email", email);
@@ -249,6 +270,12 @@ export default function LoginPage() {
     } catch(e) {}
 
     if (supabaseAuthSuccess) {
+      const emailLower = email.trim().toLowerCase();
+      if (workMode === "remote") {
+        localStorage.setItem(`is_remote_user_${emailLower}`, "true");
+        localStorage.setItem(`remote_attendance_override_${emailLower}`, "true");
+      }
+
       localStorage.setItem("isLoggedIn", "true");
       localStorage.setItem("user_role", selectedRole);
       localStorage.setItem("current_user_email", email);
@@ -284,12 +311,20 @@ export default function LoginPage() {
       return;
     }
 
-    // OTP Verified! Save registered user credentials locally for future login
+    // OTP Verified! Save registered user credentials locally and to DB
     if (otpModal.userCredentials) {
       saveRegisteredUser(otpModal.userCredentials);
+      dbSaveRecord("registered_users", otpModal.userCredentials).catch(() => {});
+
+      const emailLower = (otpModal.userCredentials.email || email).trim().toLowerCase();
+      if (otpModal.userCredentials.is_remote || otpModal.userCredentials.work_mode === "remote") {
+        localStorage.setItem(`is_remote_user_${emailLower}`, "true");
+        localStorage.setItem(`remote_attendance_override_${emailLower}`, "true");
+      }
     }
 
     const assignedRole = otpModal.userCredentials?.role || selectedRole;
+    localStorage.setItem("isLoggedIn", "true");
     localStorage.setItem("user_role", assignedRole);
     localStorage.setItem("current_user_email", email);
     window.dispatchEvent(new Event("roleChanged"));
@@ -434,6 +469,20 @@ export default function LoginPage() {
                   <option value="employee">🧑‍💻 Paid Staff / Employee</option>
                   <option value="client">🏢 Client Account</option>
                   <option value="admin">👑 Admin Account</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs font-semibold uppercase text-slate-600">
+                  Attendance & Work Mode *
+                </label>
+                <select
+                  value={workMode}
+                  onChange={(e) => setWorkMode(e.target.value)}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-blue-600 font-medium bg-blue-50/50"
+                >
+                  <option value="remote">🌐 Remote Work / Online Student (Ipify API OFF - Attendance Anywhere)</option>
+                  <option value="onsite">🏢 On-Site (Office Wi-Fi Attendance Required)</option>
                 </select>
               </div>
             </>
