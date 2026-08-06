@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
+import Link from "next/link";
 import Modal from "@/components/Modal";
 import {
   FaDesktop,
@@ -101,7 +102,104 @@ export default function RemoteMonitoringPage() {
     const savedEmail = localStorage.getItem("current_user_email") || "student@gmail.com";
     setRole(savedRole);
     setUserEmail(savedEmail);
+
+    loadRemoteStudents();
+
+    const handleDataChange = () => {
+      loadRemoteStudents();
+    };
+
+    window.addEventListener("storage", handleDataChange);
+    window.addEventListener("dataChanged", handleDataChange);
+    return () => {
+      window.removeEventListener("storage", handleDataChange);
+      window.removeEventListener("dataChanged", handleDataChange);
+    };
   }, []);
+
+  const loadRemoteStudents = async () => {
+    try {
+      const savedInterns = localStorage.getItem("persistent_interns");
+      let internList = savedInterns ? JSON.parse(savedInterns) : [];
+
+      const savedUsers = localStorage.getItem("registered_system_users");
+      let userList = savedUsers ? JSON.parse(savedUsers) : [];
+
+      const savedStudents = localStorage.getItem("persistent_courses");
+      let studentList = savedStudents ? JSON.parse(savedStudents) : [];
+
+      const isRemoteStr = (str) => {
+        if (!str) return false;
+        const s = String(str).toLowerCase();
+        return s.includes("remote") || s.includes("wfh") || s.includes("online") || s.includes("home");
+      };
+
+      const remoteInternsFiltered = internList.filter(i => 
+        i.is_remote === true || 
+        isRemoteStr(i.internship_mode) || 
+        isRemoteStr(i.employment_type) || 
+        isRemoteStr(i.work_mode) || 
+        isRemoteStr(i.course_mode)
+      ).map(i => ({
+        id: i.id || `int-${Math.random()}`,
+        name: i.full_name || i.name || "Remote Intern",
+        role: `${i.course_name || "MERN Stack"} Remote Intern`,
+        email: i.email,
+        status: "Online",
+        ip: "Remote (Allowed)",
+        course: i.course_name || "Software Engineering",
+        activity: "VS Code / Working Stream",
+        screen_access_url: i.screen_access_url
+      }));
+
+      const remoteUsersFiltered = userList.filter(u =>
+        u.is_remote === true ||
+        isRemoteStr(u.work_mode) ||
+        isRemoteStr(u.employment_type) ||
+        isRemoteStr(u.department)
+      ).map(u => ({
+        id: u.id || `usr-${Math.random()}`,
+        name: u.fullName || u.email?.split("@")[0] || "Remote Student",
+        role: `${u.department || u.role || "Online"} Remote Student`,
+        email: u.email,
+        status: "Online",
+        ip: "Remote (Allowed)",
+        course: u.department || "Online Course",
+        activity: "Portal Active / Studying"
+      }));
+
+      const remoteStudentsFiltered = studentList.filter(s =>
+        s.is_remote === true ||
+        isRemoteStr(s.course_mode) ||
+        isRemoteStr(s.employment_type) ||
+        isRemoteStr(s.work_mode)
+      ).map(s => ({
+        id: s.id || `stu-${Math.random()}`,
+        name: s.full_name || s.student_name || "Remote Student",
+        role: `${s.course_name || "Tech"} Remote Student`,
+        email: s.email,
+        status: "Online",
+        ip: "Remote (Allowed)",
+        course: s.course_name || "Course Student",
+        activity: "LMS / Live Coding"
+      }));
+
+      const map = new Map();
+      [...remoteInternsFiltered, ...remoteUsersFiltered, ...remoteStudentsFiltered].forEach(item => {
+        if (item.email) {
+          map.set(item.email.toLowerCase().trim(), item);
+        }
+      });
+
+      const combinedRemoteList = Array.from(map.values());
+
+      if (combinedRemoteList.length > 0) {
+        setRemoteStudents(combinedRemoteList);
+      }
+    } catch(e) {
+      console.error("Error loading remote students:", e);
+    }
+  };
 
   // Request Live Screen Sharing Stream via WebRTC
   const startLiveScreenAccess = async (student) => {
@@ -243,10 +341,20 @@ export default function RemoteMonitoringPage() {
               Request live real-time desktop screen access to guide & monitor remote interns during work hours
             </p>
           </div>
-          <span className="text-xs font-bold text-emerald-800 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200 flex items-center gap-1.5 shrink-0">
-            <FaCircle className="text-[8px] text-emerald-500 animate-ping" />
-            <span>3 Remote Interns Online</span>
-          </span>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <Link
+              href="/dashboard/internships"
+              className="text-xs font-extrabold text-blue-700 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-xl border border-blue-200 transition-all flex items-center gap-1 cursor-pointer"
+            >
+              <span>+ Add Remote Intern</span>
+            </Link>
+
+            <span className="text-xs font-bold text-emerald-800 bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200 flex items-center gap-1.5">
+              <FaCircle className="text-[8px] text-emerald-500 animate-ping" />
+              <span>{remoteStudents.length} Remote Student(s) Active</span>
+            </span>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
