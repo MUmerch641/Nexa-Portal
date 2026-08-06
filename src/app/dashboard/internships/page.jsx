@@ -185,7 +185,7 @@ export default function InternshipsPage() {
       },
     ];
 
-    // Read blacklisted deleted IDs/emails
+    // Read blacklisted deleted IDs/emails/names
     let deletedIds = [];
     try {
       const d = localStorage.getItem("deleted_intern_ids");
@@ -194,9 +194,14 @@ export default function InternshipsPage() {
 
     const isDeleted = (item) => {
       if (!item) return true;
-      const itemId = String(item.id || "");
+      const itemId = String(item.id || "").toLowerCase().trim();
       const itemEmail = String(item.email || "").toLowerCase().trim();
-      return deletedIds.includes(itemId) || (itemEmail && deletedIds.includes(itemEmail));
+      const itemName = String(item.full_name || item.name || "").toLowerCase().trim();
+      return (
+        (itemId && deletedIds.includes(itemId)) ||
+        (itemEmail && deletedIds.includes(itemEmail)) ||
+        (itemName && deletedIds.includes(itemName))
+      );
     };
 
     // Read stored items from localStorage
@@ -400,12 +405,22 @@ export default function InternshipsPage() {
     if (targetIntern) dbSaveRecord("students", targetIntern).catch(() => {});
   };
 
-  // Delete Intern
+  // Delete Single Intern
   const handleDeleteIntern = async (id) => {
     if (!confirm("Are you sure you want to delete this intern record?")) return;
     const target = interns.find(i => i.id === id);
     const targetEmail = (target?.email || "").toLowerCase().trim();
-    const updated = interns.filter((i) => i.id !== id && (i.email || "").toLowerCase().trim() !== targetEmail);
+    const targetName = (target?.full_name || target?.name || "").toLowerCase().trim();
+
+    const updated = interns.filter((i) => {
+      const iId = String(i.id || "").toLowerCase().trim();
+      const iEmail = String(i.email || "").toLowerCase().trim();
+      const iName = String(i.full_name || i.name || "").toLowerCase().trim();
+      if (id && iId === String(id).toLowerCase().trim()) return false;
+      if (targetEmail && iEmail === targetEmail) return false;
+      if (targetName && iName === targetName) return false;
+      return true;
+    });
     setInterns(updated);
 
     // 1. Update persistent_interns
@@ -433,7 +448,7 @@ export default function InternshipsPage() {
       }
     } catch(e) {}
 
-    // 4. Add target ID & email to permanent blacklist
+    // 4. Add target ID, email, and name to permanent blacklist
     try {
       const savedDeleted = localStorage.getItem("deleted_intern_ids");
       let deletedList = savedDeleted ? JSON.parse(savedDeleted) : [];
@@ -443,12 +458,54 @@ export default function InternshipsPage() {
       if (targetEmail && !deletedList.includes(targetEmail)) {
         deletedList.push(targetEmail);
       }
+      if (targetName && !deletedList.includes(targetName)) {
+        deletedList.push(targetName);
+      }
       localStorage.setItem("deleted_intern_ids", JSON.stringify(deletedList));
     } catch(e) {}
 
     // 5. Delete from DB & sync dataChanged event
     await dbDeleteRecord("students", id, targetEmail).catch(() => {});
     await dbDeleteRecord("interns", id, targetEmail).catch(() => {});
+  };
+
+  // 1-Click Clear ALL Interns
+  const handleClearAllInterns = async () => {
+    if (!confirm("⚠️ Are you sure you want to CLEAR ALL INTERN RECORDS? This will delete all intern entries permanently!")) return;
+
+    try {
+      const savedDeleted = localStorage.getItem("deleted_intern_ids");
+      let deletedList = savedDeleted ? JSON.parse(savedDeleted) : [];
+
+      interns.forEach(i => {
+        if (i.id) deletedList.push(String(i.id).toLowerCase());
+        if (i.email) deletedList.push(i.email.toLowerCase().trim());
+        if (i.full_name) deletedList.push(i.full_name.toLowerCase().trim());
+      });
+
+      localStorage.setItem("deleted_intern_ids", JSON.stringify(deletedList));
+      localStorage.setItem("persistent_interns", JSON.stringify([]));
+
+      // Also clean persistent_courses
+      const savedCourses = localStorage.getItem("persistent_courses");
+      if (savedCourses) {
+        const currentCourses = JSON.parse(savedCourses);
+        const filteredCourses = currentCourses.filter(c => c.enrollment_type !== "3-Month Free Internship");
+        localStorage.setItem("persistent_courses", JSON.stringify(filteredCourses));
+      }
+    } catch(e) {}
+
+    setInterns([]);
+
+    try {
+      await supabase.from("students").delete().eq("enrollment_type", "3-Month Free Internship").catch(() => {});
+    } catch(e) {}
+
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event("dataChanged"));
+    }
+
+    showAlert("Intern Directory Cleared 🗑️", "All intern records have been wiped clean permanently.", "info");
   };
 
   const currentUserEmail = typeof window !== "undefined" ? localStorage.getItem("current_user_email") || "" : "";
@@ -799,15 +856,28 @@ export default function InternshipsPage() {
               <span>3-Month Free Interns Directory</span>
             </h2>
 
-            <select
-              value={filterMode}
-              onChange={(e) => setFilterMode(e.target.value)}
-              className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs text-slate-800 outline-none bg-white focus:border-blue-600 font-medium"
-            >
-              <option value="All">All Internship Modes</option>
-              <option value="On-Site">On-Site (Office IP) Only</option>
-              <option value="Remote">Remote (Screen Stream Shared) Only</option>
-            </select>
+            <div className="flex items-center gap-2 shrink-0">
+              {role === "admin" && (
+                <button
+                  type="button"
+                  onClick={handleClearAllInterns}
+                  className="bg-rose-50 hover:bg-rose-100 text-rose-700 font-extrabold px-3 py-1.5 rounded-lg border border-rose-200 text-xs transition-all flex items-center gap-1 cursor-pointer"
+                  title="Clear all intern entries from database"
+                >
+                  <FaTrash className="text-xs" /> <span>Clear All Records 🗑️</span>
+                </button>
+              )}
+
+              <select
+                value={filterMode}
+                onChange={(e) => setFilterMode(e.target.value)}
+                className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs text-slate-800 outline-none bg-white focus:border-blue-600 font-medium"
+              >
+                <option value="All">All Internship Modes</option>
+                <option value="On-Site">On-Site (Office IP) Only</option>
+                <option value="Remote">Remote (Screen Stream Shared) Only</option>
+              </select>
+            </div>
           </div>
 
           {filteredInterns.length > 0 ? (
