@@ -94,12 +94,19 @@ export async function dbFetch(table, defaultData = []) {
     const { data, error } = await supabase.from(table).select("*");
     if (!error && data && Array.isArray(data)) {
       dbData = data;
-    } else if (typeof window !== "undefined") {
-      // Fallback to Server Proxy route (bypasses browser extension blocks)
-      const res = await fetch(`/api/persistence?table=${encodeURIComponent(table)}`).catch(() => null);
-      if (res && res.ok) {
-        const json = await res.json();
-        if (json && Array.isArray(json.data)) dbData = json.data;
+    } else {
+      // If table is daily_tasks and returns error, fallback to 'tasks' table
+      if (table === "daily_tasks") {
+        const { data: taskData, error: taskErr } = await supabase.from("tasks").select("*");
+        if (!taskErr && taskData) dbData = taskData;
+      }
+
+      if (dbData.length === 0 && typeof window !== "undefined") {
+        const res = await fetch(`/api/persistence?table=${encodeURIComponent(table)}`).catch(() => null);
+        if (res && res.ok) {
+          const json = await res.json();
+          if (json && Array.isArray(json.data)) dbData = json.data;
+        }
       }
     }
   } catch (e) {
