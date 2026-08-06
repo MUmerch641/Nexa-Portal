@@ -53,9 +53,16 @@ export async function POST(request) {
     }
 
     if (action === "delete") {
-      const { id } = record || {};
-      if (!id) return NextResponse.json({ error: "ID required for deletion" }, { status: 400 });
-      await supabase.from(table).delete().eq("id", id).catch(() => {});
+      const { id, email, full_name, name } = record || {};
+      if (id) {
+        await supabase.from(table).delete().eq("id", id).catch(() => {});
+      }
+      if (email) {
+        await supabase.from(table).delete().eq("email", email).catch(() => {});
+      }
+      if (full_name || name) {
+        await supabase.from(table).delete().eq("full_name", full_name || name).catch(() => {});
+      }
       return NextResponse.json({ success: true });
     }
 

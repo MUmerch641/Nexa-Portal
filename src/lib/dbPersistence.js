@@ -277,6 +277,17 @@ export async function dbDeleteRecord(table, id, emailField = "") {
   }
 
   try {
+    if (typeof fetch !== "undefined") {
+      await fetch("/api/persistence", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          table,
+          action: "delete",
+          record: { id, email: emailField, full_name: emailField },
+        }),
+      }).catch(() => {});
+    }
     if (id) {
       await supabase.from(table).delete().eq("id", id).catch(() => {});
     }
