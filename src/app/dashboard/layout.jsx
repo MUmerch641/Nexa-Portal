@@ -9,9 +9,23 @@ import ToastContainer from "@/components/Toast";
 export default function DashboardLayout({ children }) {
   const router = useRouter();
   const pathname = usePathname();
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [role, setRole] = useState("admin");
   const [authorized, setAuthorized] = useState(false);
+
+  // Set initial desktop vs mobile responsive sidebar state
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      setSidebarOpen(window.innerWidth >= 768);
+    }
+  }, []);
+
+  // Auto-close mobile sidebar when navigating to a new route
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.innerWidth < 768) {
+      setSidebarOpen(false);
+    }
+  }, [pathname]);
 
   useEffect(() => {
     // 1. Check Authentication Guard
