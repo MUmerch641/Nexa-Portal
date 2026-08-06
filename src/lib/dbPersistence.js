@@ -48,15 +48,12 @@ export function cleanPayloadForDb(record) {
  */
 function getDedupeKey(item) {
   if (!item) return "";
-  return String(
-    item.id ||
-    item.email ||
-    item.title ||
-    item.full_name ||
-    item.name ||
-    item.client_name ||
-    ""
-  ).toLowerCase().trim();
+  const email = String(item.email || "").toLowerCase().trim();
+  if (email) return email;
+  const id = String(item.id || "").toLowerCase().trim();
+  if (id) return id;
+  const title = String(item.title || item.full_name || item.name || item.client_name || "").toLowerCase().trim();
+  return title;
 }
 
 // In-memory RAM cache store for instant <1ms data access
