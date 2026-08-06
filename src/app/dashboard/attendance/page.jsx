@@ -177,11 +177,11 @@ export default function AttendancePage() {
       userName
     });
 
-    if (!verificationRes.success) {
-      const activeNet = verificationRes.activeOfficeNetwork || getActiveOfficeNetworks()[0];
-      const registeredOfficeIp = (activeNet?.public_ip_address || "39.46.118.183").trim();
-      const currentIp = verificationRes.currentPublicIp || "Unknown IP";
+    const activeNet = verificationRes.activeOfficeNetwork || getActiveOfficeNetworks()[0];
+    const registeredOfficeIp = (activeNet?.public_ip_address || "39.46.118.183").trim();
+    const currentIp = verificationRes.currentPublicIp || "Unknown IP";
 
+    if (!verificationRes.success) {
       setIpVerificationResult({
         success: false,
         message: verificationRes.errorMessage || `❌ Network Mismatch! Connected Wi-Fi IP (${currentIp}) does not match Authorized Office Wi-Fi IP (${registeredOfficeIp}).`,
@@ -205,7 +205,7 @@ export default function AttendancePage() {
       success: true,
       message: "Office Wi-Fi Verified Successfully.",
       publicIp: livePublicIp,
-      officePublicIp: livePublicIp
+      officePublicIp: registeredOfficeIp
     });
 
     const checkInRecord = todayRecords.find(r => r.type === "check_in" || r.check_in_timestamp);
@@ -229,7 +229,7 @@ export default function AttendancePage() {
       return;
     }
 
-    const { allowed, modalMessage, status, lightColor, attendanceStatus, salaryDeductionStatus } = determineAttendanceState(role, minutes);
+    const { allowed, modalMessage, status, lightColor, attendanceStatus, salaryDeductionStatus } = determineAttendanceState(role, currentMinutes);
 
     if (!allowed) {
       showToast("Attendance Closed", modalMessage, status);
