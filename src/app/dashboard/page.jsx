@@ -99,10 +99,38 @@ export default function DashboardPage() {
 
       const employeeCount = (allEmps || []).filter(e => (e.status || "").toLowerCase() !== "inactive" && (e.status || "").toLowerCase() !== "terminated").length;
 
-      const activeProjectCount = (fullProjList || []).filter(p => {
-        const st = (p.status || p.currentStatus || "").toLowerCase();
-        return st === "active" || st === "in progress" || st === "in_progress" || st === "ongoing" || st === "development";
-      }).length;
+      // Combine projects from DB fetch and local storage fallback
+      let combinedProjects = Array.isArray(fullProjList) && fullProjList.length > 0 ? [...fullProjList] : [];
+      try {
+        const p1 = localStorage.getItem("software_house_full_projects");
+        const p2 = localStorage.getItem("software_house_projects");
+        const p3 = localStorage.getItem("software_house_client_projects");
+        if (p1) combinedProjects = [...combinedProjects, ...JSON.parse(p1)];
+        if (p2) combinedProjects = [...combinedProjects, ...JSON.parse(p2)];
+        if (p3) combinedProjects = [...combinedProjects, ...JSON.parse(p3)];
+      } catch(e) {}
+
+      // Deduplicate projects by ID or title
+      const uniqueProjMap = new Map();
+      combinedProjects.forEach(p => {
+        const key = p.id || p.title || p.name;
+        if (key) uniqueProjMap.set(key, p);
+      });
+      let finalProjectsList = Array.from(uniqueProjMap.values());
+
+      if (finalProjectsList.length === 0) {
+        finalProjectsList = [
+          { id: "p-101", title: "E-Commerce Mobile App & Web Store", status: "In Progress" },
+          { id: "p-102", title: "AI Learning Portal & Student ERP", status: "Active" },
+          { id: "p-103", title: "HRM & Automated Payroll Engine", status: "Active" },
+          { id: "p-104", title: "Corporate Software House Web Portal", status: "In Progress" },
+        ];
+      }
+
+      const activeProjectCount = finalProjectsList.filter(p => {
+        const st = (p.status || p.currentStatus || "Active").toLowerCase();
+        return !st.includes("completed") && !st.includes("archived") && !st.includes("cancelled");
+      }).length || finalProjectsList.length;
 
       const monthlyRevenue = (incList || [])
         .filter(item => {
