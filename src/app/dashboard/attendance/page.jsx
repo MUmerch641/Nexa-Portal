@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { dbFetch, dbSaveRecord, dbDeleteRecord } from "@/lib/dbPersistence";
 import Modal from "@/components/Modal";
 import StatusLight from "@/components/StatusLight";
 import { showToast } from "@/components/Toast";
@@ -394,11 +395,7 @@ export default function AttendancePage() {
           insertPayload.employee_id = validEmployeeUuid;
         }
 
-        const { data: dbRes, error: dbErr } = await supabase.from("attendance").insert([insertPayload]).select();
-        if (dbErr) {
-          // If schema requires simple insert without select or optional fields
-          await supabase.from("attendance").insert([insertPayload]);
-        }
+        dbSaveRecord("attendance", insertPayload).catch(() => {});
       } catch(e) {}
 
       const toastTitle = type === "check_in" ? "Clocked In Successfully 🟢" : "Clocked Out Successfully 🔴";
@@ -430,7 +427,7 @@ export default function AttendancePage() {
     const record = deleteModal.record;
 
     try {
-      await supabase.from("attendance").delete().eq("id", record.id);
+      dbDeleteRecord("attendance", record.id).catch(() => {});
       const masterSaved = JSON.parse(localStorage.getItem("software_house_master_attendance_logs") || "[]");
       const updatedMaster = masterSaved.filter(r => r.id !== record.id);
       setAllSystemLogs(updatedMaster);
