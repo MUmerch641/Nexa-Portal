@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { dbFetch, dbSaveRecord } from "@/lib/dbPersistence";
 import { logActivity, initActivityStatusTracker } from "@/lib/activityUtils";
 import Modal from "@/components/Modal";
 import { showToast } from "@/components/Toast";
