@@ -290,12 +290,6 @@ export async function dbDeleteRecord(table, id, emailField = "") {
         }),
       }).catch(() => {});
     }
-    if (id) {
-      await supabase.from(table).delete().eq("id", id).catch(() => {});
-    }
-    if (emailField) {
-      await supabase.from(table).delete().eq("email", emailField).catch(() => {});
-    }
   } catch(e) {}
 
   if (typeof window !== "undefined") {
