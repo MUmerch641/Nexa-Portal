@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { dbFetch } from "@/lib/dbPersistence";
+import { dbFetch, dbSaveRecord } from "@/lib/dbPersistence";
 import { logActivity } from "@/lib/activityUtils";
 import Modal from "@/components/Modal";
 import { FaCheck, FaTimes, FaCalendarPlus, FaUserClock, FaShieldAlt, FaInfoCircle } from "react-icons/fa";
@@ -126,10 +126,8 @@ export default function LeavesPage() {
     };
 
     try {
-      await supabase.from("leaves").insert(newLeave);
-    } catch(e) {
-      // Local fallback
-    }
+      await dbSaveRecord("leaves", newLeave);
+    } catch(e) {}
 
     const updated = [newLeave, ...leaves];
     setLeaves(updated);
@@ -146,8 +144,9 @@ export default function LeavesPage() {
 
   const handleApprove = async (id) => {
     const targetLeave = leaves.find(l => l.id === id);
+    const updatedLeave = targetLeave ? { ...targetLeave, status: "approved", salary_cut: false } : { id, status: "approved", salary_cut: false };
     try {
-      await supabase.from("leaves").update({ status: "approved", salary_cut: false }).eq("id", id);
+      await dbSaveRecord("leaves", updatedLeave);
     } catch(e) {}
 
     const updated = leaves.map(l => l.id === id ? { ...l, status: "approved", salary_cut: false } : l);
@@ -168,8 +167,9 @@ export default function LeavesPage() {
 
   const handleReject = async (id) => {
     const targetLeave = leaves.find(l => l.id === id);
+    const updatedLeave = targetLeave ? { ...targetLeave, status: "rejected", salary_cut: true } : { id, status: "rejected", salary_cut: true };
     try {
-      await supabase.from("leaves").update({ status: "rejected", salary_cut: true }).eq("id", id);
+      await dbSaveRecord("leaves", updatedLeave);
     } catch(e) {}
 
     const updated = leaves.map(l => l.id === id ? { ...l, status: "rejected", salary_cut: true } : l);

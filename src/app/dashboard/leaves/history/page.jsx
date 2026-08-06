@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
-
+import { dbFetch, dbSaveRecord } from "@/lib/dbPersistence";
 
 export default function LeaveHistoryPage() {
 
@@ -10,48 +10,23 @@ export default function LeaveHistoryPage() {
   const [loading, setLoading] = useState(true);
 
   const getLeaveHistory = async () => {
-
-    const { data, error } = await supabase
-      .from("leaves")
-      .select(`
-        id,
-        leave_type,
-        start_date,
-        end_date,
-        reason,
-        status,
-        employees(
-          full_name
-        )
-      `)
-      .order("created_at", {
-        ascending: false
-      });
-
-    if (error) {
-      console.log(error);
-      return;
+    try {
+      const data = await dbFetch("leaves");
+      setLeaves(data || []);
+    } catch (e) {
+      setLeaves([]);
+    } finally {
+      setLoading(false);
     }
-
-    setLeaves(data);
-    setLoading(false);
   };
 
   const updateStatus = async (id, status) => {
+    const targetLeave = leaves.find(l => l.id === id);
+    const updatedLeave = targetLeave ? { ...targetLeave, status } : { id, status };
+    try {
+      await dbSaveRecord("leaves", updatedLeave);
+    } catch(e) {}
 
-    const { error } = await supabase
-      .from("leaves")
-      .update({
-        status: status
-      })
-      .eq("id", id);
-
-    if (error) {
-      alert(error.message);
-      return;
-    }
-
-    alert(`Leave ${status}`);
     getLeaveHistory();
   };
 
