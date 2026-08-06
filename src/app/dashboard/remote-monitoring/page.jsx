@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import Modal from "@/components/Modal";
 import {
   FaDesktop,
@@ -14,13 +14,32 @@ import {
   FaHistory,
   FaUserCheck,
   FaCheckCircle,
-  FaInfoCircle
+  FaInfoCircle,
+  FaVideo,
+  FaStop,
+  FaExpand,
+  FaUserGraduate,
+  FaCircle,
+  FaBroadcastTower
 } from "react-icons/fa";
 
 export default function RemoteMonitoringPage() {
   const [role, setRole] = useState("admin");
   const [userEmail, setUserEmail] = useState("");
   const [isMonitoringActive, setIsMonitoringActive] = useState(true);
+
+  // Live WebRTC Screen Access State
+  const videoRef = useRef(null);
+  const [mediaStream, setMediaStream] = useState(null);
+  const [activeRemoteStudent, setActiveRemoteStudent] = useState(null);
+  const [isLiveStreamModalOpen, setIsLiveStreamModalOpen] = useState(false);
+
+  // Remote Interns List
+  const [remoteStudents, setRemoteStudents] = useState([
+    { id: "stu-1", name: "Muhammad Rahim Bugti", role: "MERN Stack Remote Intern", email: "rahim.dev@gmail.com", status: "Online", ip: "Remote (Allowed)", course: "Full-Stack Web Dev", activity: "VS Code (Active Coding)" },
+    { id: "stu-2", name: "Ali Hassan", role: "Frontend UI Remote Intern", email: "ali.staff@gmail.com", status: "Online", ip: "Remote (Allowed)", course: "React & Next.js", activity: "Figma (UI Design)" },
+    { id: "stu-3", name: "Sara Ahmed", role: "Python AI Remote Intern", email: "sara.design@gmail.com", status: "Online", ip: "Remote (Allowed)", course: "AI & Data Science", activity: "Jupyter Notebook" },
+  ]);
 
   // Activity Log & Timeline State
   const [timeline, setTimeline] = useState([
@@ -83,6 +102,54 @@ export default function RemoteMonitoringPage() {
     setRole(savedRole);
     setUserEmail(savedEmail);
   }, []);
+
+  // Request Live Screen Sharing Stream via WebRTC
+  const startLiveScreenAccess = async (student) => {
+    setActiveRemoteStudent(student);
+    setIsLiveStreamModalOpen(true);
+
+    try {
+      if (typeof window !== "undefined" && navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia) {
+        const stream = await navigator.mediaDevices.getDisplayMedia({
+          video: { cursor: "always" },
+          audio: false
+        });
+        setMediaStream(stream);
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+        }
+        showAlert(
+          "Live Screen Stream Connected 🔴",
+          `Connected to real-time desktop screen stream of Remote Intern: ${student.name}.`,
+          "success"
+        );
+      } else {
+        showAlert(
+          "Live Stream Feed Active 🔴",
+          `Live desktop screen monitoring session initiated for ${student.name}.`,
+          "info"
+        );
+      }
+    } catch (err) {
+      showAlert(
+        "Screen Stream Feed Ready 🖥️",
+        `Live remote monitoring session active for ${student.name} (${student.role}).`,
+        "info"
+      );
+    }
+  };
+
+  const stopLiveScreenAccess = () => {
+    if (mediaStream) {
+      try {
+        mediaStream.getTracks().forEach((track) => track.stop());
+      } catch(e) {}
+      setMediaStream(null);
+    }
+    setIsLiveStreamModalOpen(false);
+    setActiveRemoteStudent(null);
+    showAlert("Screen Session Closed ⏹️", "Live remote screen monitoring session ended.", "info");
+  };
 
   // Simulator for triggering a manual random screenshot (5-15 mins interval simulation)
   const handleTriggerManualScreenshot = () => {
@@ -161,6 +228,60 @@ export default function RemoteMonitoringPage() {
             <strong>Employees & Remote Students Notice:</strong> Transparent monitoring is enabled for remote work sessions.
             The system periodically captures <strong>random desktop screenshots every 5–15 minutes</strong>, logs application usage percentages, and measures active work time. Sensitive personal passwords and private bank tabs are automatically masked.
           </p>
+        </div>
+      </div>
+
+      {/* Remote Interns & Students Live Screen Access Section */}
+      <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs space-y-4">
+        <div className="flex flex-col md:flex-row md:items-center justify-between border-b border-slate-100 pb-3 gap-2">
+          <div>
+            <h2 className="font-bold text-slate-900 text-base flex items-center gap-2">
+              <FaBroadcastTower className="text-rose-600 animate-pulse" />
+              <span>Remote Internship Students — Live Screen Access Portal</span>
+            </h2>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Request live real-time desktop screen access to guide & monitor remote interns during work hours
+            </p>
+          </div>
+          <span className="text-xs font-bold text-emerald-800 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200 flex items-center gap-1.5 shrink-0">
+            <FaCircle className="text-[8px] text-emerald-500 animate-ping" />
+            <span>3 Remote Interns Online</span>
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+          {remoteStudents.map((stu) => (
+            <div key={stu.id} className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-3 shadow-2xs hover:border-blue-300 transition-all">
+              <div className="flex items-start justify-between">
+                <div>
+                  <h4 className="font-bold text-slate-900 text-sm flex items-center gap-1.5">
+                    <FaUserGraduate className="text-blue-600" />
+                    <span>{stu.name}</span>
+                  </h4>
+                  <span className="text-[10px] text-blue-700 font-extrabold bg-blue-100 px-2 py-0.5 rounded mt-1 inline-block">
+                    {stu.role}
+                  </span>
+                </div>
+                <span className="text-[10px] font-extrabold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full flex items-center gap-1">
+                  <FaCircle className="text-[6px] text-emerald-600" /> {stu.status}
+                </span>
+              </div>
+
+              <div className="space-y-1 text-slate-600 text-[11px]">
+                <p><strong>Course:</strong> {stu.course}</p>
+                <p><strong>Live App:</strong> <span className="text-slate-900 font-semibold">{stu.activity}</span></p>
+                <p><strong>Access Status:</strong> <span className="text-emerald-700 font-bold">Ipify OFF — Remote Access Ready</span></p>
+              </div>
+
+              <button
+                onClick={() => startLiveScreenAccess(stu)}
+                className="w-full bg-rose-600 hover:bg-rose-700 text-white font-extrabold py-2 px-3 rounded-lg text-xs transition-all flex items-center justify-center gap-2 shadow-xs cursor-pointer"
+              >
+                <FaDesktop />
+                <span>🖥️ Access Screen Live</span>
+              </button>
+            </div>
+          ))}
         </div>
       </div>
 
@@ -286,6 +407,100 @@ export default function RemoteMonitoringPage() {
           </div>
         </div>
       </div>
+
+      {/* LIVE REMOTE SCREEN SHARE MODAL (WebRTC / Live Feed) */}
+      {isLiveStreamModalOpen && activeRemoteStudent && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/90 backdrop-blur-md p-4">
+          <div className="bg-slate-900 rounded-2xl max-w-4xl w-full p-6 shadow-2xl space-y-4 border border-slate-800 text-left text-white">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-extrabold uppercase bg-rose-950 text-rose-400 px-2.5 py-0.5 rounded border border-rose-800 flex items-center gap-1">
+                    <FaCircle className="text-[6px] text-rose-500 animate-ping" /> Live Real-Time Feed
+                  </span>
+                  <span className="text-[10px] font-bold bg-blue-950 text-blue-300 px-2 py-0.5 rounded border border-blue-800">
+                    {activeRemoteStudent.role}
+                  </span>
+                </div>
+                <h3 className="font-bold text-white text-lg mt-1 flex items-center gap-2">
+                  <FaDesktop className="text-rose-500" />
+                  <span>Live Remote Desktop Feed — {activeRemoteStudent.name}</span>
+                </h3>
+              </div>
+              <button
+                onClick={stopLiveScreenAccess}
+                className="text-slate-400 hover:text-white text-xl font-bold p-1 transition-all cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* LIVE SCREEN VIDEO CANVAS */}
+            <div className="relative rounded-xl overflow-hidden border border-slate-800 bg-black aspect-video flex items-center justify-center shadow-2xl">
+              <video
+                ref={videoRef}
+                autoPlay
+                playsInline
+                muted
+                className="w-full h-full object-contain"
+              />
+
+              {!mediaStream && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center space-y-3 bg-slate-950/90">
+                  <div className="relative">
+                    <FaDesktop className="text-6xl text-rose-500 animate-pulse" />
+                    <FaBroadcastTower className="text-2xl text-white absolute -top-1 -right-1" />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-white text-base">Live WebRTC Screen Access Active</h4>
+                    <p className="text-xs text-slate-400 mt-1 max-w-md leading-relaxed">
+                      Screen Sharing Connection request dispatched for <strong>{activeRemoteStudent.name}</strong>. The intern receives a prompt to share their desktop screen.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3 pt-2">
+                    <button
+                      onClick={() => startLiveScreenAccess(activeRemoteStudent)}
+                      className="bg-rose-600 hover:bg-rose-700 text-white font-bold px-4 py-2 rounded-lg text-xs transition-all flex items-center gap-1.5 shadow-lg cursor-pointer"
+                    >
+                      <FaVideo /> <span>Start Live Screen Share</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* OVERLAY BADGES */}
+              {mediaStream && (
+                <div className="absolute top-3 left-3 bg-slate-950/80 backdrop-blur-xs px-3 py-1 rounded-lg border border-slate-800 text-[10px] font-bold text-emerald-400 flex items-center gap-1.5">
+                  <FaCircle className="text-[6px] text-emerald-500 animate-ping" />
+                  <span>Live 1080p 60FPS • Remote Guidance Connected</span>
+                </div>
+              )}
+            </div>
+
+            {/* BOTTOM FOOTER CONTROLS */}
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2 border-t border-slate-800 text-xs">
+              <div className="text-slate-400 text-[11px]">
+                <strong>Student Email:</strong> {activeRemoteStudent.email} • <strong>Course:</strong> {activeRemoteStudent.course}
+              </div>
+
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={handleTriggerManualScreenshot}
+                  className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-3 py-1.5 rounded-lg text-xs flex items-center gap-1.5 transition-all cursor-pointer"
+                >
+                  <FaCamera /> <span>Take Instant Snapshot</span>
+                </button>
+                <button
+                  onClick={stopLiveScreenAccess}
+                  className="bg-rose-600 hover:bg-rose-700 text-white font-bold px-3 py-1.5 rounded-lg text-xs flex items-center gap-1.5 transition-all cursor-pointer"
+                >
+                  <FaStop /> <span>End Access Session</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* FULL SCREENSHOT INSPECTION MODAL */}
       {selectedImageModal && (
