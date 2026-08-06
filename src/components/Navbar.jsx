@@ -38,6 +38,40 @@ export default function Navbar({ onMenuClick, isSidebarOpen = true }) {
   const [hasSeenNotifications, setHasSeenNotifications] = useState(false);
   const [selectedTaskDetail, setSelectedTaskDetail] = useState(null);
 
+  // Track dismissed/read notification IDs for current user
+  const [dismissedNotifIds, setDismissedNotifIds] = useState([]);
+
+  useEffect(() => {
+    try {
+      const email = localStorage.getItem("current_user_email") || "admin@gmail.com";
+      const saved = localStorage.getItem(`dismissed_notifs_${email}`);
+      if (saved) setDismissedNotifIds(JSON.parse(saved));
+    } catch(e) {}
+  }, [userEmail]);
+
+  const dismissNotifItem = (id) => {
+    const email = localStorage.getItem("current_user_email") || "admin@gmail.com";
+    const updated = Array.from(new Set([...dismissedNotifIds, id]));
+    setDismissedNotifIds(updated);
+    try {
+      localStorage.setItem(`dismissed_notifs_${email}`, JSON.stringify(updated));
+    } catch(e) {}
+  };
+
+  const handleResolveComplaint = (id) => {
+    try {
+      const saved = localStorage.getItem("software_house_complaints_list");
+      if (saved) {
+        const list = JSON.parse(saved);
+        const updated = list.map(c => c.id === id ? { ...c, status: "Resolved" } : c);
+        localStorage.setItem("software_house_complaints_list", JSON.stringify(updated));
+      }
+    } catch(e) {}
+    dismissNotifItem(id);
+    loadAllNotifications();
+    window.dispatchEvent(new Event("storage"));
+  };
+
   // Read leaves, complaints, announcements, and student/employee alerts
   const loadAllNotifications = () => {
     const currentRole = localStorage.getItem("user_role") || "admin";
@@ -282,6 +316,7 @@ export default function Navbar({ onMenuClick, isSidebarOpen = true }) {
         localStorage.setItem("software_house_leaves", JSON.stringify(updated));
       }
     } catch(e) {}
+    dismissNotifItem(id);
     loadAllNotifications();
     window.dispatchEvent(new Event("storage"));
   };
@@ -295,6 +330,7 @@ export default function Navbar({ onMenuClick, isSidebarOpen = true }) {
         localStorage.setItem("software_house_leaves", JSON.stringify(updated));
       }
     } catch(e) {}
+    dismissNotifItem(id);
     loadAllNotifications();
     window.dispatchEvent(new Event("storage"));
   };
@@ -310,10 +346,26 @@ export default function Navbar({ onMenuClick, isSidebarOpen = true }) {
     }
   };
 
+  const activeComplaints = pendingComplaints.filter(c => !dismissedNotifIds.includes(c.id));
+  const activeLeaves = pendingLeaves.filter(l => !dismissedNotifIds.includes(l.id));
+  const activeUserAlerts = userAlerts.filter(a => !dismissedNotifIds.includes(a.id));
+
+  const totalAdminCount = activeComplaints.length + activeLeaves.length;
+  const totalUserCount = activeUserAlerts.length;
+  const isAdminRole = role === "admin" || role === "hr" || role === "manager" || role === "accounts";
+
   const handleMarkAllRead = () => {
     setHasSeenNotifications(true);
     setShowNotifications(false);
+    const allIds = [
+      ...pendingComplaints.map(c => c.id),
+      ...pendingLeaves.map(l => l.id),
+      ...userAlerts.map(a => a.id)
+    ];
+    const updated = Array.from(new Set([...dismissedNotifIds, ...allIds]));
+    setDismissedNotifIds(updated);
     try {
+      localStorage.setItem(`dismissed_notifs_${userEmail}`, JSON.stringify(updated));
       localStorage.setItem(`notifications_seen_${userEmail}_${role}`, "true");
     } catch (e) {}
   };
@@ -322,10 +374,6 @@ export default function Navbar({ onMenuClick, isSidebarOpen = true }) {
     await logout();
     router.push("/login");
   };
-
-  const totalAdminCount = pendingLeaves.length + pendingComplaints.length;
-  const totalUserCount = userAlerts.length;
-  const isAdminRole = role === "admin" || role === "hr" || role === "manager" || role === "accounts";
 
   return (
     <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-slate-200 bg-white px-6">
@@ -412,15 +460,15 @@ export default function Navbar({ onMenuClick, isSidebarOpen = true }) {
                     <div className="flex items-center justify-between font-bold text-rose-700 text-[11px] bg-rose-50 px-2.5 py-1 rounded-lg border border-rose-200">
                       <span className="flex items-center gap-1">
                         <FaExclamationTriangle className="text-rose-600" />
-                        <span>Pending Complaints ({pendingComplaints.length})</span>
+                        <span>Pending Complaints ({activeComplaints.length})</span>
                       </span>
                       <Link href="/dashboard/complaints" onClick={() => setShowNotifications(false)} className="underline text-[10px]">View All</Link>
                     </div>
 
-                    {pendingComplaints.length === 0 ? (
+                    {activeComplaints.length === 0 ? (
                       <p className="text-[11px] text-slate-400 italic px-2">No pending complaints!</p>
                     ) : (
-                      pendingComplaints.map((c) => (
+                      activeComplaints.map((c) => (
                         <div key={c.id} className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 space-y-1">
                           <div className="flex items-center justify-between font-bold text-slate-900 text-[11px]">
                             <span>{c.submitted_by}</span>
@@ -429,13 +477,14 @@ export default function Navbar({ onMenuClick, isSidebarOpen = true }) {
                           <p className="text-[11px] text-slate-700 font-semibold line-clamp-1">"{c.title}"</p>
                           <div className="flex items-center justify-between pt-1">
                             <span className="text-[9px] text-slate-400">{c.created_at}</span>
-                            <Link
-                              href="/dashboard/complaints"
-                              onClick={() => setShowNotifications(false)}
-                              className="text-[10px] font-bold bg-rose-600 text-white px-2 py-0.5 rounded hover:bg-rose-700"
-                            >
-                              Resolve Ticket →
-                            </Link>
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => handleResolveComplaint(c.id)}
+                                className="text-[10px] font-bold bg-rose-600 text-white px-2 py-0.5 rounded hover:bg-rose-700 cursor-pointer"
+                              >
+                                Resolve Ticket →
+                              </button>
+                            </div>
                           </div>
                         </div>
                       ))
@@ -447,15 +496,15 @@ export default function Navbar({ onMenuClick, isSidebarOpen = true }) {
                     <div className="flex items-center justify-between font-bold text-blue-700 text-[11px] bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-200">
                       <span className="flex items-center gap-1">
                         <FaCalendarPlus className="text-blue-600" />
-                        <span>Pending Leaves ({pendingLeaves.length})</span>
+                        <span>Pending Leaves ({activeLeaves.length})</span>
                       </span>
                       <Link href="/dashboard/leaves" onClick={() => setShowNotifications(false)} className="underline text-[10px]">View All</Link>
                     </div>
 
-                    {pendingLeaves.length === 0 ? (
+                    {activeLeaves.length === 0 ? (
                       <p className="text-[11px] text-slate-400 italic px-2">No pending leave applications!</p>
                     ) : (
-                      pendingLeaves.map((l) => (
+                      activeLeaves.map((l) => (
                         <div key={l.id} className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 space-y-1.5">
                           <div className="flex items-center justify-between font-bold text-slate-900 text-[11px]">
                             <span>{l.employee_name}</span>
@@ -485,50 +534,62 @@ export default function Navbar({ onMenuClick, isSidebarOpen = true }) {
               ) : (
                 /* STUDENT / EMPLOYEE AUTOMATIC ALERTS DROPDOWN VIEW */
                 <div className="max-h-80 overflow-y-auto space-y-2.5 pr-1 text-xs">
-                  {userAlerts.map((alert) => (
-                    <div key={alert.id} className={`p-3 rounded-xl border ${alert.color} space-y-1 transition-all`}>
-                      <div className="flex items-center justify-between font-bold">
-                        <span className="flex items-center gap-1.5 text-[11px]">
-                          {alert.icon}
-                          <span>{alert.title}</span>
-                        </span>
-                        <span className="text-[9px] uppercase tracking-wider font-extrabold opacity-75">{alert.type}</span>
-                      </div>
-                      <p className="text-[11px] leading-relaxed text-slate-700">{alert.message}</p>
-                      <div className="pt-1.5 flex items-center justify-between">
-                        {alert.type === "Meeting Reminder" ? (
-                          <a
-                            href="https://meet.google.com/xyz-abc-mno"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            onClick={() => setShowNotifications(false)}
-                            className="bg-purple-600 hover:bg-purple-700 text-white font-extrabold text-[10px] px-2.5 py-1 rounded-lg flex items-center gap-1 transition-all shadow-xs"
-                          >
-                            <FaVideo /> <span>📹 Click & Join Meeting</span>
-                          </a>
-                        ) : (
-                          <span className="text-[10px] text-slate-400">Notification Alert</span>
-                        )}
-
+                  {activeUserAlerts.length === 0 ? (
+                    <p className="text-[11px] text-slate-400 italic px-2 py-4 text-center">🎉 All caught up! No new alerts.</p>
+                  ) : (
+                    activeUserAlerts.map((alert) => (
+                      <div key={alert.id} className={`p-3 rounded-xl border ${alert.color} space-y-1 transition-all relative`}>
                         <button
                           type="button"
-                          onClick={() => {
-                            setShowNotifications(false);
-                            setSelectedTaskDetail(alert.fullTaskObj || {
-                              title: alert.title,
-                              description: alert.message,
-                              priority: alert.priority || "High",
-                              dueDate: alert.dueDate || "Today",
-                              assignedBy: "Admin",
-                            });
-                          }}
-                          className="text-[10px] font-extrabold text-blue-600 hover:underline bg-blue-50 px-2 py-0.5 rounded border border-blue-200 cursor-pointer"
+                          onClick={() => dismissNotifItem(alert.id)}
+                          className="absolute top-2 right-2 text-slate-400 hover:text-slate-700 text-xs cursor-pointer p-1"
+                          title="Dismiss / Clear Alert"
                         >
-                          View Full Details →
+                          <FaTimes />
                         </button>
+                        <div className="flex items-center justify-between font-bold">
+                          <span className="flex items-center gap-1.5 text-[11px]">
+                            {alert.icon}
+                            <span>{alert.title}</span>
+                          </span>
+                          <span className="text-[9px] uppercase tracking-wider font-extrabold opacity-75">{alert.type}</span>
+                        </div>
+                        <p className="text-[11px] leading-relaxed text-slate-700">{alert.message}</p>
+                        <div className="pt-1.5 flex items-center justify-between">
+                          {alert.type === "Meeting Reminder" ? (
+                            <a
+                              href="https://meet.google.com/xyz-abc-mno"
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={() => setShowNotifications(false)}
+                              className="bg-purple-600 hover:bg-purple-700 text-white font-extrabold text-[10px] px-2.5 py-1 rounded-lg flex items-center gap-1 transition-all shadow-xs"
+                            >
+                              <FaVideo /> <span>📹 Click & Join Meeting</span>
+                            </a>
+                          ) : (
+                            <span className="text-[10px] text-slate-400">Notification Alert</span>
+                          )}
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowNotifications(false);
+                              setSelectedTaskDetail(alert.fullTaskObj || {
+                                title: alert.title,
+                                description: alert.message,
+                                priority: alert.priority || "High",
+                                dueDate: alert.dueDate || "Today",
+                                assignedBy: "Admin",
+                              });
+                            }}
+                            className="text-[10px] font-extrabold text-blue-600 hover:underline bg-blue-50 px-2 py-0.5 rounded border border-blue-200 cursor-pointer"
+                          >
+                            View Full Details →
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    ))
+                  )}
                 </div>
               )}
             </div>
