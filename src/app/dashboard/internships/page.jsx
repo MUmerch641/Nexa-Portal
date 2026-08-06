@@ -189,11 +189,23 @@ export default function InternshipsPage() {
       const itemEmail = String(item.email || "").toLowerCase().trim();
       const itemName = String(item.full_name || item.name || "").toLowerCase().trim();
 
-      return deletedIds.some(d => {
+      const matched = deletedIds.some(d => {
         const del = String(d).toLowerCase().trim();
         if (!del) return false;
         return (itemId && itemId === del) || (itemEmail && itemEmail === del) || (itemName && itemName === del) || (itemName && del && itemName.includes(del));
       });
+
+      if (matched) {
+        if (itemEmail || itemId || itemName) {
+          fetch("/api/persistence", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ table: "students", action: "delete", record: { id: itemId, email: itemEmail, full_name: itemName } })
+          }).catch(() => {});
+        }
+        return true;
+      }
+      return false;
     };
 
     // Fetch fresh records from PostgreSQL Database via API Persistence Engine (Single Source of Truth)
