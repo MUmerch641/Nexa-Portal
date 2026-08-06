@@ -254,10 +254,6 @@ export default function DashboardPage() {
     } catch(e) {}
   };
 
-  useEffect(() => {
-    loadAllMembers();
-  }, []);
-
   // Strict Admin Guard: Non-admin users cannot see the Overview Dashboard
   if (role !== "admin") {
     return (
