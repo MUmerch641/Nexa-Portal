@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import { dbFetch } from "@/lib/dbPersistence";
@@ -83,7 +83,7 @@ export default function DashboardPage() {
     return () => window.removeEventListener("roleChanged", handleRoleChange);
   }, []);
 
-  const loadDashboardData = async () => {
+  const loadDashboardData = useCallback(async () => {
     try {
       const currentYearMonth = new Date().toISOString().slice(0, 7);
 
@@ -165,7 +165,74 @@ export default function DashboardPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  // Fetch all registered software house members across categories
+  const loadAllMembers = useCallback(() => {
+    try {
+      const reg = localStorage.getItem("registered_system_users");
+      const savedUsers = reg ? JSON.parse(reg) : [];
+
+      const persistentEmps = JSON.parse(localStorage.getItem("persistent_employees") || "[]");
+      const persistentStudents = JSON.parse(localStorage.getItem("persistent_courses") || "[]");
+      const persistentInterns = JSON.parse(localStorage.getItem("persistent_internships") || "[]");
+
+      const combinedMap = new Map();
+
+      // Append persistent employees
+      persistentEmps.forEach(e => {
+        if (!e || !e.email) return;
+        combinedMap.set(e.email.toLowerCase(), {
+          id: e.id || `emp-${Date.now()}`,
+          fullName: e.full_name,
+          email: e.email,
+          category: e.employment_type || "On-Site Staff",
+          role: "employee",
+          department: `${e.department} (${e.designation || 'Staff'})`,
+          attendance: "Present Today 🟢",
+          progress: "Assigned Software House Deliverables",
+          dailyTask: "Logged daily work progress on assigned task.",
+          feeStatus: "N/A (Paid Staff)",
+        });
+      });
+
+      // Append persistent course students
+      persistentStudents.forEach(s => {
+        if (!s || !s.email) return;
+        combinedMap.set(s.email.toLowerCase(), {
+          id: s.id || `stu-${Date.now()}`,
+          fullName: s.full_name,
+          email: s.email,
+          category: "Course Enrolled Student",
+          role: "student",
+          department: s.course_name || "MERN Stack Course",
+          attendance: "Active Student 🟢",
+          progress: `${s.progress || 45}% Course Completed`,
+          dailyTask: "Submitted daily practical coding lab assignment.",
+          feeStatus: s.fee_status || "Paid",
+        });
+      });
+
+      // Append persistent interns
+      persistentInterns.forEach(i => {
+        if (!i || !i.email) return;
+        combinedMap.set(i.email.toLowerCase(), {
+          id: i.id || `int-${Date.now()}`,
+          fullName: i.full_name,
+          email: i.email,
+          category: i.domain?.includes("Remote") ? "Remote 3-Month Intern" : "On-Site 3-Month Intern",
+          role: "intern",
+          department: i.domain || "Software Engineering Intern",
+          attendance: "Present 🟢",
+          progress: `${i.progress || 50}% Internship Milestone Completed`,
+          dailyTask: i.task_logs?.[0]?.details || "Working on assigned project module.",
+          feeStatus: "Free Internship",
+        });
+      });
+
+      setAllRegisteredUsersList(Array.from(combinedMap.values()));
+    } catch(e) {}
+  }, []);
 
   useEffect(() => {
     // Unblock initial screen instantly
@@ -188,71 +255,7 @@ export default function DashboardPage() {
       window.removeEventListener("dataChanged", handleUpdate);
       window.removeEventListener("activityLogged", handleUpdate);
     };
-  }, []);
-
-  // Fetch all registered software house members across categories
-  const loadAllMembers = () => {
-    try {
-      const reg = localStorage.getItem("registered_system_users");
-      const savedUsers = reg ? JSON.parse(reg) : [];
-
-      const persistentEmps = JSON.parse(localStorage.getItem("persistent_employees") || "[]");
-      const persistentStudents = JSON.parse(localStorage.getItem("persistent_courses") || "[]");
-      const persistentInterns = JSON.parse(localStorage.getItem("persistent_internships") || "[]");
-
-      const combinedMap = new Map();
-
-      // Append persistent employees
-      persistentEmps.forEach(e => {
-        combinedMap.set(e.email.toLowerCase(), {
-          id: e.id || `emp-${Date.now()}`,
-          fullName: e.full_name,
-          email: e.email,
-          category: e.employment_type || "On-Site Staff",
-          role: "employee",
-          department: `${e.department} (${e.designation || 'Staff'})`,
-          attendance: "Present Today 🟢",
-          progress: "Assigned Software House Deliverables",
-          dailyTask: "Logged daily work progress on assigned task.",
-          feeStatus: "N/A (Paid Staff)",
-        });
-      });
-
-      // Append persistent course students
-      persistentStudents.forEach(s => {
-        combinedMap.set(s.email.toLowerCase(), {
-          id: s.id || `stu-${Date.now()}`,
-          fullName: s.full_name,
-          email: s.email,
-          category: "Course Enrolled Student",
-          role: "student",
-          department: s.course_name || "MERN Stack Course",
-          attendance: "Active Student 🟢",
-          progress: `${s.progress || 45}% Course Completed`,
-          dailyTask: "Submitted daily practical coding lab assignment.",
-          feeStatus: s.fee_status || "Paid",
-        });
-      });
-
-      // Append persistent interns
-      persistentInterns.forEach(i => {
-        combinedMap.set(i.email.toLowerCase(), {
-          id: i.id || `int-${Date.now()}`,
-          fullName: i.full_name,
-          email: i.email,
-          category: i.domain?.includes("Remote") ? "Remote 3-Month Intern" : "On-Site 3-Month Intern",
-          role: "intern",
-          department: i.domain || "Software Engineering Intern",
-          attendance: "Present 🟢",
-          progress: `${i.progress || 50}% Internship Milestone Completed`,
-          dailyTask: i.task_logs?.[0]?.details || "Working on assigned project module.",
-          feeStatus: "Free Internship",
-        });
-      });
-
-      setAllRegisteredUsersList(Array.from(combinedMap.values()));
-    } catch(e) {}
-  };
+  }, [loadDashboardData, loadAllMembers]);
 
   // Strict Admin Guard: Non-admin users cannot see the Overview Dashboard
   if (role !== "admin") {
@@ -281,35 +284,37 @@ export default function DashboardPage() {
     );
   }
 
-  const filteredMembers = allRegisteredUsersList.filter(u => {
-    if (userCategoryFilter === "all") return true;
-    if (userCategoryFilter === "employee") return u.role === "employee";
-    if (userCategoryFilter === "student") return u.role === "student";
-    if (userCategoryFilter === "intern") return u.role === "intern";
-    if (userCategoryFilter === "remote") return u.category?.toLowerCase().includes("remote");
-    if (userCategoryFilter === "onsite") return u.category?.toLowerCase().includes("site");
-    return true;
-  });
+  const filteredMembers = useMemo(() => {
+    return allRegisteredUsersList.filter(u => {
+      if (userCategoryFilter === "all") return true;
+      if (userCategoryFilter === "employee") return u.role === "employee";
+      if (userCategoryFilter === "student") return u.role === "student";
+      if (userCategoryFilter === "intern") return u.role === "intern";
+      if (userCategoryFilter === "remote") return u.category?.toLowerCase().includes("remote");
+      if (userCategoryFilter === "onsite") return u.category?.toLowerCase().includes("site");
+      return true;
+    });
+  }, [allRegisteredUsersList, userCategoryFilter]);
 
-  const formatCurrency = (val) => {
+  const formatCurrency = useCallback((val) => {
     const num = Number(val) || 0;
     return `Rs. ${num.toLocaleString("en-PK")}`;
-  };
+  }, []);
 
-  const cards = [
+  const cards = useMemo(() => [
     { title: "Total Employees", value: stats.employees, icon: FaUsers, color: "text-blue-600" },
     { title: "Total Active Projects", value: stats.activeProjects, icon: FaProjectDiagram, color: "text-amber-600" },
     { title: "Monthly Revenue", value: formatCurrency(stats.monthlyRevenue), icon: FaMoneyBillWave, color: "text-emerald-600" },
     { title: "Pending Leaves", value: stats.pendingLeaves, icon: FaCalendarCheck, color: "text-rose-600" },
-  ];
+  ], [stats.employees, stats.activeProjects, stats.monthlyRevenue, stats.pendingLeaves, formatCurrency]);
 
-  const quickActions = [
+  const quickActions = useMemo(() => [
     { label: "Add Employee", href: "/dashboard/employees", icon: FaUserPlus },
     { label: "Log Attendance", href: "/dashboard/attendance", icon: FaCalendarCheck },
     { label: "Finance & Accounts", href: "/dashboard/finance", icon: FaLandmark },
     { label: "Payroll & Payslips", href: "/dashboard/payroll", icon: FaMoneyBillWave },
     { label: "Projects Progress", href: "/dashboard/projects", icon: FaTasks },
-  ];
+  ], []);
 
   return (
     <div className="space-y-6">

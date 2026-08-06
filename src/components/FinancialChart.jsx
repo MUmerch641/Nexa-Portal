@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { memo, useState } from "react";
 import { FaChartLine, FaMoneyBillWave, FaArrowUp, FaArrowDown, FaInfoCircle } from "react-icons/fa";
 
-export default function FinancialChart({ revenue = 0, expenses = 0, categoryData = [] }) {
+function FinancialChart({ revenue = 0, expenses = 0, categoryData = [] }) {
   const [activeTooltip, setActiveTooltip] = useState(null);
 
   const formatCurrency = (val) => {
@@ -213,3 +213,5 @@ export default function FinancialChart({ revenue = 0, expenses = 0, categoryData
     </div>
   );
 }
+
+export default memo(FinancialChart);
