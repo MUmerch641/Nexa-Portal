@@ -213,6 +213,40 @@ export default function RemoteMonitoringPage() {
     }
   };
 
+  const handleClearRemoteData = async () => {
+    if (!confirm("⚠️ Are you sure you want to CLEAR ALL REMOTE INTERNSHIP DATA? This will permanently wipe all remote intern records!")) return;
+
+    try {
+      const savedDeleted = localStorage.getItem("deleted_intern_ids");
+      let deletedList = savedDeleted ? JSON.parse(savedDeleted) : [];
+
+      remoteStudents.forEach(s => {
+        if (s.id) deletedList.push(String(s.id).toLowerCase());
+        if (s.email) deletedList.push(s.email.toLowerCase().trim());
+        if (s.name) deletedList.push(s.name.toLowerCase().trim());
+        if (s.email) {
+          fetch("/api/persistence", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ table: "students", action: "delete", record: { email: s.email } })
+          }).catch(() => {});
+        }
+      });
+
+      localStorage.setItem("deleted_intern_ids", JSON.stringify(deletedList));
+
+      const savedInterns = localStorage.getItem("persistent_interns");
+      if (savedInterns) {
+        const interns = JSON.parse(savedInterns);
+        const filtered = interns.filter(i => !i.internship_mode?.includes("Remote") && !i.is_remote);
+        localStorage.setItem("persistent_interns", JSON.stringify(filtered));
+      }
+
+      setRemoteStudents([]);
+      alert("All Remote Internship data wiped permanently!");
+    } catch(e) {}
+  };
+
   // Request Live Screen Sharing Stream via WebRTC
   const startLiveScreenAccess = async (student) => {
     setActiveRemoteStudent(student);
@@ -324,6 +358,17 @@ export default function RemoteMonitoringPage() {
             >
               <FaCamera />
               <span>Capture Snapshot Now</span>
+            </button>
+          )}
+
+          {role === "admin" && (
+            <button
+              onClick={handleClearRemoteData}
+              className="bg-rose-600 hover:bg-rose-700 text-white font-bold px-4 py-2.5 rounded-xl text-xs transition-all shadow-lg flex items-center gap-1.5 border border-rose-500/40 cursor-pointer"
+              title="Clear all Remote Internship data permanently"
+            >
+              <FaTrash />
+              <span>Clear Remote Data 🗑️</span>
             </button>
           )}
         </div>
