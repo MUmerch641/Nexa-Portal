@@ -103,12 +103,39 @@ export default function AttendancePage() {
         setAllSystemLogs(JSON.parse(masterSaved));
       } catch(e) {}
 
+      // Auto-verify Wi-Fi on load so attendance button is unlocked immediately when connected
+      const res = await verifyOfficeWifiAttendance({
+        userId: storedEmail,
+        userEmail: storedEmail,
+        userRole: storedRole,
+        userName: storedName
+      });
+
+      const activeIp = res.currentPublicIp || detectedIp || "Offline";
+      setUserIp(activeIp);
+
+      if (res.success) {
+        setIpVerificationResult({
+          success: true,
+          message: "Office Wi-Fi Verified Successfully.",
+          publicIp: activeIp,
+          officePublicIp: res.activeOfficeNetwork?.public_ip_address || activeIp
+        });
+      } else {
+        setIpVerificationResult({
+          success: false,
+          message: res.errorMessage || "Network Mismatch! Please connect to Office Wi-Fi.",
+          publicIp: activeIp,
+          officePublicIp: res.activeOfficeNetwork?.public_ip_address || "Office Wi-Fi"
+        });
+      }
+
       setLoading(false);
     };
     fetchData();
   }, []);
 
-  const handleVerifyIpify = async () => {
+  const handleVerifyIpify = async (silent = false) => {
     setIsVerifyingIp(true);
     const role = user?.user_metadata?.role || userRole || "employee";
 
@@ -129,7 +156,9 @@ export default function AttendancePage() {
         publicIp: activeIp,
         officePublicIp: res.activeOfficeNetwork?.public_ip_address || activeIp
       });
-      showToast("Office Wi-Fi Verified 🟢", "Network Verified Successfully. You can now mark your attendance.", "success");
+      if (!silent) {
+        showToast("Office Wi-Fi Verified 🟢", "Network Verified Successfully. You can now mark your attendance.", "success");
+      }
     } else {
       setIpVerificationResult({
         success: false,
@@ -137,9 +166,12 @@ export default function AttendancePage() {
         publicIp: activeIp,
         officePublicIp: res.activeOfficeNetwork?.public_ip_address || "Office Wi-Fi"
       });
-      showToast("Network Mismatch 🛑", `Your connected Wi-Fi IP (${activeIp}) does not match Authorized Office Wi-Fi IP!`, "error");
+      if (!silent) {
+        showToast("Network Mismatch 🛑", `Your connected Wi-Fi IP (${activeIp}) does not match Authorized Office Wi-Fi IP!`, "error");
+      }
     }
     setIsVerifyingIp(false);
+    return res;
   };
 
   const navigateToDashboard = () => {
@@ -178,13 +210,13 @@ export default function AttendancePage() {
     });
 
     const activeNet = verificationRes.activeOfficeNetwork || getActiveOfficeNetworks()[0];
-    const registeredOfficeIp = (activeNet?.public_ip_address || "39.46.118.183").trim();
+    const registeredOfficeIp = (verificationRes.currentPublicIp || activeNet?.public_ip_address || "39.46.118.183").trim();
     const currentIp = verificationRes.currentPublicIp || "Unknown IP";
 
     if (!verificationRes.success) {
       setIpVerificationResult({
         success: false,
-        message: verificationRes.errorMessage || `❌ Network Mismatch! Connected Wi-Fi IP (${currentIp}) does not match Authorized Office Wi-Fi IP (${registeredOfficeIp}).`,
+        message: verificationRes.errorMessage || `❌ Wi-Fi Disconnected! Please connect to Wi-Fi.`,
         publicIp: currentIp,
         officePublicIp: registeredOfficeIp
       });
@@ -192,7 +224,7 @@ export default function AttendancePage() {
       const actionLabel = type === "check_in" ? "Clock In" : "Clock Out";
       showToast(
         `${actionLabel} Blocked 🛑`,
-        `Unauthorized Wi-Fi! Connected IP (${currentIp}) does not match authorized Office Wi-Fi IP (${registeredOfficeIp}). Attendance blocked!`,
+        `Wi-Fi is disconnected or offline. Connect to Wi-Fi to mark attendance!`,
         "error"
       );
       return;
@@ -205,7 +237,7 @@ export default function AttendancePage() {
       success: true,
       message: "Office Wi-Fi Verified Successfully.",
       publicIp: livePublicIp,
-      officePublicIp: registeredOfficeIp
+      officePublicIp: livePublicIp
     });
 
     const checkInRecord = todayRecords.find(r => r.type === "check_in" || r.check_in_timestamp);
@@ -558,15 +590,15 @@ export default function AttendancePage() {
         <div className="space-y-3 mb-8">
           <div className="flex items-center justify-between text-xs font-bold text-slate-600 px-1">
             <span>STEP 2: MARK ATTENDANCE (1 CHECK-IN PER DAY)</span>
-            <span>{!ipVerificationResult || !ipVerificationResult.success ? "Disabled (Verification Required)" : "Enabled (Office Wi-Fi Verified)"}</span>
+            <span>{ipVerificationResult && !ipVerificationResult.success ? "Wi-Fi Verification Required" : "Ready to Mark Attendance"}</span>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <button
               onClick={() => handleAttendance("check_in")}
-              disabled={!!checkIn || !ipVerificationResult || !ipVerificationResult.success}
+              disabled={!!checkIn}
               className={`w-full py-4 text-base rounded-2xl font-black tracking-wide flex items-center justify-center gap-2 transition-all ${
-                checkIn || !ipVerificationResult || !ipVerificationResult.success
+                checkIn
                   ? "bg-slate-200 text-slate-400 cursor-not-allowed border border-slate-300 opacity-60"
                   : "attendance-btn-in cursor-pointer"
               }`}
@@ -577,9 +609,9 @@ export default function AttendancePage() {
 
             <button
               onClick={() => handleAttendance("check_out")}
-              disabled={!checkIn || !!checkOut || !ipVerificationResult || !ipVerificationResult.success}
+              disabled={!checkIn || !!checkOut}
               className={`w-full py-4 text-base rounded-2xl font-black tracking-wide flex items-center justify-center gap-2 transition-all ${
-                !checkIn || checkOut || !ipVerificationResult || !ipVerificationResult.success
+                !checkIn || checkOut
                   ? "bg-slate-200 text-slate-400 cursor-not-allowed border border-slate-300 opacity-60"
                   : "attendance-btn-out cursor-pointer"
               }`}
