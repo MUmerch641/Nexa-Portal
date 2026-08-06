@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { dbFetch, dbSaveRecord, dbDeleteRecord } from "@/lib/dbPersistence";
 import Modal from "@/components/Modal";
+import ScrollableTabs from "@/components/ScrollableTabs";
 import Link from "next/link";
 import {
   FaLaptopCode,
@@ -566,14 +567,14 @@ export default function InternshipsPage() {
             </h2>
 
             {/* Mode Switcher Buttons */}
-            <div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 rounded-xl border border-slate-200">
+            <ScrollableTabs>
               <button
                 type="button"
                 onClick={() => setForm({ ...form, internship_mode: "On-Site / Offline" })}
-                className={`py-2 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 ${
+                className={`flex-1 py-2 px-4 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer ${
                   form.internship_mode === "On-Site / Offline"
-                    ? "bg-white text-blue-700 shadow-xs border border-slate-200"
-                    : "text-slate-500 hover:text-slate-800"
+                    ? "bg-blue-600 text-white shadow-xs border border-blue-500"
+                    : "bg-slate-100 text-slate-600 hover:text-slate-900 border border-slate-200"
                 }`}
               >
                 <FaBuilding className="text-xs" /> On-Site
@@ -582,15 +583,15 @@ export default function InternshipsPage() {
               <button
                 type="button"
                 onClick={() => setForm({ ...form, internship_mode: "Remote (Work From Home)" })}
-                className={`py-2 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 ${
+                className={`flex-1 py-2 px-4 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer ${
                   form.internship_mode === "Remote (Work From Home)"
-                    ? "bg-white text-indigo-700 shadow-xs border border-slate-200"
-                    : "text-slate-500 hover:text-slate-800"
+                    ? "bg-indigo-600 text-white shadow-xs border border-indigo-500"
+                    : "bg-slate-100 text-slate-600 hover:text-slate-900 border border-slate-200"
                 }`}
               >
                 <FaHome className="text-xs" /> Remote
               </button>
-            </div>
+            </ScrollableTabs>
 
             <form onSubmit={handleAddIntern} className="space-y-4">
               <div>

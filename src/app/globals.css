@@ -146,3 +146,12 @@ body {
 .animate-particle-3 {
   animation: floatParticle 12s ease-in-out 4s infinite;
 }
+
+/* Hide default horizontal browser scrollbar for tabs navigation */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}

@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabase";
 import Modal from "@/components/Modal";
 import { showToast } from "@/components/Toast";
 import { dbFetch, dbSaveList } from "@/lib/dbPersistence";
+import ScrollableTabs from "@/components/ScrollableTabs";
 import {
   FaProjectDiagram,
   FaTasks,
@@ -313,27 +314,29 @@ export default function ProjectsPage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
-          <button
-            onClick={() => setActiveTab("daily_tasks")}
-            className={`font-extrabold px-4 py-2.5 rounded-xl text-xs transition-all border cursor-pointer ${
-              activeTab === "daily_tasks"
-                ? "bg-indigo-600 text-white border-indigo-500 shadow-md"
-                : "bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700"
-            }`}
-          >
-            📋 Daily Tasks Logger
-          </button>
-          <button
-            onClick={() => setActiveTab("projects")}
-            className={`font-extrabold px-4 py-2.5 rounded-xl text-xs transition-all border cursor-pointer ${
-              activeTab === "projects"
-                ? "bg-indigo-600 text-white border-indigo-500 shadow-md"
-                : "bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700"
-            }`}
-          >
-            📁 Projects Directory ({projects.length})
-          </button>
+        <div className="shrink-0 max-w-xs md:max-w-md">
+          <ScrollableTabs>
+            <button
+              onClick={() => setActiveTab("daily_tasks")}
+              className={`font-extrabold px-4 py-2.5 rounded-xl text-xs transition-all border cursor-pointer whitespace-nowrap ${
+                activeTab === "daily_tasks"
+                  ? "bg-indigo-600 text-white border-indigo-500 shadow-md"
+                  : "bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700"
+              }`}
+            >
+              📋 Daily Tasks Logger
+            </button>
+            <button
+              onClick={() => setActiveTab("projects")}
+              className={`font-extrabold px-4 py-2.5 rounded-xl text-xs transition-all border cursor-pointer whitespace-nowrap ${
+                activeTab === "projects"
+                  ? "bg-indigo-600 text-white border-indigo-500 shadow-md"
+                  : "bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700"
+              }`}
+            >
+              📁 Projects Directory ({projects.length})
+            </button>
+          </ScrollableTabs>
         </div>
       </div>
 
