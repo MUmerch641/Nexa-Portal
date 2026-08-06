@@ -243,21 +243,36 @@ export async function dbSaveRecord(table, record) {
  */
 export async function dbDeleteRecord(table, id, emailField = "") {
   MEM_CACHE.delete(table);
-  const storageKey = TABLE_STORAGE_KEYS[table] || `persistent_${table}`;
+  const storageKeys = [
+    TABLE_STORAGE_KEYS[table] || `persistent_${table}`,
+    "persistent_interns",
+    "persistent_courses",
+    "registered_system_users"
+  ];
   
   if (typeof window !== "undefined") {
     try {
-      const saved = localStorage.getItem(storageKey);
-      if (saved) {
-        const current = JSON.parse(saved);
-        const targetKey = String(id || emailField).toLowerCase().trim();
-        const filtered = current.filter(item => {
-          if (!item) return false;
-          const k = String(item.id || item.email || "").toLowerCase().trim();
-          return k !== targetKey && item.id !== id;
-        });
-        localStorage.setItem(storageKey, JSON.stringify(filtered));
-      }
+      const targetKey = String(id || emailField).toLowerCase().trim();
+      const targetEmail = String(emailField || "").toLowerCase().trim();
+
+      storageKeys.forEach(key => {
+        const saved = localStorage.getItem(key);
+        if (saved) {
+          const current = JSON.parse(saved);
+          if (Array.isArray(current)) {
+            const filtered = current.filter(item => {
+              if (!item) return false;
+              const itemId = String(item.id || "").toLowerCase().trim();
+              const itemEmail = String(item.email || "").toLowerCase().trim();
+              if (id && itemId === String(id).toLowerCase().trim()) return false;
+              if (targetEmail && itemEmail === targetEmail) return false;
+              if (targetKey && (itemId === targetKey || itemEmail === targetKey)) return false;
+              return true;
+            });
+            localStorage.setItem(key, JSON.stringify(filtered));
+          }
+        }
+      });
     } catch(e) {}
   }
 

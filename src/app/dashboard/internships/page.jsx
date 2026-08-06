@@ -404,27 +404,51 @@ export default function InternshipsPage() {
   const handleDeleteIntern = async (id) => {
     if (!confirm("Are you sure you want to delete this intern record?")) return;
     const target = interns.find(i => i.id === id);
-    const updated = interns.filter((i) => i.id !== id);
+    const targetEmail = (target?.email || "").toLowerCase().trim();
+    const updated = interns.filter((i) => i.id !== id && (i.email || "").toLowerCase().trim() !== targetEmail);
     setInterns(updated);
 
+    // 1. Update persistent_interns
     try {
       localStorage.setItem("persistent_interns", JSON.stringify(updated));
     } catch(e) {}
 
-    // Add target ID & email to permanent blacklist
+    // 2. Remove from persistent_courses
+    try {
+      const savedCourses = localStorage.getItem("persistent_courses");
+      if (savedCourses) {
+        const currentCourses = JSON.parse(savedCourses);
+        const filteredCourses = currentCourses.filter(c => c.id !== id && (c.email || "").toLowerCase().trim() !== targetEmail);
+        localStorage.setItem("persistent_courses", JSON.stringify(filteredCourses));
+      }
+    } catch(e) {}
+
+    // 3. Remove from registered_system_users
+    try {
+      const savedUsers = localStorage.getItem("registered_system_users");
+      if (savedUsers) {
+        const currentUsers = JSON.parse(savedUsers);
+        const filteredUsers = currentUsers.filter(u => (u.email || "").toLowerCase().trim() !== targetEmail);
+        localStorage.setItem("registered_system_users", JSON.stringify(filteredUsers));
+      }
+    } catch(e) {}
+
+    // 4. Add target ID & email to permanent blacklist
     try {
       const savedDeleted = localStorage.getItem("deleted_intern_ids");
       let deletedList = savedDeleted ? JSON.parse(savedDeleted) : [];
       if (id && !deletedList.includes(String(id))) {
         deletedList.push(String(id));
       }
-      if (target?.email && !deletedList.includes(target.email.toLowerCase().trim())) {
-        deletedList.push(target.email.toLowerCase().trim());
+      if (targetEmail && !deletedList.includes(targetEmail)) {
+        deletedList.push(targetEmail);
       }
       localStorage.setItem("deleted_intern_ids", JSON.stringify(deletedList));
     } catch(e) {}
 
-    dbDeleteRecord("students", id, target?.email || "").catch(() => {});
+    // 5. Delete from DB & sync dataChanged event
+    await dbDeleteRecord("students", id, targetEmail).catch(() => {});
+    await dbDeleteRecord("interns", id, targetEmail).catch(() => {});
   };
 
   const currentUserEmail = typeof window !== "undefined" ? localStorage.getItem("current_user_email") || "" : "";
