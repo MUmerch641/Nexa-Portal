@@ -257,7 +257,7 @@ export default function ProjectsPage() {
         category: t.category,
         created_at: new Date().toISOString()
       }));
-      await supabase.from("daily_tasks").insert(payload);
+      dbSaveList("daily_tasks", payload).catch(() => {});
     } catch(e) {}
 
     setCreateTaskModalOpen(false);

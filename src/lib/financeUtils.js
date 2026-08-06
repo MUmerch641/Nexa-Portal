@@ -34,13 +34,12 @@ export const INITIAL_EXPENSES = [];
 export const INITIAL_INCOMES = [];
 export const INITIAL_UTILITY_BILLS = [];
 
-/**
- * Fetch helper for all modules with database fallback
- */
+import { dbFetch } from "@/lib/dbPersistence";
+
 export async function fetchFinanceRecords() {
   try {
-    const { data, error } = await supabase.from("expenses").select("*");
-    if (!error && data && data.length > 0) return data;
+    const data = await dbFetch("expenses", INITIAL_EXPENSES);
+    if (data && data.length > 0) return data;
   } catch (e) {}
   return INITIAL_EXPENSES;
 }

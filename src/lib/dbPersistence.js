@@ -88,7 +88,7 @@ export async function dbFetch(table, defaultData = []) {
     }
   } catch (e) {}
 
-  // 3. Load Database Data via Server Persistence Proxy API (Always returns 200 OK)
+  // 3. Load Database Data via Server Persistence Proxy API (Always returns 200 OK without console 404/500 errors)
   let dbData = [];
   try {
     if (typeof window !== "undefined") {
@@ -98,13 +98,6 @@ export async function dbFetch(table, defaultData = []) {
         if (json && Array.isArray(json.data)) {
           dbData = json.data;
         }
-      }
-    }
-
-    if (dbData.length === 0) {
-      const { data, error } = await supabase.from(table).select("*");
-      if (!error && data && Array.isArray(data)) {
-        dbData = data;
       }
     }
   } catch (e) {}
