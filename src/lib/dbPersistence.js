@@ -132,11 +132,16 @@ export async function dbSaveRecord(table, record) {
     } catch(e) {}
   }
 
-  // 2. Write to Supabase DB
+  // 2. Write to Supabase DB safely
   try {
-    await supabase.from(table).upsert([record], { onConflict: "id" }).catch(async () => {
-      await supabase.from(table).insert([record]).catch(() => {});
-    });
+    const { error: upsertErr } = await supabase.from(table).upsert([record], { onConflict: "id" });
+    if (upsertErr) {
+      const { error: insertErr } = await supabase.from(table).insert([record]);
+      if (insertErr && record.id) {
+        const { id, ...cleanPayload } = record;
+        await supabase.from(table).insert([cleanPayload]).catch(() => {});
+      }
+    }
   } catch(e) {}
 
   // 3. Trigger cross-tab/window event
