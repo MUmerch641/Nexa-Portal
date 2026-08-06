@@ -627,92 +627,98 @@ export default function DashboardPage() {
               )}
             </tbody>
           </table>
-        </div>
-      </div>
-
-      {/* Dual Section: Live Attendance & Projects Progress */}
+      {/* DUAL SECTION: OVERALL PROGRESS & ACTIVE PROJECTS */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        
-        {/* 1. Live Student & Employee Attendance Feed */}
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs flex flex-col justify-between">
+
+        {/* 1. Overall Progress Card */}
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs flex flex-col justify-between space-y-4">
           <div>
-            <div className="flex items-center justify-between border-b border-slate-200 pb-3 mb-4">
-              <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                <FaCalendarCheck className="text-emerald-600" />
-                <span>Student & Staff Live Attendance</span>
-              </h2>
-              <Link href="/dashboard/attendance" className="text-xs font-bold text-blue-600 hover:underline">
-                Live Attendance Portal →
-              </Link>
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
+                  <FaProjectDiagram className="text-sm" />
+                </div>
+                <div>
+                  <h2 className="text-base font-bold text-slate-900">Overall Company & Project Progress</h2>
+                  <p className="text-xs text-slate-500 mt-0.5">Real-time aggregate project milestone completion rate</p>
+                </div>
+              </div>
+
+              {/* Live Status Indicator in Top-Right Corner */}
+              <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-2xs shrink-0">
+                <span className="relative flex h-2.5 w-2.5">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+                </span>
+                <span className="text-xs font-black tracking-wide">Live</span>
+              </div>
             </div>
 
-            <div className="space-y-3">
-              {liveAttendanceList.length === 0 ? (
-                <p className="text-xs text-slate-400 text-center py-6">No attendance recorded today yet.</p>
-              ) : (
-                liveAttendanceList.slice(0, 5).map((att, idx) => (
-                  <div
-                    key={idx}
-                    onClick={() => {
-                      setSelectedUserModal({
-                        fullName: att.name || att.user_id || "Registered Member",
-                        email: att.email || att.user_email || "staff@softwarehouse.com",
-                        category: att.role || "Employee Staff",
-                        attendance: `${att.type === "check_in" ? "Checked In ✅" : "Checked Out 🔴"} at ${att.timestamp ? new Date(att.timestamp).toLocaleTimeString() : "Today"}`,
-                        progress: "Live Attendance Entry",
-                        dailyTask: `Attendance Logged via Office Wi-Fi Network (${att.ip || 'Authorized Public IP'})`,
-                        feeStatus: "N/A"
-                      });
-                    }}
-                    className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-100 hover:bg-slate-100 transition-all cursor-pointer shadow-2xs"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className={`p-2 rounded-lg text-white font-bold text-xs ${att.role?.includes("Student") ? "bg-purple-600" : "bg-blue-600"}`}>
-                        {att.role?.includes("Student") ? <FaGraduationCap /> : <FaUserTie />}
-                      </div>
-                      <div>
-                        <p className="text-xs font-bold text-slate-900">{att.name || att.user_id || "Registered Member"}</p>
-                        <p className="text-[11px] text-slate-500 capitalize">{att.role || "Employee Staff"}</p>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <span className={`inline-block px-2.5 py-0.5 rounded-md text-[11px] font-bold ${att.type === "check_in" ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800"}`}>
-                        {att.type === "check_in" ? "Checked In ✅" : "Checked Out 🔴"}
-                      </span>
-                      <p className="text-[10px] text-slate-400 mt-0.5">
-                        {att.timestamp ? new Date(att.timestamp).toLocaleTimeString() : "Today"}
-                      </p>
-                    </div>
-                  </div>
-                ))
-              )}
+            <div className="mt-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-700">Total Milestones Achieved Rate</span>
+                <span className="text-xs font-black text-indigo-700 bg-indigo-50 px-2.5 py-1 rounded-lg border border-indigo-200">
+                  {overallProgressPercentage}% Completed
+                </span>
+              </div>
+
+              {/* Modern Animated Gradient Progress Bar */}
+              <div className="relative w-full bg-slate-100 h-4 rounded-full overflow-hidden p-0.5 border border-slate-200 shadow-inner">
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-blue-600 via-indigo-500 to-emerald-500 transition-all duration-1000 ease-out shadow-sm relative overflow-hidden"
+                  style={{ width: `${overallProgressPercentage}%` }}
+                >
+                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent animate-shimmer-pass" />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 pt-2 text-xs">
+                <div className="p-3 bg-blue-50/60 rounded-xl border border-blue-100">
+                  <p className="text-[10px] font-bold uppercase text-blue-600">Active Workstreams</p>
+                  <p className="text-base font-black text-slate-900 mt-0.5">{stats.activeProjects} Projects</p>
+                </div>
+                <div className="p-3 bg-emerald-50/60 rounded-xl border border-emerald-100">
+                  <p className="text-[10px] font-bold uppercase text-emerald-600">Quality Standard</p>
+                  <p className="text-base font-black text-slate-900 mt-0.5">99.4% Verified</p>
+                </div>
+              </div>
             </div>
           </div>
 
-          <div className="mt-4 pt-3 border-t border-slate-100 text-center">
-            <Link href="/dashboard/attendance" className="text-xs font-bold text-blue-600 hover:text-blue-700 hover:underline flex items-center justify-center gap-1">
-              <span>View Full Live Attendance Logs ({liveAttendanceList.length} Total Records) →</span>
+          <div className="pt-3 border-t border-slate-100 text-center">
+            <Link href="/dashboard/projects" className="text-xs font-bold text-blue-600 hover:underline">
+              Inspect Full Deliverables & Sprint Roadmap →
             </Link>
           </div>
         </div>
 
-        {/* 2. Employee Projects Progress Feed */}
+        {/* 2. Active Projects Card */}
         <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs flex flex-col justify-between">
           <div>
-            <div className="flex items-center justify-between border-b border-slate-200 pb-3 mb-4">
-              <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                <FaProjectDiagram className="text-amber-600" />
-                <span>Employee Projects Progress</span>
-              </h2>
-              <Link href="/dashboard/projects" className="text-xs font-bold text-blue-600 hover:underline">
-                View All Projects →
-              </Link>
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
+              <div className="flex items-center gap-2">
+                <FaProjectDiagram className="text-amber-600 text-base" />
+                <h2 className="text-base font-bold text-slate-900">Active Projects Card</h2>
+              </div>
+
+              {/* Live Status Indicator in Top-Right Corner */}
+              <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-2xs shrink-0">
+                <span className="relative flex h-2.5 w-2.5">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+                </span>
+                <span className="text-xs font-black tracking-wide">Live</span>
+              </div>
             </div>
 
             <div className="space-y-3">
               {projectsProgressList.length === 0 ? (
-                <div className="p-8 text-center text-xs text-slate-400 font-semibold bg-slate-50 rounded-xl border border-slate-200">
-                  No active assigned tasks. Admin can assign tasks to employees from Projects Feed.
+                <div className="py-10 text-center bg-slate-50/80 rounded-2xl border border-slate-200/80 space-y-2">
+                  <FaFolderOpen className="mx-auto text-3xl text-slate-300" />
+                  <p className="text-sm font-bold text-slate-700">No active projects.</p>
+                  <p className="text-xs text-slate-400 max-w-xs mx-auto">
+                    New projects assigned to staff or students will appear here automatically.
+                  </p>
                 </div>
               ) : (
                 projectsProgressList.slice(0, 3).map((proj, idx) => {
@@ -721,13 +727,13 @@ export default function DashboardPage() {
                     <div key={idx} className="p-3.5 rounded-xl bg-slate-50 border border-slate-100 space-y-2">
                       <div className="flex items-center justify-between">
                         <p className="text-xs font-bold text-slate-900">{proj.title || proj.name || `Project #${proj.id}`}</p>
-                        <span className="text-[11px] font-extrabold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-200">
+                        <span className="text-[11px] font-extrabold text-indigo-700 bg-indigo-50 px-2.5 py-0.5 rounded-md border border-indigo-200">
                           {progress}%
                         </span>
                       </div>
-                      <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
+                      <div className="w-full bg-slate-200 h-2.5 rounded-full overflow-hidden p-0.5">
                         <div
-                          className="bg-blue-600 h-full rounded-full transition-all duration-500"
+                          className="bg-gradient-to-r from-blue-600 to-indigo-600 h-full rounded-full transition-all duration-1000 ease-out"
                           style={{ width: `${progress}%` }}
                         />
                       </div>
@@ -743,8 +749,8 @@ export default function DashboardPage() {
           </div>
 
           <div className="mt-4 pt-3 border-t border-slate-100 text-center">
-            <Link href="/dashboard/projects" className="text-xs font-semibold text-slate-600 hover:text-blue-600">
-              Manage Daily Project Milestones & Employee Deliverables
+            <Link href="/dashboard/projects" className="text-xs font-bold text-blue-600 hover:underline">
+              View All Projects & Milestones ({projectsProgressList.length} Total) →
             </Link>
           </div>
         </div>
