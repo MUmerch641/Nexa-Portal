@@ -196,21 +196,28 @@ export default function InternshipsPage() {
       });
     };
 
-    // Read stored items from localStorage (Single Source of Truth)
-    let stored = null;
+    // Fetch fresh records from PostgreSQL Database via API Persistence Engine (Single Source of Truth)
+    let dbRecords = [];
     try {
-      const s = localStorage.getItem("persistent_interns");
-      if (s !== null) stored = JSON.parse(s);
+      dbRecords = await dbFetch("students");
     } catch (e) {}
 
-    let finalList = [];
-    if (stored !== null) {
-      finalList = stored.filter(i => !isDeleted(i));
-      localStorage.setItem("persistent_interns", JSON.stringify(finalList));
-    } else {
-      finalList = [];
-      localStorage.setItem("persistent_interns", JSON.stringify([]));
-    }
+    let stored = [];
+    try {
+      const s = localStorage.getItem("persistent_interns");
+      if (s) stored = JSON.parse(s);
+    } catch (e) {}
+
+    const map = new Map();
+    [...dbRecords, ...stored].forEach(item => {
+      if (item && !isDeleted(item)) {
+        const key = String(item.id || item.email || item.full_name).toLowerCase().trim();
+        if (key) map.set(key, item);
+      }
+    });
+
+    const finalList = Array.from(map.values()).filter(i => !isDeleted(i));
+    localStorage.setItem("persistent_interns", JSON.stringify(finalList));
 
     setInterns(finalList);
     setLoading(false);
