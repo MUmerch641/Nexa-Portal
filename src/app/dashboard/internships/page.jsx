@@ -165,66 +165,22 @@ export default function InternshipsPage() {
   // Fetch 3-Month Free Interns with Permanent Local Storage Sync
   const fetchInterns = async () => {
     setLoading(true);
-    const demoData = [
-      {
-        id: "i-101",
-        full_name: "Muhammad Ali",
-        cnic: "35202-1234567-1",
-        email: "ali.intern@gmail.com",
-        phone: "03001234567",
-        internship_mode: "On-Site / Offline",
-        enrollment_type: "3-Month Free Internship",
-        course_name: "Full Stack MERN Web Development",
-        instructor: "Engr. Hamza (Lead Full-Stack)",
-        resources_url: "https://github.com/softwarehouse/mern-internship-tasks",
-        screen_access_url: "",
-        start_date: "2026-05-01",
-        end_date: "2026-08-01",
-        progress: 100,
-        course_fee: 0,
-        fee_paid: 0,
-        daily_logs: [
-          {
-            id: "l-1",
-            date: "2026-07-31 15:00",
-            author: "Muhammad Ali (On-Site Intern)",
-            task: "Completed Redux Store Toolkit integration and Supabase Row Level Security policies.",
-          },
-        ],
-      },
-      {
-        id: "i-102",
-        full_name: "Bilal Hassan",
-        cnic: "35201-8888888-3",
-        email: "bilal.remote@gmail.com",
-        phone: "03217778899",
-        internship_mode: "Remote (Work From Home)",
-        enrollment_type: "3-Month Free Internship",
-        course_name: "Python & AI Data Science",
-        instructor: "Dr. Bilal Ahmed (AI Specialist)",
-        resources_url: "https://drive.google.com/drive/folders/ai-internship-labs",
-        screen_access_url: "https://meet.google.com/abc-defg-hij",
-        start_date: "2026-06-01",
-        end_date: "2026-09-01",
-        progress: 50,
-        course_fee: 0,
-        fee_paid: 0,
-        daily_logs: [
-          {
-            id: "l-2",
-            date: "2026-07-31 17:30",
-            author: "Bilal Hassan (Remote Intern)",
-            task: "Trained PyTorch Data Model and shared screen stream for mentor inspection.",
-          },
-        ],
-      },
-    ];
+    const demoData = [];
 
-    // Read blacklisted deleted IDs/emails/names
-    let deletedIds = [];
+    // Permanent blacklist of old sample/demo intern names and emails
+    let deletedIds = [
+      "hussain", "rahim", "rohim", "zonia", "nouman", "nehal", "rahim bugti",
+      "muhammad ali", "bilal hassan", "bugtirahim450@gmail.com", "uu@gmail.com",
+      "zon450@gmail.com", "rohim450@gmail.com", "nn450@gmail.com", "n450@gmail.com",
+      "ali.intern@gmail.com", "bilal.remote@gmail.com"
+    ];
     try {
       const d = localStorage.getItem("deleted_intern_ids");
-      if (d) deletedIds = JSON.parse(d);
+      if (d) {
+        const parsed = JSON.parse(d);
+        deletedIds = Array.from(new Set([...deletedIds, ...parsed]));
+      }
+      localStorage.setItem("deleted_intern_ids", JSON.stringify(deletedIds));
     } catch (e) {}
 
     const isDeleted = (item) => {
@@ -240,7 +196,6 @@ export default function InternshipsPage() {
       })) {
         return true;
       }
-      return false;
     };
 
     // Read stored items from localStorage (Single Source of Truth)
