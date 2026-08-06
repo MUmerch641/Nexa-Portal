@@ -180,14 +180,33 @@ export default function RemoteMonitoringPage() {
         activity: "LMS / Live Coding"
       }));
 
+      let deletedIds = [];
+      try {
+        const d = localStorage.getItem("deleted_intern_ids");
+        if (d) deletedIds = JSON.parse(d);
+      } catch (e) {}
+
+      const isDeleted = (item) => {
+        if (!item) return true;
+        const itemId = String(item.id || "").toLowerCase().trim();
+        const itemEmail = String(item.email || "").toLowerCase().trim();
+        const itemName = String(item.name || item.full_name || "").toLowerCase().trim();
+
+        return deletedIds.some(d => {
+          const del = String(d).toLowerCase().trim();
+          if (!del) return false;
+          return (itemId && itemId === del) || (itemEmail && itemEmail === del) || (itemName && itemName === del) || (itemName && del && itemName.includes(del));
+        });
+      };
+
       const map = new Map();
       [...remoteInternsFiltered, ...remoteUsersFiltered, ...remoteStudentsFiltered].forEach(item => {
-        if (item.email) {
+        if (item.email && !isDeleted(item)) {
           map.set(item.email.toLowerCase().trim(), item);
         }
       });
 
-      const combinedRemoteList = Array.from(map.values());
+      const combinedRemoteList = Array.from(map.values()).filter(i => !isDeleted(i));
       setRemoteStudents(combinedRemoteList);
     } catch(e) {
       console.error("Error loading remote students:", e);

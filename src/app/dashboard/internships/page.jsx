@@ -481,6 +481,21 @@ export default function InternshipsPage() {
         deletedList.push(targetName);
       }
       localStorage.setItem("deleted_intern_ids", JSON.stringify(deletedList));
+
+      // Also purge from registered_system_users store so Remote Monitoring removes them immediately
+      const savedUsers = localStorage.getItem("registered_system_users");
+      if (savedUsers) {
+        const users = JSON.parse(savedUsers);
+        const filteredUsers = users.filter(u => {
+          if (!u) return false;
+          const uEmail = String(u.email || "").toLowerCase().trim();
+          const uName = String(u.fullName || u.name || "").toLowerCase().trim();
+          if (targetEmail && uEmail === targetEmail) return false;
+          if (targetName && uName === targetName) return false;
+          return true;
+        });
+        localStorage.setItem("registered_system_users", JSON.stringify(filteredUsers));
+      }
     } catch(e) {}
 
     // 5. Delete from DB & sync dataChanged event
@@ -504,6 +519,7 @@ export default function InternshipsPage() {
 
       localStorage.setItem("deleted_intern_ids", JSON.stringify(deletedList));
       localStorage.setItem("persistent_interns", JSON.stringify([]));
+      localStorage.setItem("registered_system_users", JSON.stringify([]));
 
       // Also clean persistent_courses
       const savedCourses = localStorage.getItem("persistent_courses");
