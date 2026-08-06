@@ -257,9 +257,9 @@ export default function EmployeesPage() {
         status: "active"
       };
 
-      await dbSaveRecord("employees", newEmpObj);
-      const newFullList = await dbFetch("employees", INITIAL_DEMO_EMPLOYEES);
-      setEmployees(newFullList);
+      // 1. Update React state instantly
+      const updatedList = [newEmpObj, ...employees.filter(e => (e.email || "").toLowerCase().trim() !== trimmedEmail)];
+      setEmployees(updatedList);
 
       // Save to System Users credentials cache
       const userCredentials = {
@@ -280,22 +280,7 @@ export default function EmployeesPage() {
         localStorage.setItem("registered_system_users", JSON.stringify(updatedUsers));
       } catch(e) {}
 
-      // 6. Log activity
-      try {
-        await logActivity(
-          "Admin / HR",
-          "Employee Added",
-          `Created employee profile & credentials for ${trimmedName} (${form.department})`,
-          "employee"
-        );
-      } catch(e) {}
-
-      showToast(
-        "Employee Added Successfully! 🟢",
-        `Employee: ${trimmedName}\nEmail: ${trimmedEmail}\nStatus: Active & Saved`,
-        "success"
-      );
-
+      // Reset form instantly
       setForm({
         full_name: "",
         father_name: "",
@@ -312,6 +297,25 @@ export default function EmployeesPage() {
         employment_type: "Paid Staff (Full Time)",
         joining_date: new Date().toISOString().split("T")[0],
       });
+
+      showToast(
+        "Employee Added Successfully! 🟢",
+        `Employee: ${trimmedName}\nEmail: ${trimmedEmail}\nStatus: Active & Saved`,
+        "success"
+      );
+
+      // 2. Persist to Local Storage & Database asynchronously
+      dbSaveRecord("employees", newEmpObj).catch(() => {});
+
+      // 3. Log activity
+      try {
+        logActivity(
+          "Admin / HR",
+          "Employee Added",
+          `Created employee profile & credentials for ${trimmedName} (${form.department})`,
+          "employee"
+        ).catch(() => {});
+      } catch(e) {}
     } finally {
       setLoading(false);
     }

@@ -280,9 +280,8 @@ export default function CoursesPage() {
       reminder_sent: false,
     };
 
-    await dbSaveRecord("students", newStudentObj);
-    const updatedList = await dbFetch("students");
-    setStudents(updatedList);
+    setStudents([newStudentObj, ...students]);
+    dbSaveRecord("students", newStudentObj).catch(() => {});
 
     // Auto-save credentials for registered student
     const userCredentials = {
