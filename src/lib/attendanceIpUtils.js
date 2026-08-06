@@ -99,19 +99,34 @@ export function logAttendanceAttempt(attemptObj) {
 export function checkIsRemoteUser(userEmail, userRole) {
   if (!userEmail) return false;
   const emailLower = String(userEmail).toLowerCase().trim();
+  const roleLower = String(userRole || "").toLowerCase().trim();
 
-  // Explicit role check
-  if (userRole === "remote" || userRole === "remote_employee" || userRole === "remote_student") {
+  // Explicit role or email check
+  if (roleLower.includes("remote") || roleLower.includes("online") || roleLower.includes("wfh")) {
     return true;
   }
+  if (emailLower.includes("remote")) {
+    return true;
+  }
+
+  // Local override check
+  try {
+    const override = localStorage.getItem(`remote_attendance_override_${emailLower}`);
+    if (override === "true") return true;
+  } catch(e) {}
+
+  const isRemoteString = (str) => {
+    if (!str) return false;
+    const s = String(str).toLowerCase();
+    return s.includes("remote") || s.includes("wfh") || s.includes("online") || s.includes("home");
+  };
 
   // 1. Check registered system users cache
   try {
     const registered = JSON.parse(localStorage.getItem("registered_system_users") || "[]");
     const foundUser = registered.find(u => (u.email || "").toLowerCase().trim() === emailLower);
     if (foundUser) {
-      const mode = (foundUser.work_mode || foundUser.employment_type || foundUser.department || "").toLowerCase();
-      if (mode.includes("remote") || mode.includes("wfh") || mode.includes("online") || foundUser.is_remote === true) {
+      if (foundUser.is_remote === true || isRemoteString(foundUser.work_mode) || isRemoteString(foundUser.employment_type) || isRemoteString(foundUser.department) || isRemoteString(foundUser.role)) {
         return true;
       }
     }
@@ -122,8 +137,7 @@ export function checkIsRemoteUser(userEmail, userRole) {
     const emps = JSON.parse(localStorage.getItem("persistent_employees") || "[]");
     const foundEmp = emps.find(e => (e.email || "").toLowerCase().trim() === emailLower);
     if (foundEmp) {
-      const mode = (foundEmp.employment_type || foundEmp.department || foundEmp.designation || "").toLowerCase();
-      if (mode.includes("remote") || mode.includes("wfh") || mode.includes("online") || foundEmp.is_remote === true) {
+      if (foundEmp.is_remote === true || isRemoteString(foundEmp.employment_type) || isRemoteString(foundEmp.department) || isRemoteString(foundEmp.designation) || isRemoteString(foundEmp.status)) {
         return true;
       }
     }
@@ -134,8 +148,7 @@ export function checkIsRemoteUser(userEmail, userRole) {
     const students = JSON.parse(localStorage.getItem("persistent_students") || localStorage.getItem("persistent_courses") || "[]");
     const foundStu = students.find(s => (s.email || "").toLowerCase().trim() === emailLower);
     if (foundStu) {
-      const mode = (foundStu.employment_type || foundStu.course_mode || foundStu.department || foundStu.status || "").toLowerCase();
-      if (mode.includes("remote") || mode.includes("online") || mode.includes("wfh") || foundStu.is_remote === true) {
+      if (foundStu.is_remote === true || isRemoteString(foundStu.employment_type) || isRemoteString(foundStu.course_mode) || isRemoteString(foundStu.department) || isRemoteString(foundStu.status)) {
         return true;
       }
     }
@@ -146,8 +159,7 @@ export function checkIsRemoteUser(userEmail, userRole) {
     const interns = JSON.parse(localStorage.getItem("persistent_interns") || "[]");
     const foundIntern = interns.find(i => (i.email || "").toLowerCase().trim() === emailLower);
     if (foundIntern) {
-      const mode = (foundIntern.employment_type || foundIntern.department || foundIntern.status || "").toLowerCase();
-      if (mode.includes("remote") || mode.includes("online") || mode.includes("wfh") || foundIntern.is_remote === true) {
+      if (foundIntern.is_remote === true || isRemoteString(foundIntern.employment_type) || isRemoteString(foundIntern.department) || isRemoteString(foundIntern.status)) {
         return true;
       }
     }
