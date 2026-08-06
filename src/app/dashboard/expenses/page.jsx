@@ -117,6 +117,7 @@ export default function ExpensesPage() {
       setExpenses(updated);
       try {
         localStorage.setItem("persistent_expenses", JSON.stringify(updated));
+        localStorage.setItem("software_house_finance_expenses", JSON.stringify(updated));
       } catch(e) {}
 
       // Background sync to Supabase

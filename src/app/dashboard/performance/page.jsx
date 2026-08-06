@@ -21,13 +21,15 @@ import {
   FaEdit
 } from "react-icons/fa";
 
+import { dbFetch, dbSaveList } from "@/lib/dbPersistence";
+
 export default function PerformancePage() {
   const [role, setRole] = useState("admin");
   const [userEmail, setUserEmail] = useState("");
   const [selectedMonth, setSelectedMonth] = useState("August 2026");
 
   // Employee Performance Scores List
-  const [performances, setPerformances] = useState([
+  const initialPerformances = [
     {
       id: "perf-101",
       name: "Muhammad Rahim Bugti",
@@ -96,7 +98,8 @@ export default function PerformancePage() {
         productivity: 89,
       },
     },
-  ]);
+  ];
+  const [performances, setPerformances] = useState(initialPerformances);
 
   const [modal, setModal] = useState({ isOpen: false, title: "", message: "", type: "info" });
   const [editModalOpen, setEditModalOpen] = useState(false);
@@ -108,17 +111,14 @@ export default function PerformancePage() {
     setRole(savedRole);
     setUserEmail(savedEmail);
 
-    const savedState = localStorage.getItem("software_house_performances");
-    if (savedState) {
-      try {
-        setPerformances(JSON.parse(savedState));
-      } catch (e) {}
-    }
+    dbFetch("performances", initialPerformances).then(data => {
+      setPerformances(data);
+    });
   }, []);
 
   const savePerformanceState = (updatedList) => {
     setPerformances(updatedList);
-    localStorage.setItem("software_house_performances", JSON.stringify(updatedList));
+    dbSaveList("performances", updatedList);
   };
 
   const showAlert = (title, message, type = "info") => {

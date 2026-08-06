@@ -20,10 +20,12 @@ import {
   FaChalkboardTeacher
 } from "react-icons/fa";
 
+import { dbFetch, dbSaveList } from "@/lib/dbPersistence";
+
 export default function MeetingsPage() {
   const [role, setRole] = useState("admin");
   const [userEmail, setUserEmail] = useState("");
-  const [meetings, setMeetings] = useState([
+  const initialMeetings = [
     {
       id: "meet-101",
       title: "Sprint Planning & MERN Architecture Sync",
@@ -60,7 +62,8 @@ export default function MeetingsPage() {
         { id: "act-3", item: "Admin: Verify student payment slips and issue official PDF receipts", assignedTo: "admin@gmail.com", status: "In Progress" },
       ],
     },
-  ]);
+  ];
+  const [meetings, setMeetings] = useState(initialMeetings);
 
   // Live Group Chat & Instant Message State per Meeting
   const [chatMessages, setChatMessages] = useState([
@@ -113,15 +116,14 @@ export default function MeetingsPage() {
     setRole(savedRole);
     setUserEmail(savedEmail);
 
-    const savedMeetings = localStorage.getItem("software_house_meetings_list");
-    if (savedMeetings) {
-      try { setMeetings(JSON.parse(savedMeetings)); } catch (e) {}
-    }
+    dbFetch("meetings", initialMeetings).then(data => {
+      setMeetings(data);
+    });
   }, []);
 
   const saveMeetingsState = (newList) => {
     setMeetings(newList);
-    localStorage.setItem("software_house_meetings_list", JSON.stringify(newList));
+    dbSaveList("meetings", newList);
   };
 
   const handleCreateMeeting = async (e) => {

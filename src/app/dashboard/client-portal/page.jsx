@@ -238,17 +238,49 @@ export default function ClientPortalDashboardPage() {
     const fetchSubData = async () => {
       const pId = selectedProject.id || selectedProject.projectId;
 
+      // Load Local Storage fallbacks
+      let localC = [];
+      let localB = [];
+      try {
+        const sC = localStorage.getItem(`software_house_comments_${pId}`);
+        if (sC) localC = JSON.parse(sC);
+        const sB = localStorage.getItem(`software_house_bugs_${pId}`);
+        if (sB) localB = JSON.parse(sB);
+      } catch(e) {}
+
       // Fetch Comments
       try {
         const { data } = await supabase.from("comments").select("*").eq("projectId", pId).order("createdAt", { ascending: true });
-        if (data) setComments(data);
-      } catch(e) {}
+        if (data && data.length > 0) {
+          const cMap = new Map();
+          localC.forEach(item => cMap.set(item.commentId || item.id, item));
+          data.forEach(item => cMap.set(item.commentId || item.id, item));
+          const mergedC = Array.from(cMap.values());
+          setComments(mergedC);
+          localStorage.setItem(`software_house_comments_${pId}`, JSON.stringify(mergedC));
+        } else if (localC.length > 0) {
+          setComments(localC);
+        }
+      } catch(e) {
+        if (localC.length > 0) setComments(localC);
+      }
 
       // Fetch Bug Reports
       try {
         const { data } = await supabase.from("bug_reports").select("*").eq("projectId", pId).order("createdAt", { ascending: false });
-        if (data) setBugReports(data);
-      } catch(e) {}
+        if (data && data.length > 0) {
+          const bMap = new Map();
+          localB.forEach(item => bMap.set(item.bugId || item.id, item));
+          data.forEach(item => bMap.set(item.bugId || item.id, item));
+          const mergedB = Array.from(bMap.values());
+          setBugReports(mergedB);
+          localStorage.setItem(`software_house_bugs_${pId}`, JSON.stringify(mergedB));
+        } else if (localB.length > 0) {
+          setBugReports(localB);
+        }
+      } catch(e) {
+        if (localB.length > 0) setBugReports(localB);
+      }
 
       // Fetch Invoices
       try {
@@ -293,8 +325,12 @@ export default function ClientPortalDashboardPage() {
       createdAt: new Date().toLocaleString()
     };
 
-    setComments(prev => [...prev, commentObj]);
+    const updatedC = [...comments, commentObj];
+    setComments(updatedC);
     setNewComment("");
+    try {
+      localStorage.setItem(`software_house_comments_${pId}`, JSON.stringify(updatedC));
+    } catch(e) {}
 
     try {
       await supabase.from("comments").insert([commentObj]);
@@ -318,8 +354,12 @@ export default function ClientPortalDashboardPage() {
       createdAt: new Date().toLocaleDateString()
     };
 
-    setBugReports(prev => [bugObj, ...prev]);
+    const updatedB = [bugObj, ...bugReports];
+    setBugReports(updatedB);
     setBugForm({ title: "", description: "", priority: "Medium" });
+    try {
+      localStorage.setItem(`software_house_bugs_${pId}`, JSON.stringify(updatedB));
+    } catch(e) {}
 
     try {
       await supabase.from("bug_reports").insert([bugObj]);

@@ -18,10 +18,12 @@ import {
   FaCommentDots
 } from "react-icons/fa";
 
+import { dbFetch, dbSaveList } from "@/lib/dbPersistence";
+
 export default function ComplaintsPage() {
   const [role, setRole] = useState("student");
   const [userEmail, setUserEmail] = useState("");
-  const [complaints, setComplaints] = useState([
+  const initialComplaints = [
     {
       id: "comp-101",
       submitted_by: "Ali Hassan (Student)",
@@ -55,7 +57,8 @@ export default function ComplaintsPage() {
       created_at: "2026-08-01 11:00 AM",
       admin_note: "Awaiting Lead Instructor schedule confirmation.",
     },
-  ]);
+  ];
+  const [complaints, setComplaints] = useState(initialComplaints);
 
   const [filterCategory, setFilterCategory] = useState("All");
   const [filterStatus, setFilterStatus] = useState("All");
@@ -80,15 +83,14 @@ export default function ComplaintsPage() {
     setRole(savedRole);
     setUserEmail(savedEmail);
 
-    const savedComplaints = localStorage.getItem("software_house_complaints_list");
-    if (savedComplaints) {
-      try { setComplaints(JSON.parse(savedComplaints)); } catch (e) {}
-    }
+    dbFetch("complaints", initialComplaints).then(data => {
+      setComplaints(data);
+    });
   }, []);
 
   const saveComplaintsState = (newList) => {
     setComplaints(newList);
-    localStorage.setItem("software_house_complaints_list", JSON.stringify(newList));
+    dbSaveList("complaints", newList);
   };
 
   const [form, setForm] = useState({

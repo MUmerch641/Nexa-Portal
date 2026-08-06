@@ -16,10 +16,12 @@ import {
   FaInfoCircle
 } from "react-icons/fa";
 
+import { dbFetch, dbSaveList } from "@/lib/dbPersistence";
+
 export default function AnnouncementsPage() {
   const [role, setRole] = useState("admin");
   const [userEmail, setUserEmail] = useState("");
-  const [announcements, setAnnouncements] = useState([
+  const initialAnnouncements = [
     {
       id: "ann-101",
       title: "Tomorrow Official Office Holiday (Independence Day)",
@@ -50,7 +52,8 @@ export default function AnnouncementsPage() {
       content: "New remote screenshot & activity logging guidelines released. Please review privacy transparency compliance parameters.",
       broadcastNotification: true,
     },
-  ]);
+  ];
+  const [announcements, setAnnouncements] = useState(initialAnnouncements);
 
   // Create Announcement Modal State (Admin Only)
   const [createModalOpen, setCreateModalOpen] = useState(false);
@@ -72,26 +75,22 @@ export default function AnnouncementsPage() {
     setRole(savedRole);
     setUserEmail(savedEmail);
 
-    const savedAnnouncements = localStorage.getItem("software_house_announcements_list");
-    if (savedAnnouncements) {
-      try {
-        const parsed = JSON.parse(savedAnnouncements);
-        const todayStr = new Date().toISOString().split("T")[0];
-        // Automatic Expiry Engine: Remove announcements past their expiry_date
-        const validUnexpired = parsed.filter((a) => {
-          if (!a.expiry_date) return true;
-          return a.expiry_date >= todayStr;
-        });
-        setAnnouncements(validUnexpired);
-        localStorage.setItem("software_house_announcements_list", JSON.stringify(validUnexpired));
-      } catch (e) {}
-    }
+    dbFetch("announcements", initialAnnouncements).then(data => {
+      const todayStr = new Date().toISOString().split("T")[0];
+      const validUnexpired = data.filter((a) => {
+        if (!a.expiry_date) return true;
+        return a.expiry_date >= todayStr;
+      });
+      setAnnouncements(validUnexpired);
+    });
   }, []);
 
   const saveAnnouncementsState = (newList) => {
     setAnnouncements(newList);
-    localStorage.setItem("software_house_announcements_list", JSON.stringify(newList));
-    window.dispatchEvent(new Event("storage"));
+    dbSaveList("announcements", newList);
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event("storage"));
+    }
   };
 
   const [form, setForm] = useState({

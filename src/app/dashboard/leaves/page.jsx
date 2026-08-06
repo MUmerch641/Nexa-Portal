@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { dbFetch } from "@/lib/dbPersistence";
 import { logActivity } from "@/lib/activityUtils";
 import Modal from "@/components/Modal";
 import { FaCheck, FaTimes, FaCalendarPlus, FaUserClock, FaShieldAlt, FaInfoCircle } from "react-icons/fa";
@@ -84,20 +85,8 @@ export default function LeavesPage() {
   // Fetch leaves from Supabase or LocalStorage demo
   const fetchLeaves = async () => {
     try {
-      let query = supabase.from("leaves").select("*");
-      const { data, error } = await query.order("created_at", { ascending: false });
-      if (!error && data && data.length > 0) {
-        setLeaves(data);
-      } else {
-        // Fallback to local storage or demo
-        const saved = localStorage.getItem("software_house_leaves");
-        if (saved) {
-          try { setLeaves(JSON.parse(saved)); } catch(e) { setLeaves(initialDemoLeaves); }
-        } else {
-          setLeaves(initialDemoLeaves);
-          localStorage.setItem("software_house_leaves", JSON.stringify(initialDemoLeaves));
-        }
-      }
+      const mergedLeaves = await dbFetch("leaves", initialDemoLeaves);
+      setLeaves(mergedLeaves);
     } catch (e) {
       setLeaves(initialDemoLeaves);
     } finally {
