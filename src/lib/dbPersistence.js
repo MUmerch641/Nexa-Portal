@@ -82,13 +82,45 @@ const MEM_CACHE_TTL = 30000; // 30 seconds TTL
 export async function dbFetch(table, defaultData = []) {
   const storageKey = TABLE_STORAGE_KEYS[table] || `persistent_${table}`;
   
-  // 1. Check in-memory RAM cache first (<1ms)
-  const cached = MEM_CACHE.get(table);
-  if (cached && Date.now() - cached.timestamp < MEM_CACHE_TTL && Array.isArray(cached.data) && cached.data.length > 0) {
-    return cached.data;
-  }
+  // Read deleted IDs blacklist
+  let deletedIds = [];
+  try {
+    if (typeof window !== "undefined") {
+      const d = localStorage.getItem("deleted_intern_ids");
+      if (d) deletedIds = JSON.parse(d);
+    }
+  } catch (e) {}
 
-  // 2. Load Local Storage (<1ms)
+  const isDeleted = (item) => {
+    if (!item) return true;
+    const itemId = String(item.id || "").toLowerCase().trim();
+    const itemEmail = String(item.email || "").toLowerCase().trim();
+    const itemName = String(item.full_name || item.name || item.title || "").toLowerCase().trim();
+
+    return deletedIds.some(d => {
+      const del = String(d).toLowerCase().trim();
+      if (!del) return false;
+      return (itemId && itemId === del) || (itemEmail && itemEmail === del) || (itemName && itemName === del) || (itemName && del && itemName.includes(del));
+    });
+  };
+
+  // 1. Load Database Data via Server Persistence Proxy API (Database is Single Source of Truth)
+  let dbData = [];
+  let fetchedFromDb = false;
+  try {
+    if (typeof window !== "undefined") {
+      const res = await fetch(`/api/persistence?table=${encodeURIComponent(table)}`).catch(() => null);
+      if (res && res.ok) {
+        const json = await res.json();
+        if (json && Array.isArray(json.data)) {
+          dbData = json.data;
+          fetchedFromDb = true;
+        }
+      }
+    }
+  } catch (e) {}
+
+  // 2. Load Local Storage
   let localData = [];
   try {
     const saved = typeof window !== "undefined" ? localStorage.getItem(storageKey) : null;
@@ -98,52 +130,44 @@ export async function dbFetch(table, defaultData = []) {
     }
   } catch (e) {}
 
-  // 3. Load Database Data via Server Persistence Proxy API (Always returns 200 OK without console 404/500 errors)
-  let dbData = [];
-  try {
-    if (typeof window !== "undefined") {
-      const res = await fetch(`/api/persistence?table=${encodeURIComponent(table)}`).catch(() => null);
-      if (res && res.ok) {
-        const json = await res.json();
-        if (json && Array.isArray(json.data)) {
-          dbData = json.data;
-        }
-      }
-    }
-  } catch (e) {}
-
-  // 4. Deduplicate and Merge Datasets (Defaults -> Local -> DB)
+  // 3. Deduplicate and Merge Datasets (Database takes priority over local cached data)
   const map = new Map();
 
-  if (Array.isArray(defaultData)) {
-    defaultData.forEach(item => {
-      const k = getDedupeKey(item);
-      if (k) map.set(k, item);
+  if (fetchedFromDb) {
+    // DB is active: Use DB data directly as primary truth, filtered against blacklist
+    dbData.forEach(item => {
+      if (item && !isDeleted(item)) {
+        const k = getDedupeKey(item);
+        if (k) map.set(k, item);
+      }
+    });
+
+    // Only keep local items if not blacklisted and not deleted from DB
+    localData.forEach(item => {
+      if (item && !isDeleted(item)) {
+        const k = getDedupeKey(item);
+        if (k && !map.has(k)) {
+          if (String(item.id || "").startsWith("i-") || String(item.id || "").startsWith("emp-")) {
+            map.set(k, item);
+          }
+        }
+      }
+    });
+  } else {
+    // Fallback if DB fetch is offline
+    localData.forEach(item => {
+      if (item && !isDeleted(item)) {
+        const k = getDedupeKey(item);
+        if (k) map.set(k, item);
+      }
     });
   }
 
-  localData.forEach(item => {
-    const k = getDedupeKey(item);
-    if (k) {
-      const existing = map.get(k) || {};
-      map.set(k, { ...existing, ...item });
-    }
-  });
+  const merged = Array.from(map.values()).filter(i => !isDeleted(i));
 
-  dbData.forEach(item => {
-    const k = getDedupeKey(item);
-    if (k) {
-      const existing = map.get(k) || {};
-      map.set(k, { ...existing, ...item });
-    }
-  });
-
-  const merged = Array.from(map.values());
-
-  // 5. Update RAM Cache & Local Storage
+  // Update RAM Cache & Local Storage with clean merged list
   MEM_CACHE.set(table, { data: merged, timestamp: Date.now() });
-
-  if (typeof window !== "undefined" && merged.length > 0) {
+  if (typeof window !== "undefined") {
     try {
       localStorage.setItem(storageKey, JSON.stringify(merged));
     } catch(e) {}
