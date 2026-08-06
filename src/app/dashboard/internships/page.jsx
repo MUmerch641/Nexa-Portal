@@ -186,39 +186,40 @@ export default function InternshipsPage() {
     ];
 
     // Read stored items from localStorage
-    let stored = [];
+    let stored = null;
     try {
       const s = localStorage.getItem("persistent_interns");
-      if (s) stored = JSON.parse(s);
+      if (s !== null) stored = JSON.parse(s);
     } catch (e) {}
 
-    try {
-      const { data, error } = await supabase
-          .from("students")
-          .select("*")
-          .order("created_at", { ascending: false })
-          .throwOnError();
-        if (error) {
-          console.error('Error fetching interns:', error);
-          throw error;
-        }
-
-      const freeOnly = (data || []).filter((s) => s.enrollment_type === "3-Month Free Internship");
-      const combined = [...stored, ...freeOnly];
-      
-      // Remove duplicates by ID
-      const uniqueMap = new Map();
-      [...combined, ...demoData].forEach((item) => uniqueMap.set(item.id, item));
-      const finalList = Array.from(uniqueMap.values());
-
-      setInterns(finalList);
-    } catch (err) {
-      const uniqueMap = new Map();
-      [...stored, ...demoData].forEach((item) => uniqueMap.set(item.id, item));
-      setInterns(Array.from(uniqueMap.values()));
-    } finally {
-      setLoading(false);
+    let finalList = [];
+    if (stored !== null) {
+      // User has persistent_interns saved! Use stored list directly so DELETED items STAY DELETED!
+      finalList = stored;
+    } else {
+      // First time initialization
+      finalList = demoData;
+      localStorage.setItem("persistent_interns", JSON.stringify(demoData));
     }
+
+    try {
+      const { data } = await supabase
+        .from("students")
+        .select("*")
+        .order("created_at", { ascending: false });
+
+      if (data && data.length > 0) {
+        const freeOnly = data.filter((s) => s.enrollment_type === "3-Month Free Internship");
+        if (freeOnly.length > 0) {
+          const uniqueMap = new Map();
+          [...freeOnly, ...finalList].forEach((item) => uniqueMap.set(item.id || item.email, item));
+          finalList = Array.from(uniqueMap.values());
+        }
+      }
+    } catch (err) {}
+
+    setInterns(finalList);
+    setLoading(false);
   };
 
   useEffect(() => {
@@ -391,6 +392,11 @@ export default function InternshipsPage() {
     const target = interns.find(i => i.id === id);
     const updated = interns.filter((i) => i.id !== id);
     setInterns(updated);
+
+    try {
+      localStorage.setItem("persistent_interns", JSON.stringify(updated));
+    } catch(e) {}
+
     dbDeleteRecord("students", id, target?.email || "").catch(() => {});
   };
 
