@@ -257,9 +257,15 @@ export default function EmployeesPage() {
         status: "active"
       };
 
-      // 1. Update React state instantly
-      const updatedList = [newEmpObj, ...employees.filter(e => (e.email || "").toLowerCase().trim() !== trimmedEmail)];
-      setEmployees(updatedList);
+      // Reset search filter so new employee is visible
+      setSearchQuery("");
+
+      // 1. Save to Local Storage & Database
+      await dbSaveRecord("employees", newEmpObj);
+
+      // 2. Fetch fresh merged list
+      const freshEmps = await dbFetch("employees", INITIAL_DEMO_EMPLOYEES);
+      setEmployees(freshEmps);
 
       // Save to System Users credentials cache
       const userCredentials = {
@@ -280,7 +286,7 @@ export default function EmployeesPage() {
         localStorage.setItem("registered_system_users", JSON.stringify(updatedUsers));
       } catch(e) {}
 
-      // Reset form instantly
+      // Reset form
       setForm({
         full_name: "",
         father_name: "",
@@ -304,10 +310,7 @@ export default function EmployeesPage() {
         "success"
       );
 
-      // 2. Persist to Local Storage & Database asynchronously
-      dbSaveRecord("employees", newEmpObj).catch(() => {});
-
-      // 3. Log activity
+      // Log activity
       try {
         logActivity(
           "Admin / HR",
