@@ -6,7 +6,6 @@ import { dbFetch, dbSaveRecord } from "@/lib/dbPersistence";
 import { logActivity } from "@/lib/activityUtils";
 import Modal from "@/components/Modal";
 import { FaCheck, FaTimes, FaCalendarPlus, FaUserClock, FaShieldAlt, FaInfoCircle } from "react-icons/fa";
-import "@/app/dashboard/leaves/leaves.css";
 
 const StatusBadge = ({ status }) => {
   if (status === "approved") {

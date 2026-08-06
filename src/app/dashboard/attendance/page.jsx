@@ -25,7 +25,6 @@ import {
   FaTrashAlt,
   FaExclamationTriangle
 } from "react-icons/fa";
-import "@/app/dashboard/attendance/attendance.css";
 
 export default function AttendancePage() {
   const router = useRouter();
