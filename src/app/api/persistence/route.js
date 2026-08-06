@@ -68,17 +68,18 @@ export async function POST(request) {
 
     if (record) {
       const cleaned = {};
-      const knownStudentColumns = [
-        "full_name", "email", "phone", "enrollment_type", "course_name", 
-        "instructor", "progress", "course_fee", "fee_paid", "fee_status", "created_at"
+      const invalidColumns = [
+        "cnic", "internship_mode", "resources_url", "screen_access_url",
+        "start_date", "end_date", "daily_logs", "work_mode", "is_remote",
+        "course_mode", "reminder_sent", "assigned_password", "enrollment_mode"
       ];
 
       Object.keys(record).forEach((key) => {
+        if (invalidColumns.includes(key)) return;
         const val = record[key];
         if (typeof val === "function" || typeof val === "symbol") return;
         if (val && typeof val === "object" && !Array.isArray(val) && !(val instanceof Date)) return;
         if (key === "id" && typeof val === "string" && isNaN(Number(val))) return;
-        if (table === "students" && !knownStudentColumns.includes(key)) return;
         cleaned[key] = val;
       });
 
