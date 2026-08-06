@@ -517,7 +517,13 @@ export default function InternshipsPage() {
     setInterns([]);
 
     try {
-      await supabase.from("students").delete().eq("enrollment_type", "3-Month Free Internship").catch(() => {});
+      if (typeof window !== "undefined") {
+        fetch("/api/persistence", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ table: "students", action: "delete", record: { enrollment_type: "3-Month Free Internship" } })
+        }).catch(() => {});
+      }
     } catch(e) {}
 
     if (typeof window !== "undefined") {

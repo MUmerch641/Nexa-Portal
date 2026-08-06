@@ -166,10 +166,7 @@ export default function CoursesPage() {
 
     if (overdueList.length > 0) {
       for (const student of overdueList) {
-        await supabase
-          .from("students")
-          .update({ reminder_sent: true })
-          .eq("id", student.id);
+        await dbSaveRecord("students", { ...student, reminder_sent: true }).catch(() => {});
       }
 
       const names = overdueList.map((s) => `${s.full_name} (${s.email})`).join(", ");
