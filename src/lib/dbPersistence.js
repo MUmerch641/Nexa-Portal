@@ -26,13 +26,18 @@ export const TABLE_STORAGE_KEYS = {
  * Clean UI/transient fields before sending payload to Supabase DB.
  * Prevents HTTP 400 bad request errors caused by unknown columns or invalid string IDs.
  */
-export function cleanPayloadForDb(record) {
+export function cleanPayloadForDb(record, table = "") {
   if (!record || typeof record !== "object") return {};
   const cleaned = {};
 
+  const knownStudentColumns = [
+    "full_name", "email", "phone", "enrollment_type", "course_name", 
+    "instructor", "progress", "course_fee", "fee_paid", "fee_status", "created_at"
+  ];
+
   Object.keys(record).forEach((key) => {
     const value = record[key];
-    // Skip functions, DOM nodes, React components, and complex nested objects (e.g. receipt, icon)
+    // Skip functions, DOM nodes, React components, and complex nested objects
     if (typeof value === "function" || typeof value === "symbol") return;
     if (value && typeof value === "object" && !Array.isArray(value) && !(value instanceof Date)) return;
 
@@ -41,7 +46,11 @@ export function cleanPayloadForDb(record) {
       return;
     }
 
-    // Preserve valid primitive values and primitive arrays
+    // Strip unmapped custom frontend columns for students table to avoid schema cache 400 errors
+    if (table === "students" && !knownStudentColumns.includes(key)) {
+      return;
+    }
+
     cleaned[key] = value;
   });
 
@@ -205,7 +214,7 @@ export async function dbSaveRecord(table, record) {
 
   // 2. Write to Supabase DB safely with clean payload & Server Proxy fallback
   try {
-    const cleanedPayload = cleanPayloadForDb(record);
+    const cleanedPayload = cleanPayloadForDb(record, table);
 
     const { error: insertErr } = await supabase.from(table).insert([cleanedPayload]);
     if (insertErr) {

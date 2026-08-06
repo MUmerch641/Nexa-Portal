@@ -68,20 +68,23 @@ export async function POST(request) {
 
     if (record) {
       const cleaned = {};
+      const knownStudentColumns = [
+        "full_name", "email", "phone", "enrollment_type", "course_name", 
+        "instructor", "progress", "course_fee", "fee_paid", "fee_status", "created_at"
+      ];
+
       Object.keys(record).forEach((key) => {
         const val = record[key];
         if (typeof val === "function" || typeof val === "symbol") return;
         if (val && typeof val === "object" && !Array.isArray(val) && !(val instanceof Date)) return;
         if (key === "id" && typeof val === "string" && isNaN(Number(val))) return;
+        if (table === "students" && !knownStudentColumns.includes(key)) return;
         cleaned[key] = val;
       });
 
       const { error: insErr } = await supabase.from(table).insert([cleaned]);
       if (insErr) {
         await supabase.from(table).upsert([cleaned]).catch(() => {});
-        if (table === "daily_tasks") {
-          await supabase.from("tasks").insert([cleaned]).catch(() => {});
-        }
       }
     }
 
