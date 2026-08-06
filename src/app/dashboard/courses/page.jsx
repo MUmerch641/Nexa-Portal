@@ -338,13 +338,8 @@ export default function CoursesPage() {
     const val = Math.min(100, Math.max(0, Number(newProgress) || 0));
     const updatedList = students.map((s) => (s.id === studentId ? { ...s, progress: val } : s));
     setStudents(updatedList);
-    try {
-      localStorage.setItem("persistent_courses", JSON.stringify(updatedList));
-    } catch (e) {}
-
-    try {
-      await supabase.from("students").update({ progress: val }).eq("id", studentId);
-    } catch (e) {}
+    const targetStudent = updatedList.find(s => s.id === studentId);
+    if (targetStudent) dbSaveRecord("students", targetStudent).catch(() => {});
   };
 
   // Record Monthly Fee Submission & Recalculate Next 30-Day Due Date
@@ -352,35 +347,23 @@ export default function CoursesPage() {
     const today = new Date().toISOString().split("T")[0];
     const newNextDueDate = calculate30DaysLater(today);
 
+    let updatedObj = null;
     const updatedList = students.map((s) => {
       if (s.id === studentId) {
-        return {
+        updatedObj = {
           ...s,
           last_payment_date: today,
           next_due_date: newNextDueDate,
           fee_status: "Paid",
           reminder_sent: false,
         };
+        return updatedObj;
       }
       return s;
     });
 
     setStudents(updatedList);
-    try {
-      localStorage.setItem("persistent_courses", JSON.stringify(updatedList));
-    } catch (e) {}
-
-    try {
-      await supabase
-        .from("students")
-        .update({
-          last_payment_date: today,
-          next_due_date: newNextDueDate,
-          fee_status: "Paid",
-          reminder_sent: false,
-        })
-        .eq("id", studentId);
-    } catch (e) {}
+    if (updatedObj) dbSaveRecord("students", updatedObj).catch(() => {});
 
     const studentObj = students.find((s) => s.id === studentId);
     showAlert(
@@ -397,7 +380,7 @@ export default function CoursesPage() {
       `Fee Reminder Email dispatched directly to:\nStudent: ${student.full_name} (${student.email})\n\nSubject: Monthly Course Fee Reminder\nMessage: Your 30-day fee cycle for '${student.course_name}' has matured. Please submit your monthly fee.`,
       "info"
     );
-    await supabase.from("students").update({ reminder_sent: true }).eq("id", student.id);
+    dbSaveRecord("students", { ...student, reminder_sent: true }).catch(() => {});
   };
 
   // Open Certificate Download Modal
@@ -417,18 +400,7 @@ export default function CoursesPage() {
 
     const filtered = students.filter((s) => s.id !== id && (email ? s.email !== email : true));
     setStudents(filtered);
-
-    try {
-      localStorage.setItem("persistent_courses", JSON.stringify(filtered));
-    } catch (e) {}
-
-    try {
-      if (id && !id.startsWith("s-")) {
-        await supabase.from("students").delete().eq("id", id);
-      } else if (email) {
-        await supabase.from("students").delete().eq("email", email);
-      }
-    } catch (e) {}
+    dbDeleteRecord("students", id, email || "").catch(() => {});
   };
 
   const dueStudents = students.filter((s) => {

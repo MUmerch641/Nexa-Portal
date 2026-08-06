@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { dbFetch, dbSaveRecord, dbDeleteRecord } from "@/lib/dbPersistence";
 import Modal from "@/components/Modal";
 import Link from "next/link";
 import {
@@ -368,21 +369,17 @@ export default function InternshipsPage() {
     const pVal = Number(newProgress);
     const updated = interns.map((i) => (i.id === id ? { ...i, progress: pVal } : i));
     setInterns(updated);
-    try {
-      localStorage.setItem("persistent_interns", JSON.stringify(updated));
-      await supabase.from("students").update({ progress: pVal }).eq("id", id);
-    } catch (e) {}
+    const targetIntern = updated.find(i => i.id === id);
+    if (targetIntern) dbSaveRecord("students", targetIntern).catch(() => {});
   };
 
   // Delete Intern
   const handleDeleteIntern = async (id) => {
     if (!confirm("Are you sure you want to delete this intern record?")) return;
+    const target = interns.find(i => i.id === id);
     const updated = interns.filter((i) => i.id !== id);
     setInterns(updated);
-    try {
-      localStorage.setItem("persistent_interns", JSON.stringify(updated));
-      await supabase.from("students").delete().eq("id", id);
-    } catch (e) {}
+    dbDeleteRecord("students", id, target?.email || "").catch(() => {});
   };
 
   const currentUserEmail = typeof window !== "undefined" ? localStorage.getItem("current_user_email") || "" : "";
