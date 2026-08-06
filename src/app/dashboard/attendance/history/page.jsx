@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { dbFetch, dbDeleteRecord } from "@/lib/dbPersistence";
 import { FaCalendarAlt, FaHistory, FaUndo, FaTrashAlt, FaEdit, FaUserCheck } from "react-icons/fa";
 
 export default function AttendanceHistory() {
@@ -16,39 +17,8 @@ export default function AttendanceHistory() {
 
   const getAttendance = async () => {
     setLoading(true);
-    let dbData = [];
-
-    try {
-      const { data, error } = await supabase
-        .from("attendance")
-        .select("*")
-        .order("attendance_date", { ascending: false });
-
-      if (!error && data && data.length > 0) {
-        dbData = data;
-      }
-    } catch (e) {}
-
-    let localLogs = [];
-    try {
-      const saved = localStorage.getItem("software_house_master_attendance_logs");
-      if (saved) localLogs = JSON.parse(saved);
-    } catch (e) {}
-
-    // Combine DB & Local Storage master logs
-    const logMap = new Map();
-    dbData.forEach(r => {
-      const key = r.id || r.attendance_id || `${r.user_email}_${r.attendance_date}_${r.type}`;
-      logMap.set(key, r);
-    });
-
-    localLogs.forEach(r => {
-      const key = r.id || r.attendance_id || `${r.user_email}_${r.attendance_date}_${r.type}`;
-      if (!logMap.has(key)) logMap.set(key, r);
-    });
-
-    const combined = Array.from(logMap.values());
-    setAttendance(combined);
+    const data = await dbFetch("attendance");
+    setAttendance(data);
     setLoading(false);
   };
 
