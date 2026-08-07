@@ -20,6 +20,12 @@ export const TABLE_STORAGE_KEYS = {
   interns: "persistent_interns",
   utility_bills: "software_house_utility_bills",
   client_projects: "software_house_client_projects",
+  remote_work_sessions: "remote_work_sessions",
+  activity_logs: "remote_activity_logs",
+  screenshot_logs: "remote_screenshot_logs",
+  app_usage_logs: "remote_app_usage_logs",
+  work_timelines: "remote_work_timelines",
+  productivity_reports: "remote_productivity_reports",
 };
 
 /**

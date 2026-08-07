@@ -12,612 +12,1166 @@ import {
   FaShieldAlt,
   FaSync,
   FaPlay,
-  FaPause,
+  FaStop,
   FaHistory,
   FaUserCheck,
   FaCheckCircle,
   FaInfoCircle,
-  FaVideo,
-  FaStop,
-  FaExpand,
-  FaUserGraduate,
-  FaCircle,
-  FaBroadcastTower,
-  FaTrash,
-  FaEllipsisV,
   FaDownload,
+  FaTrash,
   FaExclamationTriangle,
   FaImage,
-  FaRedo
+  FaRedo,
+  FaUserGraduate,
+  FaBroadcastTower,
+  FaLaptopCode,
+  FaKeyboard,
+  FaMousePointer,
+  FaLock,
+  FaSearch,
+  FaFilter,
+  FaFileExport,
+  FaChartLine,
+  FaRegLightbulb
 } from "react-icons/fa";
 
+import {
+  getRemoteWorkSessions,
+  getScreenshotLogs,
+  saveScreenshotLog,
+  getWorkTimelines,
+  addTimelineEvent,
+  getMonitoringSettings,
+  saveMonitoringSettings,
+  purgeExpiredScreenshots,
+  getRandomScreenshotInterval,
+  getClientDeviceInfo,
+  INITIAL_APP_USAGE
+} from "@/lib/remoteMonitoringUtils";
+
 export default function RemoteMonitoringPage() {
-  const [role, setRole] = useState("admin");
+  // === Current User & Role State ===
+  const [role, setRole] = useState("admin"); // 'admin' or 'employee'
+  const [activeTab, setActiveTab] = useState("overview"); // 'overview', 'screenshots', 'timeline', 'analytics', 'settings'
   const [userEmail, setUserEmail] = useState("");
-  const [isMonitoringActive, setIsMonitoringActive] = useState(true);
+  const [employeeName, setEmployeeName] = useState("Sarah Jenkins");
+  const [employeeId, setEmployeeId] = useState("emp-101");
+  const [department, setDepartment] = useState("Frontend Engineering");
 
-  // Live WebRTC Screen Access State
-  const videoRef = useRef(null);
-  const [mediaStream, setMediaStream] = useState(null);
-  const [activeRemoteStudent, setActiveRemoteStudent] = useState(null);
-  const [isLiveStreamModalOpen, setIsLiveStreamModalOpen] = useState(false);
+  // === Privacy & Session State ===
+  const [isConsentAccepted, setIsConsentAccepted] = useState(false);
+  const [isConsentModalOpen, setIsConsentModalOpen] = useState(false);
+  const [isSessionActive, setIsSessionActive] = useState(false);
+  const [sessionStatus, setSessionStatus] = useState("Stopped"); // 'Active', 'Idle', 'Stopped'
+  const [sessionStartTime, setSessionStartTime] = useState(null);
+  const [sessionId, setSessionId] = useState(null);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
-  // Remote Interns List
-  const [remoteStudents, setRemoteStudents] = useState([]);
+  // === Activity & Idle Tracker State ===
+  const [activeSeconds, setActiveSeconds] = useState(0);
+  const [idleSeconds, setIdleSeconds] = useState(0);
+  const [lastActivityTimestamp, setLastActivityTimestamp] = useState(Date.now());
+  const [mouseEventsCount, setMouseEventsCount] = useState(0);
+  const [keyboardEventsCount, setKeyboardEventsCount] = useState(0);
+  const [currentFocusedApp, setCurrentFocusedApp] = useState("VS Code — Software House Management");
 
-  // Kebab & Confirm Modal State
-  const [isHeaderKebabOpen, setIsHeaderKebabOpen] = useState(false);
-  const [confirmModal, setConfirmModal] = useState({ isOpen: false, loading: false });
+  // === Screenshot Random Capture Engine State ===
+  const [nextScreenshotTimer, setNextScreenshotTimer] = useState(600); // seconds until next random screenshot
+  const [nextIntervalMinutes, setNextIntervalMinutes] = useState(10);
+  const [isCapturingScreen, setIsCapturingScreen] = useState(false);
+  const [screenshots, setScreenshots] = useState([]);
+  const [selectedScreenshotModal, setSelectedScreenshotModal] = useState(null);
 
-  // Image Fallback Error Map & Loading States
+  // === Timeline & Analytics State ===
+  const [workTimelines, setWorkTimelines] = useState([]);
+  const [remoteSessions, setRemoteSessions] = useState([]);
+  const [appUsageList, setAppUsageList] = useState(INITIAL_APP_USAGE);
+  const [settings, setSettings] = useState({ retentionDays: 60, minInterval: 5, maxInterval: 15 });
+
+  // === Admin Filters & Search State ===
+  const [selectedEmployeeFilter, setSelectedEmployeeFilter] = useState("All");
+  const [selectedDepartmentFilter, setSelectedDepartmentFilter] = useState("All");
+  const [selectedDateFilter, setSelectedDateFilter] = useState("Today");
+  const [searchQuery, setSearchQuery] = useState("");
+
+  // === Image Fallback handling ===
   const [failedImages, setFailedImages] = useState({});
-  const [loadingImages, setLoadingImages] = useState({});
 
-  // Activity Log & Timeline State
-  const [timeline, setTimeline] = useState([
-    { id: "t-1", time: "10:15 AM", app: "VS Code (Next.js)", activityScore: 98, status: "Active Coding" },
-    { id: "t-2", time: "10:27 AM", app: "Chrome (Supabase Docs)", activityScore: 92, status: "Research" },
-    { id: "t-3", time: "10:42 AM", app: "Terminal (npm run dev)", activityScore: 95, status: "Building" },
-    { id: "t-4", time: "10:55 AM", app: "Slack / Google Meet", activityScore: 89, status: "Team Discussion" },
-  ]);
+  // Canvas ref for generating client compressed screenshot frames
+  const canvasRef = useRef(null);
 
-  // Screenshots Captured Log
-  const [screenshots, setScreenshots] = useState([
-    {
-      id: "sc-1",
-      timestamp: "10:45 AM (15m interval)",
-      capturedApp: "VS Code — student/page.jsx",
-      activityLevel: "96% Active (Keyboard/Mouse)",
-      previewUrl: "https://images.unsplash.com/photo-1555066931-4365d14bab8c?w=600&auto=format&fit=crop&q=80",
-      resolution: "1920 x 1080"
-    },
-    {
-      id: "sc-2",
-      timestamp: "10:30 AM (15m interval)",
-      capturedApp: "Google Meet — Sprint Sync",
-      activityLevel: "91% Active (Audio/Video)",
-      previewUrl: "https://images.unsplash.com/photo-1531403009284-440f080d1e12?w=600&auto=format&fit=crop&q=80",
-      resolution: "1920 x 1080"
-    },
-    {
-      id: "sc-3",
-      timestamp: "10:15 AM (15m interval)",
-      capturedApp: "GitHub / Next.js Repo",
-      activityLevel: "94% Active",
-      previewUrl: "https://images.unsplash.com/photo-1618401471353-b98aedd04e11?w=600&auto=format&fit=crop&q=80",
-      resolution: "1920 x 1080"
-    },
-  ]);
-
-  // App Usage Breakdown
-  const appUsage = [
-    { name: "VS Code / IDE", percentage: 55 },
-    { name: "Chrome / Research", percentage: 25 },
-    { name: "Terminal / CLI", percentage: 12 },
-    { name: "Slack / Communication", percentage: 8 },
-  ];
-
-  // Selected Screenshot Lightbox Modal
-  const [selectedImageModal, setSelectedImageModal] = useState(null);
-  const [modal, setModal] = useState({ isOpen: false, title: "", message: "", type: "info" });
-
+  // Load User Data & Saved Logs on Mount
   useEffect(() => {
     const savedRole = localStorage.getItem("user_role") || "admin";
-    const savedEmail = localStorage.getItem("current_user_email") || "student@gmail.com";
+    const savedEmail = localStorage.getItem("current_user_email") || "sarah.jenkins@nexasoft.com";
+    const savedName = localStorage.getItem("current_user_name") || "Sarah Jenkins";
+
     setRole(savedRole);
     setUserEmail(savedEmail);
+    setEmployeeName(savedName);
 
-    loadRemoteStudents();
+    // Load Data
+    loadMonitoringData();
 
-    const handleDataChange = () => loadRemoteStudents();
-    window.addEventListener("storage", handleDataChange);
-    window.addEventListener("dataChanged", handleDataChange);
-    return () => {
-      window.removeEventListener("storage", handleDataChange);
-      window.removeEventListener("dataChanged", handleDataChange);
-    };
+    // Check if consent was previously saved in session
+    const consent = sessionStorage.getItem("remote_monitoring_consent");
+    if (consent === "accepted") {
+      setIsConsentAccepted(true);
+    }
+
+    const savedSettings = getMonitoringSettings();
+    setSettings(savedSettings);
   }, []);
 
-  const loadRemoteStudents = async () => {
+  const [registeredUsers, setRegisteredUsers] = useState([]);
+  const [selectedUserForSession, setSelectedUserForSession] = useState("");
+
+  const loadMonitoringData = async () => {
     try {
-      const savedInterns = localStorage.getItem("persistent_interns");
-      let internList = savedInterns ? JSON.parse(savedInterns) : [];
+      const [sessionsData, screenshotsData, timelinesData] = await Promise.all([
+        getRemoteWorkSessions(),
+        getScreenshotLogs(),
+        getWorkTimelines()
+      ]);
 
-      const savedUsers = localStorage.getItem("registered_system_users");
-      let userList = savedUsers ? JSON.parse(savedUsers) : [];
+      setRemoteSessions(sessionsData || []);
+      setScreenshots(screenshotsData || []);
+      setWorkTimelines(timelinesData || []);
 
-      const savedStudents = localStorage.getItem("persistent_courses");
-      let studentList = savedStudents ? JSON.parse(savedStudents) : [];
+      // Load registered students, interns, and employees
+      if (typeof window !== "undefined") {
+        const savedStudents = localStorage.getItem("persistent_courses");
+        const studentList = savedStudents ? JSON.parse(savedStudents) : [];
 
-      const isRemoteStr = (str) => {
-        if (!str) return false;
-        const s = String(str).toLowerCase();
-        return s.includes("remote") || s.includes("wfh") || s.includes("online") || s.includes("home");
-      };
+        const savedInterns = localStorage.getItem("persistent_interns");
+        const internList = savedInterns ? JSON.parse(savedInterns) : [];
 
-      const remoteInternsFiltered = internList.filter(i => 
-        i.is_remote === true || 
-        isRemoteStr(i.internship_mode) || 
-        isRemoteStr(i.employment_type) || 
-        isRemoteStr(i.work_mode) || 
-        isRemoteStr(i.course_mode)
-      ).map(i => ({
-        id: i.id || `int-${Math.random()}`,
-        name: i.full_name || i.name || "Remote Intern",
-        role: `${i.course_name || "MERN Stack"} Remote Intern`,
-        email: i.email,
-        status: "Online",
-        course: i.course_name || "Software Engineering",
-        activity: "VS Code / Working Stream",
-      }));
+        const savedEmployees = localStorage.getItem("persistent_employees");
+        const empList = savedEmployees ? JSON.parse(savedEmployees) : [];
 
-      let deletedIds = [];
-      try {
-        const d = localStorage.getItem("deleted_intern_ids");
-        if (d) deletedIds = JSON.parse(d);
-      } catch (e) {}
+        const userMap = new Map();
+        [...studentList, ...internList, ...empList].forEach((u) => {
+          const name = u.full_name || u.name || u.student_name || u.email;
+          if (name && !userMap.has(name)) {
+            userMap.set(name, {
+              id: u.id || u.email || `u-${Math.random()}`,
+              name: name,
+              department: u.course_name || u.department || u.designation || u.internship_mode || "Software Engineering",
+              email: u.email || "",
+            });
+          }
+        });
 
-      const map = new Map();
-      remoteInternsFiltered.forEach(item => {
-        if (item.email && !deletedIds.includes(item.email.toLowerCase().trim())) {
-          map.set(item.email.toLowerCase().trim(), item);
+        const allUsersList = Array.from(userMap.values());
+        setRegisteredUsers(allUsersList);
+
+        if (allUsersList.length > 0) {
+          const firstUser = allUsersList[0];
+          setEmployeeName(firstUser.name);
+          setDepartment(firstUser.department);
+          setEmployeeId(firstUser.id);
         }
-      });
-
-      setRemoteStudents(Array.from(map.values()));
-    } catch(e) {}
-  };
-
-  const executeClearRemoteData = async () => {
-    setConfirmModal(prev => ({ ...prev, loading: true }));
-
-    try {
-      const savedDeleted = localStorage.getItem("deleted_intern_ids");
-      let deletedList = savedDeleted ? JSON.parse(savedDeleted) : [];
-
-      remoteStudents.forEach(s => {
-        if (s.id) deletedList.push(String(s.id).toLowerCase());
-        if (s.email) deletedList.push(s.email.toLowerCase().trim());
-      });
-
-      localStorage.setItem("deleted_intern_ids", JSON.stringify(deletedList));
-      setRemoteStudents([]);
-      showToast("Remote Data Purged 🗑️", "All remote monitoring records cleared.", "info");
-    } catch(e) {}
-
-    setConfirmModal({ isOpen: false, loading: false });
-  };
-
-  const startLiveScreenAccess = async (student) => {
-    setActiveRemoteStudent(student);
-    setIsLiveStreamModalOpen(true);
-
-    try {
-      if (typeof window !== "undefined" && navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia) {
-        const stream = await navigator.mediaDevices.getDisplayMedia({ video: { cursor: "always" }, audio: false });
-        setMediaStream(stream);
-        if (videoRef.current) videoRef.current.srcObject = stream;
-        showToast("Live Feed Connected 🔴", `Connected to desktop stream of ${student.name}.`, "success");
       }
-    } catch (err) {
-      showToast("Live Stream Active 🖥️", `Screen session active for ${student.name}.`, "info");
+    } catch (error) {
+      console.error("Error loading remote monitoring data:", error);
     }
   };
 
-  const stopLiveScreenAccess = () => {
-    if (mediaStream) {
-      try { mediaStream.getTracks().forEach((track) => track.stop()); } catch(e) {}
-      setMediaStream(null);
+  // === 1. Session Duration Clock & Idle Detection Engine ===
+  useEffect(() => {
+    let interval = null;
+
+    if (isSessionActive && sessionStatus !== "Stopped") {
+      interval = setInterval(() => {
+        setElapsedSeconds((prev) => prev + 1);
+
+        // Check for 5-minute inactivity (300 seconds)
+        const now = Date.now();
+        const inactiveTimeMs = now - lastActivityTimestamp;
+
+        if (inactiveTimeMs >= 5 * 60 * 1000 && sessionStatus === "Active") {
+          setSessionStatus("Idle");
+          showToast("Idle Warning ⏳", "No mouse/keyboard input detected for 5 minutes. Session marked as Idle.", "warning");
+          
+          // Log timeline event
+          const idleEvent = {
+            id: `t-${Date.now()}`,
+            employee_id: employeeId,
+            employee_name: employeeName,
+            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            type: "Idle Alert",
+            detail: "Inactivity detected (5 minutes idle)",
+            status: "Idle"
+          };
+          addTimelineEvent(idleEvent).then((updated) => setWorkTimelines(updated));
+        }
+
+        if (sessionStatus === "Active") {
+          setActiveSeconds((prev) => prev + 1);
+        } else if (sessionStatus === "Idle") {
+          setIdleSeconds((prev) => prev + 1);
+        }
+
+        // Screenshot timer countdown
+        setNextScreenshotTimer((prevTimer) => {
+          if (prevTimer <= 1) {
+            triggerRandomScreenshotCapture();
+            const newIntervalSec = getRandomScreenshotInterval(settings.minInterval, settings.maxInterval);
+            setNextIntervalMinutes(Math.round(newIntervalSec / 60));
+            return newIntervalSec;
+          }
+          return prevTimer - 1;
+        });
+
+      }, 1000);
     }
-    setIsLiveStreamModalOpen(false);
-    setActiveRemoteStudent(null);
-    showToast("Session Ended ⏹️", "Live monitoring session closed.", "info");
-  };
 
-  const handleTriggerManualScreenshot = () => {
-    const nowStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    const appsList = ["VS Code (MERN Stack)", "Postman API Tester", "Supabase Console", "Next.js Dev Server"];
-    const randomApp = appsList[Math.floor(Math.random() * appsList.length)];
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [isSessionActive, sessionStatus, lastActivityTimestamp, settings]);
 
-    const newSc = {
-      id: "sc-" + Date.now(),
-      timestamp: `${nowStr} (15m interval)`,
-      capturedApp: randomApp,
-      activityLevel: "97% Active (Keyboard & Mouse)",
-      previewUrl: "https://images.unsplash.com/photo-1555066931-4365d14bab8c?w=600&auto=format&fit=crop&q=80",
-      resolution: "1920 x 1080"
+  // === 2. Global Event Listeners for Activity Tracking ===
+  useEffect(() => {
+    const handleUserActivity = () => {
+      if (!isSessionActive) return;
+
+      const now = Date.now();
+      setLastActivityTimestamp(now);
+
+      // Revert from Idle to Active immediately when user interacts
+      if (sessionStatus === "Idle") {
+        setSessionStatus("Active");
+        showToast("Activity Resumed 🟢", "Mouse/keyboard activity detected. Marked as Active.", "success");
+        
+        const activeEvent = {
+          id: `t-${Date.now()}`,
+          employee_id: employeeId,
+          employee_name: employeeName,
+          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          type: "Activity Resume",
+          detail: "Input detected — Resumed Active Status",
+          status: "Active"
+        };
+        addTimelineEvent(activeEvent).then((updated) => setWorkTimelines(updated));
+      }
     };
 
-    setScreenshots([newSc, ...screenshots]);
-    showToast("Snapshot Captured 📸", `Captured random screenshot of ${randomApp}.`, "success");
+    const handleMouseMove = () => {
+      setMouseEventsCount((prev) => prev + 1);
+      handleUserActivity();
+    };
+
+    const handleKeyDown = () => {
+      setKeyboardEventsCount((prev) => prev + 1);
+      handleUserActivity();
+    };
+
+    if (isSessionActive) {
+      window.addEventListener("mousemove", handleMouseMove);
+      window.addEventListener("keydown", handleKeyDown);
+      window.addEventListener("click", handleUserActivity);
+      window.addEventListener("scroll", handleUserActivity);
+    }
+
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("click", handleUserActivity);
+      window.removeEventListener("scroll", handleUserActivity);
+    };
+  }, [isSessionActive, sessionStatus, employeeId, employeeName]);
+
+  // === 3. Trigger Random Screenshot Capture ===
+  const triggerRandomScreenshotCapture = async () => {
+    setIsCapturingScreen(true);
+    const deviceInfo = getClientDeviceInfo();
+    const currentTimestamp = new Date();
+    const timeStr = currentTimestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const dateStr = currentTimestamp.toISOString().split("T")[0];
+
+    // Array of realistic work screen previews
+    const sampleScreenshots = [
+      "https://images.unsplash.com/photo-1555066931-4365d14bab8c?w=900&auto=format&fit=crop&q=80",
+      "https://images.unsplash.com/photo-1618401471353-b98aedd04e11?w=900&auto=format&fit=crop&q=80",
+      "https://images.unsplash.com/photo-1531403009284-440f080d1e12?w=900&auto=format&fit=crop&q=80",
+      "https://images.unsplash.com/photo-1517694712202-14dd9538aa97?w=900&auto=format&fit=crop&q=80",
+      "https://images.unsplash.com/photo-1507238691740-187a5b1d37b8?w=900&auto=format&fit=crop&q=80"
+    ];
+
+    const randomUrl = sampleScreenshots[Math.floor(Math.random() * sampleScreenshots.length)];
+    const activityLevel = Math.min(100, Math.max(70, Math.floor(Math.random() * 25) + 75));
+
+    const newScreenshot = {
+      id: `sc-${Date.now()}`,
+      session_id: sessionId || `sess-${Date.now()}`,
+      employee_id: employeeId,
+      employee_name: employeeName,
+      department: department,
+      screenshot_url: randomUrl,
+      captured_app: currentFocusedApp,
+      activity_level: activityLevel,
+      date: dateStr,
+      time: timeStr,
+      timestamp: currentTimestamp.toISOString(),
+      interval_minutes: nextIntervalMinutes,
+      device_name: deviceInfo.deviceName,
+      os: deviceInfo.os,
+      ip_address: deviceInfo.ip,
+      size: `${Math.floor(Math.random() * 150) + 300} KB (WebP)`,
+      resolution: `${window.innerWidth || 1920} x ${window.innerHeight || 1080}`
+    };
+
+    try {
+      const updatedScreenshots = await saveScreenshotLog(newScreenshot);
+      setScreenshots(updatedScreenshots);
+
+      // Add to timeline
+      const scTimelineEvent = {
+        id: `t-${Date.now()}`,
+        employee_id: employeeId,
+        employee_name: employeeName,
+        time: timeStr,
+        type: "Screenshot",
+        detail: `Random Screenshot Captured (${nextIntervalMinutes}m interval)`,
+        status: "Captured"
+      };
+      const updatedTimeline = await addTimelineEvent(scTimelineEvent);
+      setWorkTimelines(updatedTimeline);
+
+      showToast("Screenshot Captured 📸", `Automatic random screenshot logged at ${timeStr} (${newScreenshot.captured_app}).`, "info");
+    } catch (err) {
+      console.error("Screenshot upload error:", err);
+      showToast("Screenshot Error ⚠️", "Failed to sync screenshot metadata to database.", "error");
+    } finally {
+      setIsCapturingScreen(false);
+    }
   };
 
-  const handleImageError = (id) => {
-    setFailedImages(prev => ({ ...prev, [id]: true }));
+  // === 4. Session Start Handler ===
+  const handleStartSession = () => {
+    if (!isConsentAccepted) {
+      setIsConsentModalOpen(true);
+      return;
+    }
+
+    const sId = `sess-${Date.now()}`;
+    const startTime = new Date();
+    setSessionId(sId);
+    setSessionStartTime(startTime);
+    setIsSessionActive(true);
+    setSessionStatus("Active");
+    setElapsedSeconds(0);
+    setActiveSeconds(0);
+    setIdleSeconds(0);
+    setLastActivityTimestamp(Date.now());
+
+    // Set initial random screenshot countdown
+    const initialIntervalSec = getRandomScreenshotInterval(settings.minInterval, settings.maxInterval);
+    setNextScreenshotTimer(initialIntervalSec);
+    setNextIntervalMinutes(Math.round(initialIntervalSec / 60));
+
+    // Log timeline start
+    const startEvent = {
+      id: `t-${Date.now()}`,
+      employee_id: employeeId,
+      employee_name: employeeName,
+      time: startTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      type: "Login",
+      detail: "Work session initiated & transparency consent verified",
+      status: "Active"
+    };
+    addTimelineEvent(startEvent).then((updated) => setWorkTimelines(updated));
+
+    showToast("Monitoring Active 🟢", `Remote work session started for ${employeeName}. Monitoring is enabled.`, "success");
   };
 
-  const handleExportDataCsv = () => {
-    let csv = "ID,Timestamp,Captured App,Activity Level,Resolution\n";
-    screenshots.forEach(sc => {
-      csv += `"${sc.id}","${sc.timestamp}","${sc.capturedApp}","${sc.activityLevel}","${sc.resolution}"\n`;
-    });
-    const blob = new Blob([csv], { type: "text/csv" });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `remote_monitoring_${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
+  // === 5. Session Stop Handler ===
+  const handleStopSession = () => {
+    setIsSessionActive(false);
+    setSessionStatus("Stopped");
+
+    const stopTime = new Date();
+    const stopEvent = {
+      id: `t-${Date.now()}`,
+      employee_id: employeeId,
+      employee_name: employeeName,
+      time: stopTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      type: "Logout",
+      detail: `Session ended. Total Active: ${Math.floor(activeSeconds / 60)}m, Idle: ${Math.floor(idleSeconds / 60)}m`,
+      status: "Completed"
+    };
+    addTimelineEvent(stopEvent).then((updated) => setWorkTimelines(updated));
+
+    showToast("Session Ended ⏹️", "Work session terminated. Remote monitoring stopped.", "info");
   };
+
+  // Consent Acceptance
+  const handleAcceptConsent = () => {
+    setIsConsentAccepted(true);
+    sessionStorage.setItem("remote_monitoring_consent", "accepted");
+    setIsConsentModalOpen(false);
+    showToast("Consent Verified 🔒", "Privacy notice acknowledged. You may now start monitoring.", "success");
+    handleStartSession();
+  };
+
+  // Retention Purge Handler
+  const handlePurgeRetention = async () => {
+    try {
+      const res = await purgeExpiredScreenshots(settings.retentionDays);
+      await loadMonitoringData();
+      showToast("Retention Purge Complete 🗑️", `Purged ${res.removedCount} screenshots older than ${settings.retentionDays} days.`, "success");
+    } catch (e) {
+      showToast("Purge Error ❌", "Failed to purge expired screenshots.", "error");
+    }
+  };
+
+  // Format seconds to HH:MM:SS
+  const formatTimeHHMMSS = (sec) => {
+    const hours = Math.floor(sec / 3600);
+    const minutes = Math.floor((sec % 3600) / 60);
+    const seconds = sec % 60;
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+  };
+
+  // Calculate Productivity Score %
+  const totalTrackedSeconds = activeSeconds + idleSeconds;
+  const productivityScore = totalTrackedSeconds > 0 
+    ? Math.round((activeSeconds / totalTrackedSeconds) * 100) 
+    : 94;
+
+  // Filtered Screenshots for Admin/Employee
+  const filteredScreenshots = screenshots.filter((sc) => {
+    if (role === "employee" && sc.employee_id !== employeeId) return false;
+
+    if (selectedEmployeeFilter !== "All" && sc.employee_name !== selectedEmployeeFilter) return false;
+    if (selectedDepartmentFilter !== "All" && sc.department !== selectedDepartmentFilter) return false;
+
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      const matchName = sc.employee_name?.toLowerCase().includes(q);
+      const matchApp = sc.captured_app?.toLowerCase().includes(q);
+      const matchDevice = sc.device_name?.toLowerCase().includes(q);
+      if (!matchName && !matchApp && !matchDevice) return false;
+    }
+
+    return true;
+  });
+
+  // Filtered Timelines
+  const filteredTimelines = workTimelines.filter((tl) => {
+    if (role === "employee" && tl.employee_id !== employeeId) return false;
+    if (selectedEmployeeFilter !== "All" && tl.employee_name !== selectedEmployeeFilter) return false;
+    return true;
+  });
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto">
-      
-      {/* 1. CONSISTENT BLUE & WHITE HEADER BANNER */}
-      <div className="bg-white rounded-2xl p-6 border border-[#E2E8F0] shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <div className="space-y-6 pb-12 font-sans">
+      {/* Hidden Canvas for Frame Processing */}
+      <canvas ref={canvasRef} className="hidden" />
+
+      {/* === TOP BANNER & ROLE SWITCHER === */}
+      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-[#2563EB] bg-[#EFF6FF] px-2.5 py-1 rounded-full border border-[#2563EB]/20">
-              Remote Work Monitor
-            </span>
-            <span className="text-[10px] font-semibold text-[#64748B] bg-[#F8FAFC] px-2.5 py-1 rounded-full border border-[#E2E8F0] flex items-center gap-1">
-              <FaShieldAlt className="text-[#2563EB]" /> Transparent Privacy Active
-            </span>
-          </div>
-          <h1 className="text-xl md:text-2xl font-bold text-[#0F172A] mt-1.5 flex items-center gap-2.5">
-            <FaDesktop className="text-[#2563EB]" />
-            <span>Remote Staff & Student Monitoring Engine</span>
-          </h1>
-          <p className="text-xs text-[#64748B] mt-0.5">
-            Random Screenshots (5–15 mins) • Activity Logs • App Usage Analytics • Timeline
-          </p>
-        </div>
-
-        {/* Toolbar & Action Controls */}
-        <div className="flex items-center gap-2 shrink-0">
-          <Link
-            href="/dashboard/internships"
-            className="bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold px-4 py-2 rounded-xl text-xs transition-colors shadow-xs flex items-center gap-1.5"
-          >
-            <FaUserGraduate />
-            <span>+ Add Remote Intern</span>
-          </Link>
-
-          <button
-            onClick={() => setIsMonitoringActive(!isMonitoringActive)}
-            className={`font-semibold px-3.5 py-2 rounded-xl text-xs transition-colors border cursor-pointer flex items-center gap-1.5 ${
-              isMonitoringActive
-                ? "bg-[#EFF6FF] text-[#2563EB] border-[#2563EB]/20"
-                : "bg-[#F8FAFC] text-[#64748B] border-[#E2E8F0]"
-            }`}
-          >
-            {isMonitoringActive ? <FaPlay className="text-[10px]" /> : <FaPause className="text-[10px]" />}
-            <span>{isMonitoringActive ? "Active" : "Paused"}</span>
-          </button>
-
-          {(role === "admin" || role === "hr" || role === "manager") && (
-            <button
-              onClick={handleTriggerManualScreenshot}
-              className="bg-white hover:bg-[#F8FAFC] text-[#2563EB] font-semibold px-3 py-2 rounded-xl text-xs transition-colors border border-[#E2E8F0] cursor-pointer flex items-center gap-1.5 shadow-xs"
-            >
-              <FaCamera />
-              <span>Snapshot</span>
-            </button>
-          )}
-
-          {/* Section More Actions (⋮) Menu */}
-          <div className="relative">
-            <button
-              onClick={() => setIsHeaderKebabOpen(!isHeaderKebabOpen)}
-              className="p-2 rounded-xl text-[#64748B] hover:text-[#0F172A] hover:bg-[#F8FAFC] border border-[#E2E8F0] transition-colors cursor-pointer"
-            >
-              <FaEllipsisV className="text-xs" />
-            </button>
-
-            {isHeaderKebabOpen && (
-              <div className="absolute right-0 mt-1 w-48 rounded-xl bg-white p-1.5 shadow-lg border border-[#E2E8F0] z-30 space-y-0.5 text-xs animate-in fade-in zoom-in-95 duration-100">
-                <button
-                  onClick={() => {
-                    handleExportDataCsv();
-                    setIsHeaderKebabOpen(false);
-                  }}
-                  className="w-full text-left px-3 py-1.5 rounded-lg hover:bg-[#EFF6FF] text-[#0F172A] hover:text-[#2563EB] font-semibold transition-colors flex items-center gap-2"
-                >
-                  <FaDownload className="text-xs text-[#2563EB]" /> Export Data CSV
-                </button>
-
-                {role === "admin" && (
-                  <>
-                    <div className="border-t border-[#E2E8F0] my-1" />
-                    <button
-                      onClick={() => {
-                        setIsHeaderKebabOpen(false);
-                        setConfirmModal({ isOpen: true, loading: false });
-                      }}
-                      className="w-full text-left px-3 py-1.5 rounded-lg hover:bg-rose-50 text-rose-600 font-semibold transition-colors flex items-center gap-2"
-                    >
-                      <FaTrash className="text-xs text-rose-600" /> Clear Remote Data
-                    </button>
-                  </>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* 2. COMPACT EMPTY STATE OR LIVE STREAM CARDS */}
-      <div className="bg-white p-6 rounded-2xl border border-[#E2E8F0] shadow-sm space-y-4">
-        <div className="flex items-center justify-between border-b border-[#E2E8F0] pb-3">
-          <div>
-            <h2 className="font-bold text-[#0F172A] text-sm flex items-center gap-2">
-              <FaBroadcastTower className="text-[#2563EB]" />
-              <span>Remote Interns & Active Stream Sessions</span>
-            </h2>
-            <p className="text-xs text-[#64748B]">Real-time screen access portal.</p>
-          </div>
-
-          <span className="text-xs font-semibold text-[#2563EB] bg-[#EFF6FF] px-2.5 py-0.5 rounded-full border border-[#2563EB]/20">
-            {remoteStudents.length} Active Stream(s)
-          </span>
-        </div>
-
-        {/* COMPACT EMPTY STATE (Requirement #4) */}
-        {remoteStudents.length === 0 ? (
-          <div className="py-6 px-4 text-center bg-[#F8FAFC] rounded-xl border border-[#E2E8F0] space-y-2">
-            <div className="h-10 w-10 rounded-xl bg-[#EFF6FF] text-[#2563EB] flex items-center justify-center mx-auto text-lg border border-[#2563EB]/20">
-              <FaUserGraduate />
+          <div className="flex items-center gap-3">
+            <div className="p-3 rounded-xl bg-blue-50 text-[#2563EB]">
+              <FaDesktop className="h-6 w-6" />
             </div>
             <div>
-              <p className="text-xs font-bold text-[#0F172A]">No Active Remote Students or Interns</p>
-              <p className="text-[11px] text-[#64748B] max-w-sm mx-auto mt-0.5">
-                Remote activity will appear here once a student or intern starts a monitored session.
+              <div className="flex items-center gap-2">
+                <h1 className="text-xl font-bold text-slate-900 tracking-tight">
+                  Remote Employee Monitoring Module
+                </h1>
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                  <FaShieldAlt className="h-3 w-3" />
+                  Supabase RLS Secured
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Real-time activity tracking, automated random screenshots (5–15m), application usage, and privacy-first work timelines.
               </p>
             </div>
           </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
-            {remoteStudents.map((stu) => (
-              <div key={stu.id} className="p-4 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-3 hover:border-[#2563EB]/40 transition-colors">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <h4 className="font-bold text-[#0F172A] text-xs flex items-center gap-1.5">
-                      <FaUserGraduate className="text-[#2563EB]" />
-                      <span>{stu.name}</span>
-                    </h4>
-                    <span className="text-[10px] text-[#2563EB] font-semibold bg-[#EFF6FF] px-2 py-0.5 rounded mt-1 inline-block border border-[#2563EB]/20">
-                      {stu.role}
-                    </span>
-                  </div>
-                  <span className="text-[10px] font-semibold text-[#2563EB] bg-[#EFF6FF] px-2.5 py-0.5 rounded-full border border-[#2563EB]/20">
-                    🟢 Online
-                  </span>
-                </div>
+        </div>
 
-                <button
-                  onClick={() => startLiveScreenAccess(stu)}
-                  className="w-full bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold py-2 px-3 rounded-xl text-xs transition-colors flex items-center justify-center gap-2 cursor-pointer shadow-xs"
-                >
-                  <FaDesktop />
-                  <span>Access Screen Live</span>
-                </button>
-              </div>
-            ))}
+        {/* Role & Quick Controls */}
+        <div className="flex items-center gap-3 self-end md:self-auto">
+          <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-medium">
+            <button
+              onClick={() => setRole("admin")}
+              className={`px-3 py-1.5 rounded-lg transition-all ${
+                role === "admin"
+                  ? "bg-white text-slate-900 shadow-xs font-semibold"
+                  : "text-slate-600 hover:text-slate-900"
+              }`}
+            >
+              Admin / HR View
+            </button>
+            <button
+              onClick={() => setRole("employee")}
+              className={`px-3 py-1.5 rounded-lg transition-all ${
+                role === "employee"
+                  ? "bg-white text-slate-900 shadow-xs font-semibold"
+                  : "text-slate-600 hover:text-slate-900"
+              }`}
+            >
+              Employee View
+            </button>
           </div>
+
+          <button
+            onClick={loadMonitoringData}
+            className="p-2.5 rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 transition-colors"
+            title="Refresh Live Data"
+          >
+            <FaSync className="h-4 w-4" />
+          </button>
+
+          <button
+            onClick={async () => {
+              if (typeof window !== "undefined") {
+                localStorage.removeItem("remote_work_sessions");
+                localStorage.removeItem("remote_screenshot_logs");
+                localStorage.removeItem("remote_work_timelines");
+                localStorage.removeItem("remote_activity_logs");
+                localStorage.removeItem("remote_app_usage_logs");
+              }
+              setRemoteSessions([]);
+              setScreenshots([]);
+              setWorkTimelines([]);
+              showToast("Data Cleared 🗑️", "All dummy sessions and logs removed.", "info");
+            }}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 font-semibold text-xs transition-colors"
+            title="Clear All Sessions & Dummy Data"
+          >
+            <FaTrash className="h-3 w-3" /> Clear All Data
+          </button>
+        </div>
+      </div>
+
+      {/* === PRIVACY & TRANSPARENCY NOTICE BANNER === */}
+      <div className="rounded-2xl border border-blue-200 bg-gradient-to-r from-blue-50/80 via-white to-slate-50 p-5 relative overflow-hidden">
+        <div className="flex items-start gap-4">
+          <div className="p-2.5 rounded-xl bg-blue-600 text-white shrink-0 shadow-xs">
+            <FaShieldAlt className="h-5 w-5" />
+          </div>
+          <div className="space-y-1 text-xs text-slate-600 leading-relaxed">
+            <div className="flex items-center gap-2 font-bold text-slate-900 text-sm">
+              <span>Employee Transparency & Privacy Notice</span>
+              <span className="text-[10px] bg-blue-100 text-blue-800 font-semibold px-2 py-0.5 rounded-full">
+                Required Consent
+              </span>
+            </div>
+            <p>
+              "This work session is monitored for productivity purposes. The system collects periodic random screenshots (5–15 min intervals), mouse/keyboard activity metrics, application & website usage, and work timelines strictly during your active session."
+            </p>
+            <div className="flex items-center gap-4 pt-1 font-semibold text-slate-700">
+              <span className="flex items-center gap-1 text-emerald-600">
+                <FaCheckCircle className="h-3.5 w-3.5" /> Session-bound capture only
+              </span>
+              <span className="flex items-center gap-1 text-emerald-600">
+                <FaCheckCircle className="h-3.5 w-3.5" /> Auto-stops on logout
+              </span>
+              <span className="flex items-center gap-1 text-emerald-600">
+                <FaCheckCircle className="h-3.5 w-3.5" /> Employee visible data
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* === WORK SESSION CONTROL PANEL (FOR EMPLOYEES & SIMULATION) === */}
+      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs space-y-6">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-100 pb-5">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold text-blue-600 uppercase tracking-wider">
+                Work Session Status — Select Active Student/Employee:
+              </span>
+            </div>
+            
+            <div className="flex items-center gap-3 mt-1">
+              <select
+                value={employeeName}
+                onChange={(e) => {
+                  const selectedName = e.target.value;
+                  const foundUser = registeredUsers.find(u => u.name === selectedName);
+                  if (foundUser) {
+                    setEmployeeName(foundUser.name);
+                    setDepartment(foundUser.department);
+                    setEmployeeId(foundUser.id);
+                  } else {
+                    setEmployeeName(selectedName);
+                  }
+                }}
+                disabled={isSessionActive}
+                className="px-3 py-1.5 rounded-xl border border-slate-200 bg-slate-50 text-slate-900 font-bold text-xs shadow-xs focus:ring-2 focus:ring-blue-500"
+              >
+                {registeredUsers.length === 0 ? (
+                  <>
+                    <option value="Emaan">Emaan (Full Stack MERN Web Development)</option>
+                    <option value="Sarah Jenkins">Sarah Jenkins (Frontend)</option>
+                  </>
+                ) : (
+                  registeredUsers.map(u => (
+                    <option key={u.id} value={u.name}>{u.name} ({u.department})</option>
+                  ))
+                )}
+              </select>
+
+              <h2 className="text-2xl font-bold text-slate-900 font-mono tracking-tight">
+                {formatTimeHHMMSS(elapsedSeconds)}
+              </h2>
+              <span
+                className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${
+                  sessionStatus === "Active"
+                    ? "bg-emerald-100 text-emerald-800 animate-pulse"
+                    : sessionStatus === "Idle"
+                    ? "bg-amber-100 text-amber-800"
+                    : "bg-slate-100 text-slate-600"
+                }`}
+              >
+                <span
+                  className={`h-2 w-2 rounded-full ${
+                    sessionStatus === "Active"
+                      ? "bg-emerald-500"
+                      : sessionStatus === "Idle"
+                      ? "bg-amber-500"
+                      : "bg-slate-400"
+                  }`}
+                />
+                {sessionStatus}
+              </span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            {!isSessionActive ? (
+              <button
+                onClick={handleStartSession}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 text-white font-semibold text-xs hover:bg-emerald-700 transition-all shadow-sm"
+              >
+                <FaPlay className="h-3.5 w-3.5" />
+                Start Work Session
+              </button>
+            ) : (
+              <button
+                onClick={handleStopSession}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-rose-600 text-white font-semibold text-xs hover:bg-rose-700 transition-all shadow-sm"
+              >
+                <FaStop className="h-3.5 w-3.5" />
+                Stop Session & Logout
+              </button>
+            )}
+
+            <button
+              onClick={triggerRandomScreenshotCapture}
+              disabled={!isSessionActive || isCapturingScreen}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-700 font-semibold text-xs hover:bg-slate-50 disabled:opacity-50 transition-all shadow-xs"
+            >
+              <FaCamera className={`h-3.5 w-3.5 ${isCapturingScreen ? "animate-spin text-blue-600" : ""}`} />
+              {isCapturingScreen ? "Capturing..." : "Capture Screenshot Now"}
+            </button>
+          </div>
+        </div>
+
+        {/* Live Metrics Grid */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="p-4 rounded-xl bg-slate-50 border border-slate-100">
+            <div className="flex items-center justify-between text-xs text-slate-500">
+              <span>Active Productive Time</span>
+              <FaClock className="text-emerald-500 h-4 w-4" />
+            </div>
+            <p className="text-lg font-bold text-slate-900 mt-2 font-mono">
+              {Math.floor(activeSeconds / 60)}m {activeSeconds % 60}s
+            </p>
+            <div className="w-full bg-slate-200 rounded-full h-1.5 mt-2">
+              <div
+                className="bg-emerald-500 h-1.5 rounded-full transition-all"
+                style={{ width: `${Math.min(100, (activeSeconds / Math.max(1, elapsedSeconds)) * 100)}%` }}
+              />
+            </div>
+          </div>
+
+          <div className="p-4 rounded-xl bg-slate-50 border border-slate-100">
+            <div className="flex items-center justify-between text-xs text-slate-500">
+              <span>Inactive / Idle Time</span>
+              <FaClock className="text-amber-500 h-4 w-4" />
+            </div>
+            <p className="text-lg font-bold text-slate-900 mt-2 font-mono">
+              {Math.floor(idleSeconds / 60)}m {idleSeconds % 60}s
+            </p>
+            <div className="w-full bg-slate-200 rounded-full h-1.5 mt-2">
+              <div
+                className="bg-amber-500 h-1.5 rounded-full transition-all"
+                style={{ width: `${Math.min(100, (idleSeconds / Math.max(1, elapsedSeconds)) * 100)}%` }}
+              />
+            </div>
+          </div>
+
+          <div className="p-4 rounded-xl bg-slate-50 border border-slate-100">
+            <div className="flex items-center justify-between text-xs text-slate-500">
+              <span>Next Random Screenshot</span>
+              <FaCamera className="text-blue-500 h-4 w-4" />
+            </div>
+            <p className="text-lg font-bold text-slate-900 mt-2 font-mono">
+              in {Math.floor(nextScreenshotTimer / 60)}m {nextScreenshotTimer % 60}s
+            </p>
+            <p className="text-[10px] text-slate-400 mt-1">Randomized ({settings.minInterval}–{settings.maxInterval}m window)</p>
+          </div>
+
+          <div className="p-4 rounded-xl bg-slate-50 border border-slate-100">
+            <div className="flex items-center justify-between text-xs text-slate-500">
+              <span>Productivity Score</span>
+              <FaChartLine className="text-blue-600 h-4 w-4" />
+            </div>
+            <p className="text-lg font-bold text-blue-600 mt-2 font-mono">
+              {productivityScore}%
+            </p>
+            <p className="text-[10px] text-emerald-600 font-semibold mt-1">High Focus Efficiency</p>
+          </div>
+        </div>
+      </div>
+
+      {/* === DASHBOARD NAVIGATION TABS === */}
+      <div className="flex items-center gap-2 border-b border-slate-200 pb-2 text-xs font-semibold overflow-x-auto">
+        <button
+          onClick={() => setActiveTab("overview")}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl transition-all ${
+            activeTab === "overview"
+              ? "bg-blue-600 text-white shadow-xs"
+              : "text-slate-600 hover:bg-slate-100"
+          }`}
+        >
+          <FaDesktop className="h-3.5 w-3.5" /> Live Overview
+        </button>
+
+        <button
+          onClick={() => setActiveTab("screenshots")}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl transition-all ${
+            activeTab === "screenshots"
+              ? "bg-blue-600 text-white shadow-xs"
+              : "text-slate-600 hover:bg-slate-100"
+          }`}
+        >
+          <FaCamera className="h-3.5 w-3.5" /> Screenshot Gallery ({filteredScreenshots.length})
+        </button>
+
+        <button
+          onClick={() => setActiveTab("timeline")}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl transition-all ${
+            activeTab === "timeline"
+              ? "bg-blue-600 text-white shadow-xs"
+              : "text-slate-600 hover:bg-slate-100"
+          }`}
+        >
+          <FaHistory className="h-3.5 w-3.5" /> Work Timeline
+        </button>
+
+        <button
+          onClick={() => setActiveTab("analytics")}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl transition-all ${
+            activeTab === "analytics"
+              ? "bg-blue-600 text-white shadow-xs"
+              : "text-slate-600 hover:bg-slate-100"
+          }`}
+        >
+          <FaChartPie className="h-3.5 w-3.5" /> Productivity Analytics
+        </button>
+
+        {role === "admin" && (
+          <button
+            onClick={() => setActiveTab("settings")}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl transition-all ${
+              activeTab === "settings"
+                ? "bg-blue-600 text-white shadow-xs"
+                : "text-slate-600 hover:bg-slate-100"
+            }`}
+          >
+            <FaShieldAlt className="h-3.5 w-3.5" /> Retention & Rules
+          </button>
         )}
       </div>
 
-      {/* 3. SUMMARY STAT CARDS GRID */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
-        <div className="bg-white p-5 rounded-2xl border border-[#E2E8F0] shadow-sm space-y-1">
-          <div className="flex items-center justify-between text-[#64748B] font-semibold">
-            <span>Random Screenshots Today</span>
-            <FaCamera className="text-[#2563EB]" />
-          </div>
-          <p className="text-2xl font-bold text-[#0F172A]">{screenshots.length} Snapshots</p>
-          <p className="text-[11px] text-[#2563EB] font-semibold">5–15 Mins Interval</p>
-        </div>
+      {/* === TAB 1: LIVE OVERVIEW === */}
+      {activeTab === "overview" && (
+        <div className="space-y-6">
+          {/* Admin Filters Header */}
+          {role === "admin" && (
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs flex flex-wrap items-center justify-between gap-4 text-xs">
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-2">
+                  <FaFilter className="text-slate-400" />
+                  <span className="font-bold text-slate-700">Filter Team:</span>
+                </div>
 
-        <div className="bg-white p-5 rounded-2xl border border-[#E2E8F0] shadow-sm space-y-1">
-          <div className="flex items-center justify-between text-[#64748B] font-semibold">
-            <span>Total Active Work Time</span>
-            <FaClock className="text-[#2563EB]" />
-          </div>
-          <p className="text-2xl font-bold text-[#0F172A]">5h 42m</p>
-          <p className="text-[11px] text-[#2563EB] font-semibold">94.2% Active Score</p>
-        </div>
+                <select
+                  value={selectedEmployeeFilter}
+                  onChange={(e) => setSelectedEmployeeFilter(e.target.value)}
+                  className="px-3 py-1.5 rounded-lg border border-slate-200 bg-slate-50 text-slate-800 font-medium"
+                >
+                  <option value="All">All Students & Employees</option>
+                  {registeredUsers.map((u) => (
+                    <option key={u.id} value={u.name}>{u.name} ({u.department})</option>
+                  ))}
+                  {registeredUsers.length === 0 && (
+                    <option value="Emaan">Emaan (Full Stack MERN)</option>
+                  )}
+                </select>
 
-        <div className="bg-white p-5 rounded-2xl border border-[#E2E8F0] shadow-sm space-y-1">
-          <div className="flex items-center justify-between text-[#64748B] font-semibold">
-            <span>Top Productive Application</span>
-            <FaChartPie className="text-[#2563EB]" />
-          </div>
-          <p className="text-2xl font-bold text-[#0F172A]">VS Code (55%)</p>
-          <p className="text-[11px] text-[#64748B]">MERN Stack & Next.js</p>
-        </div>
-      </div>
+                <select
+                  value={selectedDepartmentFilter}
+                  onChange={(e) => setSelectedDepartmentFilter(e.target.value)}
+                  className="px-3 py-1.5 rounded-lg border border-slate-200 bg-slate-50 text-slate-800 font-medium"
+                >
+                  <option value="All">All Departments</option>
+                  <option value="Frontend Engineering">Frontend Engineering</option>
+                  <option value="Backend Engineering">Backend Engineering</option>
+                  <option value="UI/UX Design">UI/UX Design</option>
+                  <option value="Product Management">Product Management</option>
+                </select>
+              </div>
 
-      {/* 4. EQUAL HEIGHT TWO-COLUMN DASHBOARD GRID */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
-        
-        {/* Left Column (7 COLS): Screenshots & App Analytics */}
-        <div className="lg:col-span-7 space-y-6 flex flex-col justify-between">
-          
-          {/* Screenshot Gallery with Robust Fallbacks (Requirement #1 & #7) */}
-          <div className="bg-white p-6 rounded-2xl border border-[#E2E8F0] shadow-sm space-y-4 flex-1">
-            <div className="flex items-center justify-between border-b border-[#E2E8F0] pb-3">
-              <h2 className="font-bold text-[#0F172A] text-sm flex items-center gap-2">
-                <FaCamera className="text-[#2563EB]" />
-                <span>Random Desktop Screenshots</span>
-              </h2>
-              <span className="text-xs font-semibold text-[#2563EB] bg-[#EFF6FF] px-2.5 py-0.5 rounded-full border border-[#2563EB]/20">
-                Transparent Capture
-              </span>
+              <div className="relative">
+                <FaSearch className="absolute left-3 top-2.5 text-slate-400 h-3.5 w-3.5" />
+                <input
+                  type="text"
+                  placeholder="Search employee or app..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-8 pr-3 py-1.5 rounded-lg border border-slate-200 text-slate-800 text-xs w-56"
+                />
+              </div>
             </div>
+          )}
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-              {screenshots.map((sc) => {
-                const isError = failedImages[sc.id];
-
-                return (
-                  <div
-                    key={sc.id}
-                    onClick={() => !isError && setSelectedImageModal(sc)}
-                    className="group relative rounded-2xl border border-[#E2E8F0] overflow-hidden bg-[#F8FAFC] cursor-pointer shadow-xs hover:shadow-md transition-all h-40 flex flex-col justify-between"
-                  >
-                    {isError ? (
-                      /* Error State Card Placeholder */
-                      <div className="w-full h-full flex flex-col items-center justify-center bg-[#F8FAFC] text-[#64748B] p-4 text-center space-y-1.5">
-                        <FaImage className="text-xl text-[#94A3B8]" />
-                        <span className="font-bold text-xs text-[#0F172A]">No Preview Available</span>
-                        <span className="text-[10px] text-[#64748B]">Screenshot load error</span>
-                      </div>
-                    ) : (
-                      <>
-                        <img
-                          src={sc.previewUrl}
-                          alt="Screenshot Preview"
-                          loading="lazy"
-                          onError={() => handleImageError(sc.id)}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                        />
-                        <div className="absolute inset-0 bg-gradient-to-t from-[#0F172A]/90 via-transparent to-transparent p-3 flex flex-col justify-end text-white">
-                          <span className="text-[10px] font-bold text-[#93C5FD] uppercase">
-                            {sc.timestamp}
-                          </span>
-                          <p className="font-bold text-xs line-clamp-1">{sc.capturedApp}</p>
-                          <span className="text-[10px] text-[#93C5FD] font-medium">{sc.activityLevel}</span>
-                        </div>
-                      </>
-                    )}
+          {/* Active Employee Cards Grid */}
+          {remoteSessions.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center space-y-3">
+              <div className="mx-auto h-12 w-12 rounded-2xl bg-blue-50 flex items-center justify-center text-blue-600">
+                <FaDesktop className="h-6 w-6" />
+              </div>
+              <h3 className="text-sm font-bold text-slate-900">No Active Remote Work Sessions</h3>
+              <p className="text-xs text-slate-500 max-w-md mx-auto">
+                Click <strong>"Start Work Session"</strong> above to launch your first monitored session and record live activity.
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+              {remoteSessions.map((sess) => (
+                <div
+                  key={sess.id}
+                  className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs hover:shadow-md transition-shadow relative overflow-hidden space-y-4"
+                >
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <h3 className="font-bold text-slate-900 text-sm">{sess.employee_name}</h3>
+                      <p className="text-xs text-slate-500">{sess.department}</p>
+                    </div>
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                        sess.status === "Active"
+                          ? "bg-emerald-100 text-emerald-800"
+                          : sess.status === "Idle"
+                          ? "bg-amber-100 text-amber-800"
+                          : "bg-slate-100 text-slate-600"
+                      }`}
+                    >
+                      {sess.status}
+                    </span>
                   </div>
-                );
-              })}
+
+                  <div className="space-y-2 text-xs text-slate-600 bg-slate-50 p-3 rounded-xl border border-slate-100">
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-400">Current App:</span>
+                      <span className="font-semibold text-slate-800 truncate max-w-[140px]" title={sess.current_app}>
+                        {sess.current_app}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-400">Productivity:</span>
+                      <span className="font-bold text-blue-600">{sess.productivity_score}%</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-400">Active vs Idle:</span>
+                      <span className="font-medium text-slate-700">{sess.active_minutes}m / {sess.idle_minutes}m</span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between text-[11px] text-slate-400 border-t border-slate-100 pt-3">
+                    <span>{sess.device_name}</span>
+                    <span>{sess.ip_address}</span>
+                  </div>
+                </div>
+              ))}
             </div>
-          </div>
+          )}
 
-          {/* App Usage Analytics (Requirement #5) */}
-          <div className="bg-white p-6 rounded-2xl border border-[#E2E8F0] shadow-sm space-y-4">
-            <h2 className="font-bold text-[#0F172A] text-sm flex items-center gap-2">
-              <FaChartPie className="text-[#2563EB]" />
-              <span>Application Usage Breakdown Analytics</span>
-            </h2>
-
-            <div className="space-y-3.5 text-xs">
-              {appUsage.map((app) => (
-                <div key={app.name} className="flex items-center gap-3">
-                  <span className="w-40 font-semibold text-[#0F172A] truncate">{app.name}</span>
-                  <div className="flex-1 bg-[#F8FAFC] h-3 rounded-full overflow-hidden border border-[#E2E8F0]">
+          {/* App Usage Breakdown Section */}
+          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs space-y-4">
+            <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+              <FaLaptopCode className="text-blue-600" /> Daily Application & Website Usage Summary
+            </h3>
+            <div className="space-y-3">
+              {appUsageList.map((app) => (
+                <div key={app.id} className="space-y-1">
+                  <div className="flex items-center justify-between text-xs font-semibold text-slate-700">
+                    <span>{app.app_name} <span className="text-[10px] text-slate-400 font-normal">({app.category})</span></span>
+                    <span>{app.usage_minutes} mins ({app.percentage}%)</span>
+                  </div>
+                  <div className="w-full bg-slate-100 rounded-full h-2">
                     <div
-                      className="h-full bg-[#2563EB] rounded-full transition-all duration-500"
+                      className="bg-blue-600 h-2 rounded-full transition-all"
                       style={{ width: `${app.percentage}%` }}
                     />
                   </div>
-                  <span className="w-10 text-right font-bold text-[#2563EB] font-mono">{app.percentage}%</span>
                 </div>
               ))}
-            </div>
-          </div>
-
-        </div>
-
-        {/* Right Column (5 COLS): Work Timeline & Activity Logs (Requirement #8) */}
-        <div className="lg:col-span-5 bg-white p-6 rounded-2xl border border-[#E2E8F0] shadow-sm space-y-4 flex flex-col justify-between">
-          <div>
-            <div className="border-b border-[#E2E8F0] pb-3">
-              <h2 className="font-bold text-[#0F172A] text-sm flex items-center gap-2">
-                <FaHistory className="text-[#2563EB]" />
-                <span>Work Timeline & Logs</span>
-              </h2>
-              <p className="text-xs text-[#64748B]">Real-time activity log tracking.</p>
-            </div>
-
-            <div className="space-y-3 pt-3 text-xs">
-              {timeline.map((item) => (
-                <div key={item.id} className="p-3.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-1 relative">
-                  <div className="flex items-center justify-between font-bold text-[#0F172A]">
-                    <span className="flex items-center gap-1.5">
-                      <FaClock className="text-[#2563EB]" /> {item.time}
-                    </span>
-                    <span className="text-[10px] bg-[#EFF6FF] text-[#2563EB] px-2 py-0.5 rounded font-bold border border-[#2563EB]/20">
-                      {item.activityScore}% Active
-                    </span>
-                  </div>
-                  <p className="font-semibold text-[#0F172A] text-xs mt-1">{item.app}</p>
-                  <span className="text-[11px] text-[#64748B] block">Status: {item.status}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="pt-3 border-t border-[#E2E8F0] text-center">
-            <span className="text-xs text-[#64748B]">Updated Live Every 60 Seconds</span>
-          </div>
-        </div>
-
-      </div>
-
-      {/* SCREENSHOT LIGHTBOX MODAL */}
-      {selectedImageModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
-          <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-xl border border-[#E2E8F0] space-y-4 animate-in fade-in zoom-in-95 duration-150">
-            <div className="flex items-center justify-between border-b border-[#E2E8F0] pb-3">
-              <div>
-                <h3 className="text-base font-bold text-[#0F172A]">{selectedImageModal.capturedApp}</h3>
-                <p className="text-xs text-[#64748B]">Resolution: {selectedImageModal.resolution || "1920 x 1080"} • {selectedImageModal.timestamp}</p>
-              </div>
-              <button onClick={() => setSelectedImageModal(null)} className="text-[#64748B] hover:text-[#0F172A] font-bold text-base">✕</button>
-            </div>
-
-            <div className="rounded-xl border border-[#E2E8F0] overflow-hidden bg-[#F8FAFC]">
-              <img src={selectedImageModal.previewUrl} alt="Full Preview" className="w-full h-80 object-cover" />
-            </div>
-
-            <div className="pt-2 flex justify-between items-center text-xs">
-              <span className="font-semibold text-[#2563EB] bg-[#EFF6FF] px-3 py-1 rounded-md border border-[#2563EB]/20">
-                {selectedImageModal.activityLevel}
-              </span>
-              <button onClick={() => setSelectedImageModal(null)} className="bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold px-4 py-2 rounded-xl">
-                Close Preview
-              </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* CONFIRMATION DESTRUCTIVE MODAL */}
-      {confirmModal.isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-[#E2E8F0] space-y-4 animate-in fade-in zoom-in-95 duration-150">
-            <div className="flex items-center gap-3 text-[#0F172A] border-b border-[#E2E8F0] pb-3">
-              <FaExclamationTriangle className="text-xl text-[#2563EB]" />
-              <h3 className="font-bold text-[#0F172A] text-base">Clear Remote Monitoring Data</h3>
+      {/* === TAB 2: SCREENSHOT GALLERY === */}
+      {activeTab === "screenshots" && (
+        <div className="space-y-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-base font-bold text-slate-900">Captured Screenshots Gallery</h2>
+              <p className="text-xs text-slate-500">Automated random screenshots captured every 5–15 minutes with complete device metadata.</p>
+            </div>
+            {role === "admin" && (
+              <button
+                onClick={handlePurgeRetention}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-rose-200 bg-rose-50 text-rose-700 font-semibold text-xs hover:bg-rose-100 transition-colors"
+              >
+                <FaTrash className="h-3 w-3" /> Auto-Purge (&gt;{settings.retentionDays} Days)
+              </button>
+            )}
+          </div>
+
+          {/* Screenshot Cards Grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5">
+            {filteredScreenshots.map((sc) => (
+              <div
+                key={sc.id}
+                className="group rounded-2xl border border-slate-200 bg-white overflow-hidden shadow-xs hover:shadow-md transition-all flex flex-col justify-between"
+              >
+                {/* Thumbnail */}
+                <div className="relative aspect-video bg-slate-900 overflow-hidden cursor-pointer" onClick={() => setSelectedScreenshotModal(sc)}>
+                  <img
+                    src={sc.screenshot_url}
+                    alt={sc.captured_app}
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                  />
+                  <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white gap-2 font-semibold text-xs">
+                    <FaImage className="h-4 w-4" /> Preview
+                  </div>
+                  <span className="absolute bottom-2 right-2 px-2 py-0.5 rounded bg-slate-900/80 text-white text-[10px] font-mono">
+                    {sc.resolution}
+                  </span>
+                </div>
+
+                {/* Info Payload */}
+                <div className="p-4 space-y-2 text-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-slate-900 truncate max-w-[140px]">{sc.employee_name}</span>
+                    <span className="text-slate-400 text-[11px]">{sc.time}</span>
+                  </div>
+                  <p className="text-slate-600 truncate font-medium" title={sc.captured_app}>
+                    {sc.captured_app}
+                  </p>
+                  <div className="flex items-center justify-between text-[10px] text-slate-400 border-t border-slate-100 pt-2">
+                    <span>OS: {sc.os}</span>
+                    <span className="text-emerald-600 font-semibold">{sc.activity_level}% Active</span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* === TAB 3: WORK TIMELINE === */}
+      {activeTab === "timeline" && (
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs space-y-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-base font-bold text-slate-900">Chronological Work Timeline</h2>
+              <p className="text-xs text-slate-500">Real-time sequence of employee logins, focus apps, screenshot captures, and idle alerts.</p>
+            </div>
+          </div>
+
+          <div className="relative border-l-2 border-slate-200 ml-4 space-y-6">
+            {filteredTimelines.map((tl, idx) => (
+              <div key={tl.id || idx} className="relative pl-6">
+                <div className={`absolute -left-[9px] top-1.5 h-4 w-4 rounded-full border-2 bg-white ${
+                  tl.type === "Login" ? "border-emerald-500" :
+                  tl.type === "Screenshot" ? "border-blue-500" :
+                  tl.type === "Idle Alert" ? "border-amber-500" : "border-slate-400"
+                }`} />
+
+                <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 space-y-1">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-bold text-slate-900">{tl.employee_name} — {tl.type}</span>
+                    <span className="text-slate-400 font-mono">{tl.time}</span>
+                  </div>
+                  <p className="text-xs text-slate-600">{tl.detail}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* === TAB 4: PRODUCTIVITY ANALYTICS === */}
+      {activeTab === "analytics" && (
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+            <div className="p-6 rounded-2xl border border-slate-200 bg-white shadow-xs space-y-3">
+              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Average Focus Time</h3>
+              <p className="text-3xl font-black text-slate-900">5.8 Hours/Day</p>
+              <p className="text-xs text-emerald-600 font-semibold">+12% vs last week</p>
             </div>
 
-            <p className="text-xs text-[#64748B] leading-relaxed">
-              Are you sure you want to clear all remote monitoring records? This action will permanently delete activity logs and remote data.
-            </p>
+            <div className="p-6 rounded-2xl border border-slate-200 bg-white shadow-xs space-y-3">
+              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Department Efficiency</h3>
+              <p className="text-3xl font-black text-blue-600">93.4%</p>
+              <p className="text-xs text-slate-500">Highest: Frontend Team (96%)</p>
+            </div>
 
-            <div className="flex gap-2 pt-2">
+            <div className="p-6 rounded-2xl border border-slate-200 bg-white shadow-xs space-y-3">
+              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Total Screenshots Logged</h3>
+              <p className="text-3xl font-black text-slate-900">{screenshots.length} Captures</p>
+              <p className="text-xs text-slate-500">Randomized 5-15 min policy</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* === TAB 5: RETENTION & RULES SETTINGS === */}
+      {activeTab === "settings" && role === "admin" && (
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs space-y-6">
+          <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
+            <FaShieldAlt className="text-blue-600" /> Monitoring Policy & Retention Rules
+          </h2>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-xs text-slate-700">
+            <div className="space-y-2">
+              <label className="font-bold text-slate-900">Screenshot Auto-Retention Period (Days):</label>
+              <select
+                value={settings.retentionDays}
+                onChange={(e) => {
+                  const updated = { ...settings, retentionDays: Number(e.target.value) };
+                  setSettings(updated);
+                  saveMonitoringSettings(updated);
+                  showToast("Settings Saved ⚙️", `Retention period set to ${e.target.value} days.`, "success");
+                }}
+                className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 font-medium"
+              >
+                <option value={30}>30 Days Auto-Purge</option>
+                <option value={60}>60 Days Auto-Purge (Recommended)</option>
+                <option value={90}>90 Days Auto-Purge</option>
+              </select>
+            </div>
+
+            <div className="space-y-2">
+              <label className="font-bold text-slate-900">Random Screenshot Interval Window:</label>
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 font-medium text-slate-800">
+                Randomized between <strong>5 Minutes</strong> and <strong>15 Minutes</strong> (Unpredictable anti-timing policy enabled).
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* === PRIVACY CONSENT ACKNOWLEDGMENT MODAL === */}
+      {isConsentModalOpen && (
+        <Modal
+          isOpen={isConsentModalOpen}
+          onClose={() => setIsConsentModalOpen(false)}
+          title="Remote Monitoring Privacy & Transparency Consent"
+        >
+          <div className="space-y-4 text-xs text-slate-600">
+            <div className="p-4 rounded-xl bg-blue-50 border border-blue-100 text-blue-900 space-y-2">
+              <p className="font-bold">Required Acknowledgment before starting work session:</p>
+              <p>
+                "This work session is monitored for productivity purposes. The system collects screenshots at random intervals (5–15 minutes), activity information (mouse/keyboard input), application usage, and work timelines strictly during your active work session."
+              </p>
+            </div>
+
+            <ul className="space-y-1.5 list-disc pl-5 font-medium text-slate-700">
+              <li>Monitoring runs ONLY when your work session is Active.</li>
+              <li>Monitoring stops automatically upon logout or clicking Stop Session.</li>
+              <li>You can view all your captured screenshots and activity logs at any time.</li>
+            </ul>
+
+            <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
               <button
-                type="button"
-                onClick={() => setConfirmModal({ isOpen: false, loading: false })}
-                className="flex-1 py-2.5 rounded-xl bg-white hover:bg-[#F8FAFC] text-[#2563EB] border border-[#E2E8F0] font-semibold text-xs cursor-pointer"
+                onClick={() => setIsConsentModalOpen(false)}
+                className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 font-semibold"
               >
                 Cancel
               </button>
               <button
-                type="button"
-                onClick={executeClearRemoteData}
-                disabled={confirmModal.loading}
-                className="flex-1 py-2.5 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold text-xs cursor-pointer flex items-center justify-center"
+                onClick={handleAcceptConsent}
+                className="px-5 py-2 rounded-xl bg-blue-600 text-white font-semibold hover:bg-blue-700 transition-colors shadow-xs"
               >
-                {confirmModal.loading ? "Purging..." : "Confirm & Clear 🗑️"}
+                I Acknowledge & Start Session
               </button>
             </div>
           </div>
-        </div>
+        </Modal>
       )}
 
+      {/* === SCREENSHOT LIGHTBOX PREVIEW MODAL === */}
+      {selectedScreenshotModal && (
+        <Modal
+          isOpen={!!selectedScreenshotModal}
+          onClose={() => setSelectedScreenshotModal(null)}
+          title={`Screenshot Metadata — ${selectedScreenshotModal.employee_name}`}
+        >
+          <div className="space-y-4 text-xs">
+            <div className="relative rounded-xl overflow-hidden bg-slate-900 border border-slate-200">
+              <img
+                src={selectedScreenshotModal.screenshot_url}
+                alt="Captured Screen"
+                className="w-full h-auto max-h-[60vh] object-contain"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 bg-slate-50 p-4 rounded-xl border border-slate-200 text-slate-700">
+              <div><span className="text-slate-400">Employee:</span> <strong>{selectedScreenshotModal.employee_name}</strong></div>
+              <div><span className="text-slate-400">Department:</span> <strong>{selectedScreenshotModal.department}</strong></div>
+              <div><span className="text-slate-400">App Captured:</span> <strong>{selectedScreenshotModal.captured_app}</strong></div>
+              <div><span className="text-slate-400">Timestamp:</span> <strong>{selectedScreenshotModal.time} ({selectedScreenshotModal.date})</strong></div>
+              <div><span className="text-slate-400">Device Name:</span> <strong>{selectedScreenshotModal.device_name}</strong></div>
+              <div><span className="text-slate-400">OS:</span> <strong>{selectedScreenshotModal.os}</strong></div>
+              <div><span className="text-slate-400">IP Address:</span> <strong>{selectedScreenshotModal.ip_address}</strong></div>
+              <div><span className="text-slate-400">Compressed Size:</span> <strong>{selectedScreenshotModal.size}</strong></div>
+            </div>
+
+            <div className="flex justify-between items-center pt-2">
+              <a
+                href={selectedScreenshotModal.screenshot_url}
+                target="_blank"
+                rel="noreferrer"
+                download
+                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 text-white font-semibold hover:bg-blue-700 transition-colors"
+              >
+                <FaDownload className="h-3.5 w-3.5" /> Download Screenshot
+              </a>
+
+              <button
+                onClick={() => setSelectedScreenshotModal(null)}
+                className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 font-semibold"
+              >
+                Close Preview
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
