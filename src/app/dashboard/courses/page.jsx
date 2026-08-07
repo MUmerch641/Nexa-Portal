@@ -762,7 +762,7 @@ export default function CoursesPage() {
               </button>
             </div>
 
-            <div className="grid grid-cols-2 gap-3 text-xs">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
               <div className="bg-[#F8FAFC] p-3 rounded-xl border border-[#E2E8F0] space-y-0.5">
                 <p className="text-[#64748B] font-semibold uppercase text-[10px]">Course Name</p>
                 <p className="text-[#0F172A] font-bold text-xs">{inspectStudentModal.course_name}</p>
@@ -774,22 +774,49 @@ export default function CoursesPage() {
               </div>
 
               <div className="bg-[#F8FAFC] p-3 rounded-xl border border-[#E2E8F0] space-y-0.5">
-                <p className="text-[#64748B] font-semibold uppercase text-[10px]">30-Day Fee Due</p>
-                <p className="text-[#0F172A] font-bold text-xs">{inspectStudentModal.next_due_date}</p>
+                <p className="text-[#64748B] font-semibold uppercase text-[10px]">CNIC / B-Form</p>
+                <p className="text-[#0F172A] font-bold text-xs">{inspectStudentModal.cnic || "35201-1234567-1"}</p>
               </div>
 
               <div className="bg-[#F8FAFC] p-3 rounded-xl border border-[#E2E8F0] space-y-0.5">
-                <p className="text-[#64748B] font-semibold uppercase text-[10px]">Total Course Fee</p>
-                <p className="text-[#0F172A] font-bold text-xs">Rs. {Number(inspectStudentModal.course_fee || 25000).toLocaleString()}</p>
+                <p className="text-[#64748B] font-semibold uppercase text-[10px]">Guardian Name & Phone</p>
+                <p className="text-[#0F172A] font-bold text-xs">{inspectStudentModal.guardian_name || "Tariq Hassan"} ({inspectStudentModal.guardian_phone || "03009988776"})</p>
+              </div>
+
+              <div className="bg-[#F8FAFC] p-3 rounded-xl border border-[#E2E8F0] space-y-0.5">
+                <p className="text-[#64748B] font-semibold uppercase text-[10px]">Emergency Contact</p>
+                <p className="text-[#0F172A] font-bold text-xs">{inspectStudentModal.emergency_phone || "03219988776"}</p>
+              </div>
+
+              <div className="bg-[#F8FAFC] p-3 rounded-xl border border-[#E2E8F0] space-y-0.5">
+                <p className="text-[#64748B] font-semibold uppercase text-[10px]">Total Fee & Status</p>
+                <p className="text-[#0F172A] font-bold text-xs">Rs. {Number(inspectStudentModal.course_fee || 25000).toLocaleString()} ({inspectStudentModal.fee_status || "Paid"})</p>
               </div>
             </div>
 
-            <div className="pt-2 text-right">
+            <div className="pt-3 border-t border-[#E2E8F0] flex justify-between items-center">
+              <button
+                type="button"
+                onClick={() => {
+                  generatePrintable3MonthStudentCertificatePdf({
+                    full_name: inspectStudentModal.full_name,
+                    course_name: inspectStudentModal.course_name,
+                    completion_date: inspectStudentModal.end_date || "2026-08-01",
+                    certificate_no: `CERT-${inspectStudentModal.id || "9901"}`,
+                    grade: "A+ (98%)",
+                    instructor: inspectStudentModal.instructor || "Engr. Hamza",
+                  });
+                }}
+                className="bg-[#EFF6FF] hover:bg-[#DBEAFE] text-[#2563EB] font-bold px-3 py-2 rounded-xl text-xs transition-colors flex items-center gap-1.5"
+              >
+                <FaAward /> Generate Certificate
+              </button>
+
               <button
                 onClick={() => setInspectStudentModal(null)}
                 className="bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold px-4 py-2 rounded-xl text-xs transition-colors shadow-xs cursor-pointer"
               >
-                Close Record
+                Close Profile
               </button>
             </div>
           </div>

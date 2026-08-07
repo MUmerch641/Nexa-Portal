@@ -1,6 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
+import Link from "next/link";
+import Modal from "@/components/Modal";
+import { showToast } from "@/components/Toast";
 import { generatePrintableStudentFeeReceiptPdf } from "@/lib/generateStudentReceiptPdf";
 import { generatePrintable3MonthStudentCertificatePdf } from "@/lib/generate3MonthStudentCertificatePdf";
 import {
@@ -17,22 +20,33 @@ import {
   FaShieldAlt,
   FaUserCheck,
   FaBuilding,
-  FaUserClock,
   FaBookReader,
   FaAward,
   FaQrcode,
   FaLaptopCode,
-  FaCheckDouble,
   FaCode,
   FaClipboardCheck,
   FaDesktop,
   FaBullhorn,
-  FaVideo,
-  FaCommentDots,
-  FaCheck
+  FaPlay,
+  FaPause,
+  FaStop,
+  FaCheckDouble,
+  FaShareAlt,
+  FaPrint,
+  FaSearch,
+  FaRegLightbulb
 } from "react-icons/fa";
 
-// Centralized Safe Date Validator (Requirement #2)
+import {
+  getDailyTasks,
+  saveTaskRecord,
+  getCertificates,
+  saveCertificate,
+  SAMPLE_MCQ_EXAM
+} from "@/lib/studentTaskUtils";
+
+// Centralized Safe Date Validator
 const formatSafeDueDate = (rawDate) => {
   if (
     !rawDate ||
@@ -57,489 +71,510 @@ export default function StudentDedicatedDashboardPage() {
   const [studentInfo, setStudentInfo] = useState({
     name: "Ali Hassan",
     email: "student@gmail.com",
+    enrollmentNo: "ENR-2026-901",
     course: "Full Stack MERN Web Development",
     batch: "Batch #14 (Morning Tech)",
     instructor: "Engr. Hamza (Lead Full-Stack)",
     currentWeek: "Week #6 of 12 (Node.js Express REST APIs & Supabase Auth)",
-    progress: 65,
+    progress: 78,
+    attendance: 94,
   });
 
   const [feeStatus, setFeeStatus] = useState({
     dueDate: "2026-08-08",
-    amount: 25000,
-    status: "7_days_before",
-    proofFileName: "",
-    txnRef: "",
-    verificationDate: "",
+    totalFee: 25000,
+    paidAmount: 25000,
+    remainingBalance: 0,
+    status: "Approved & Paid",
     receiptNo: "REC-99812",
   });
 
-  const [assignedTasks, setAssignedTasks] = useState([
-    {
-      id: "t-101",
-      title: "Task 1: Responsive Next.js Landing Page",
-      dueDate: "2026-08-10",
-      assignedToEmail: "student@gmail.com",
-      status: "Graded (95/100)",
-      description: "Build mobile-friendly flexbox grid with clean CSS tokens",
-    },
-    {
-      id: "t-102",
-      title: "Task 2: Supabase Auth & Multi-Role Schema",
-      dueDate: "2026-08-08",
-      assignedToEmail: "student@gmail.com",
-      status: "Graded (90/100)",
-      description: "Setup auth.users foreign key profiles with RLS policy",
-    },
-    {
-      id: "t-103",
-      title: "Task 3: Enterprise Payroll Engine & PDF Generator",
-      dueDate: "2026-08-05",
-      assignedToEmail: "student@gmail.com",
-      status: "Pending Submission",
-      description: "Calculate basic salary, overtime, leave cuts, and print PDF payslips",
-    },
-  ]);
+  // Daily Tasks State with Timer
+  const [assignedTasks, setAssignedTasks] = useState([]);
+  const [activeTaskTimerId, setActiveTaskTimerId] = useState(null);
+  const [timerSeconds, setTimerSeconds] = useState(0);
 
-  const [exams, setExams] = useState([
-    {
-      id: "exam-201",
-      title: "Online Mid-Term MCQ Quiz (JavaScript ES6 & React Hooks)",
-      type: "MCQs",
-      questionsCount: 20,
-      passingPercentage: 70,
-      assignedToEmail: "student@gmail.com",
-      autoGrading: true,
-      status: "Graded (85% Auto-Graded)",
-      score: "17/20 (85%)",
-      dueDate: "2026-08-08",
-      details: "20 Multiple Choice Questions covering ES6 promises, React hooks, and Next.js routing.",
-    },
-    {
-      id: "exam-202",
-      title: "Live Coding Test: Build REST API Middleware & Auth Tokens",
-      type: "Coding Tests",
-      questionsCount: 3,
-      passingPercentage: 75,
-      assignedToEmail: "student@gmail.com",
-      autoGrading: true,
-      status: "Available Now",
-      score: "Not Attempted",
-      dueDate: "2026-08-06",
-      details: "Implement JWT verification middleware and input validation schema in Node.js Express.",
-    },
-    {
-      id: "exam-203",
-      title: "Physical Practical Test: Database Schema Design & Prisma Migration",
-      type: "Practical Tests",
-      questionsCount: 1,
-      passingPercentage: 80,
-      assignedToEmail: "student@gmail.com",
-      autoGrading: false,
-      status: "Available Now",
-      score: "Pending Admin Evaluation",
-      dueDate: "2026-08-07",
-      details: "Design 3-tier relational database tables in PostgreSQL and execute Prisma migration scripts.",
-    },
-  ]);
+  // Exams State
+  const [mcqModalOpen, setMcqModalOpen] = useState(false);
+  const [userAnswers, setUserAnswers] = useState({});
+  const [examSubmittedScore, setExamSubmittedScore] = useState(null);
 
-  const [assignModalOpen, setAssignModalOpen] = useState(false);
-  const [newTaskForm, setNewTaskForm] = useState({
-    title: "",
-    dueDate: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
-    description: "",
-  });
-
-  const [assignExamModalOpen, setAssignExamModalOpen] = useState(false);
-  const [newExamForm, setNewExamForm] = useState({
-    title: "",
-    type: "MCQs",
-    questionsCount: 10,
-    passingPercentage: 70,
-    dueDate: new Date(Date.now() + 6 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
-    details: "",
-  });
-
-  const [activeTestModal, setActiveTestModal] = useState(null);
-  const [mcqAnswers, setMcqAnswers] = useState({ q1: "B", q2: "A" });
-  const [codeSubmission, setCodeSubmission] = useState("// Write your Node.js middleware code here\nfunction verifyJwtToken(req, res, next) {\n  // Code implementation\n}");
-
-  const [uploadModalOpen, setUploadModalOpen] = useState(false);
-  const [proofForm, setProofForm] = useState({ txnRef: "", fileName: "bank_receipt_proof.pdf" });
-  const [taskSubmitModal, setTaskSubmitModal] = useState(null);
-  const [submissionForm, setSubmissionForm] = useState({ file: "solution_zip_project.zip", notes: "", link: "" });
-
-  const syllabusTopics = [
-    "HTML5, CSS3, Flexbox Grid & Modern Design Systems",
-    "JavaScript ES6+, DOM Manipulation & Async Operations",
-    "React.js Fundamentals, Hooks State & Components",
-    "Next.js App Router, SSR, SSG & API Route Handlers",
-    "Tailwind CSS, Glassmorphism & Framer Motion UI",
-    "Node.js Express REST APIs & Supabase Auth",
-    "PostgreSQL Database, Prisma ORM & Relational Schema",
-    "State Management (Zustand / Redux Toolkit) & Context API",
-    "Payment Gateway Integration & Automated PDF Receipt Engines",
-    "Full-Stack MERN Architecture, Auth Middleware & Security",
-    "Enterprise Project Development, Testing & Code Audits",
-    "Final Capstone Project Deployment & Job Placement Prep",
-  ];
+  // Certificate Modal & QR State
+  const [certificateModalOpen, setCertificateModalOpen] = useState(false);
+  const [feeReceiptModalOpen, setFeeReceiptModalOpen] = useState(false);
 
   useEffect(() => {
     const savedRole = localStorage.getItem("user_role") || "student";
+    const savedEmail = localStorage.getItem("current_user_email") || "student@gmail.com";
+    const savedName = localStorage.getItem("current_user_name") || "Ali Hassan";
+
     setRole(savedRole);
+    setStudentInfo((prev) => ({ ...prev, email: savedEmail, name: savedName }));
 
-    const savedEmail = localStorage.getItem("current_user_email");
-    if (savedEmail) {
-      setStudentInfo(prev => ({
-        ...prev,
-        email: savedEmail,
-        name: savedEmail.split("@")[0] || "Ali Hassan"
-      }));
-    }
-
-    try {
-      const savedTasks = localStorage.getItem("software_house_assigned_tasks");
-      if (savedTasks) {
-        setAssignedTasks(JSON.parse(savedTasks));
-      }
-    } catch(e) {}
+    loadStudentTasks(savedEmail);
   }, []);
 
-  const handleDownloadReceipt = () => {
-    generatePrintableStudentFeeReceiptPdf({
-      receiptNo: feeStatus.receiptNo || "REC-99812",
-      studentName: studentInfo.name,
-      email: studentInfo.email,
-      course: studentInfo.course,
-      amount: feeStatus.amount,
-      txnRef: feeStatus.txnRef || "TRX-8821992",
-      datePaid: feeStatus.verificationDate || new Date().toLocaleDateString(),
+  const loadStudentTasks = async (email) => {
+    try {
+      const tasks = await getDailyTasks(email);
+      setAssignedTasks(tasks || []);
+    } catch (e) {
+      console.error("Error loading tasks:", e);
+    }
+  };
+
+  // Live Task Duration Timer Effect
+  useEffect(() => {
+    let timer = null;
+    if (activeTaskTimerId) {
+      timer = setInterval(() => {
+        setTimerSeconds((prev) => prev + 1);
+      }, 1000);
+    }
+    return () => {
+      if (timer) clearInterval(timer);
+    };
+  }, [activeTaskTimerId]);
+
+  // Task Control Handlers
+  const handleStartTask = async (task) => {
+    const updatedTask = {
+      ...task,
+      status: "In Progress",
+      start_time: task.start_time || new Date().toISOString(),
+    };
+    setActiveTaskTimerId(task.id);
+    setTimerSeconds(task.total_working_seconds || 0);
+
+    const updatedList = await saveTaskRecord(updatedTask);
+    setAssignedTasks(updatedList);
+    showToast("Task Started ⏱️", `Timer running for "${task.task_title}"`, "info");
+  };
+
+  const handlePauseTask = async (task) => {
+    setActiveTaskTimerId(null);
+    const updatedTask = {
+      ...task,
+      status: "Paused",
+      total_working_seconds: (task.total_working_seconds || 0) + timerSeconds,
+      pause_time: new Date().toISOString(),
+    };
+
+    const updatedList = await saveTaskRecord(updatedTask);
+    setAssignedTasks(updatedList);
+    showToast("Task Paused ⏸️", `Duration logged: ${Math.floor(timerSeconds / 60)} mins`, "warning");
+  };
+
+  const handleCompleteTask = async (task) => {
+    setActiveTaskTimerId(null);
+    const updatedTask = {
+      ...task,
+      status: "Completed",
+      total_working_seconds: (task.total_working_seconds || 0) + timerSeconds,
+      completion_time: new Date().toISOString(),
+    };
+
+    const updatedList = await saveTaskRecord(updatedTask);
+    setAssignedTasks(updatedList);
+    showToast("Task Completed 🎉", `Task "${task.task_title}" marked as complete!`, "success");
+  };
+
+  // MCQ Exam Submission Handler
+  const handleSubmitMcqExam = () => {
+    let score = 0;
+    SAMPLE_MCQ_EXAM.questions.forEach((q) => {
+      if (userAnswers[q.id] === q.correctIndex) {
+        score += 25;
+      }
     });
+
+    setExamSubmittedScore(score);
+    showToast("Exam Submitted 📝", `You scored ${score}/100 in ${SAMPLE_MCQ_EXAM.title}`, score >= 70 ? "success" : "warning");
   };
 
-  const handleDownload3MonthCertificate = () => {
-    generatePrintable3MonthStudentCertificatePdf({
-      studentName: studentInfo.name,
-      courseName: studentInfo.course,
-      batchName: studentInfo.batch,
-      issueDate: new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }),
-      verificationCode: "CERT-3M-" + Math.floor(100000 + Math.random() * 900000),
-      studentEmail: studentInfo.email,
-    });
+  // Print Fee Receipt PDF
+  const handlePrintReceipt = () => {
+    try {
+      generatePrintableStudentFeeReceiptPdf({
+        student_name: studentInfo.name,
+        course_name: studentInfo.course,
+        batch: studentInfo.batch,
+        receipt_no: feeStatus.receiptNo,
+        amount_paid: feeStatus.paidAmount,
+        remaining_balance: feeStatus.remainingBalance,
+        payment_date: new Date().toLocaleDateString(),
+        payment_method: "Bank Transfer / Online",
+      });
+    } catch (e) {
+      showToast("PDF Error", "Unable to generate receipt PDF.", "error");
+    }
   };
 
-  const handleAdminVerifyPayment = () => {
-    setFeeStatus(prev => ({
-      ...prev,
-      status: "verified",
-      verificationDate: new Date().toLocaleDateString(),
-      receiptNo: "REC-" + Math.floor(100000 + Math.random() * 900000)
-    }));
+  // Print Certificate PDF
+  const handlePrintCertificate = () => {
+    try {
+      generatePrintable3MonthStudentCertificatePdf({
+        full_name: studentInfo.name,
+        course_name: studentInfo.course,
+        completion_date: "2026-08-01",
+        certificate_no: "CERT-NEXA-2026-9901",
+        grade: "A+ (98%)",
+        instructor: studentInfo.instructor,
+      });
+    } catch (e) {
+      showToast("PDF Error", "Unable to generate certificate PDF.", "error");
+    }
   };
-
-  const activeValidTasks = assignedTasks.filter(t => {
-    const currentEmail = (localStorage.getItem("current_user_email") || "student@gmail.com").toLowerCase().trim();
-    if (role === "admin" || role === "hr" || role === "manager") return true;
-    return t.assignedToEmail ? t.assignedToEmail.toLowerCase().trim() === currentEmail : true;
-  });
-
-  const userExams = exams.filter(e => {
-    const currentEmail = (localStorage.getItem("current_user_email") || "student@gmail.com").toLowerCase().trim();
-    if (role === "admin" || role === "hr" || role === "manager") return true;
-    return e.assignedToEmail ? e.assignedToEmail.toLowerCase().trim() === currentEmail : true;
-  });
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto">
-      
-      {/* 1. STANDARDIZED BLUE & WHITE HERO BANNER (Requirement #1) */}
-      <div className="bg-white rounded-2xl p-6 border border-[#E2E8F0] shadow-sm space-y-4">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-[#E2E8F0] pb-4">
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-[#2563EB] bg-[#EFF6FF] px-2.5 py-1 rounded-full border border-[#2563EB]/20">
-                Verified Student Portal
-              </span>
-              <span className="text-[10px] font-semibold text-[#64748B] bg-[#F8FAFC] px-2.5 py-1 rounded-full border border-[#E2E8F0]">
-                Active Enrolled Member
-              </span>
+    <div className="space-y-6 pb-12 font-sans bg-[#F8FAFC]">
+      {/* === STUDENT PROFILE HEADER BANNER === */}
+      <div className="rounded-2xl border border-blue-100 bg-white p-6 shadow-xs relative overflow-hidden">
+        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 relative z-10">
+          <div className="flex items-center gap-5">
+            <div className="h-16 w-16 rounded-2xl bg-blue-50 border border-blue-200 flex items-center justify-center text-[#2563EB] text-2xl font-black shadow-xs">
+              {studentInfo.name.charAt(0)}
             </div>
-            <h1 className="text-xl md:text-2xl font-bold text-[#0F172A] mt-1.5 flex items-center gap-2.5">
-              <FaGraduationCap className="text-[#2563EB]" />
-              <span>{studentInfo.course}</span>
-            </h1>
-            <p className="text-xs text-[#64748B] mt-0.5 flex flex-wrap items-center gap-3 font-medium">
-              <span><strong>Batch:</strong> {studentInfo.batch}</span>
-              <span>•</span>
-              <span><strong>Lead Trainer:</strong> {studentInfo.instructor}</span>
-              <span>•</span>
-              <span><strong>Student Email:</strong> <strong className="text-[#0F172A] font-mono">{studentInfo.email}</strong></span>
-            </p>
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <h1 className="text-xl font-bold text-[#0F172A] tracking-tight">{studentInfo.name}</h1>
+                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 whitespace-nowrap">
+                  Enrolled & Active
+                </span>
+              </div>
+              <p className="text-xs text-slate-600 font-medium">{studentInfo.course} • {studentInfo.batch}</p>
+              <p className="text-[11px] text-slate-400">Enrollment No: <span className="font-mono text-slate-800 font-semibold">{studentInfo.enrollmentNo}</span> | Email: {studentInfo.email}</p>
+            </div>
           </div>
 
-          <div className="flex items-center gap-3 shrink-0">
-            {/* Standard Royal Blue Button (#2563EB) replacing bright yellow button */}
+          <div className="flex items-center gap-3">
             <button
-              onClick={handleDownload3MonthCertificate}
-              className="bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold px-4 py-2 rounded-xl text-xs transition-colors shadow-xs flex items-center gap-1.5 cursor-pointer"
+              onClick={() => setCertificateModalOpen(true)}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs font-bold shadow-xs transition-all cursor-pointer whitespace-nowrap"
             >
-              <FaAward className="text-sm" />
-              <span>Download Certificate (PDF)</span>
+              <FaAward className="h-4 w-4" /> View Certificate & QR
+            </button>
+            <button
+              onClick={handlePrintReceipt}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-800 text-xs font-semibold transition-all cursor-pointer whitespace-nowrap"
+            >
+              <FaPrint className="h-4 w-4" /> Fee Receipt PDF
             </button>
           </div>
         </div>
 
-        {/* Course Progress Bar */}
-        <div className="space-y-2">
-          <div className="flex items-center justify-between text-xs font-semibold text-[#0F172A]">
-            <span className="flex items-center gap-2">
-              <FaBookReader className="text-[#2563EB]" />
-              <span>Current Module: {studentInfo.currentWeek}</span>
+        {/* Course Overall Progress Bar */}
+        <div className="mt-6 border-t border-slate-100 pt-5 space-y-2">
+          <div className="flex justify-between items-center text-xs">
+            <span className="text-slate-700 font-bold flex items-center gap-2">
+              <FaBookReader className="text-[#2563EB]" /> Overall Course Completion Progress
             </span>
-            <span className="bg-[#EFF6FF] text-[#2563EB] px-2.5 py-0.5 rounded-md font-mono text-[11px] font-bold border border-[#2563EB]/20">
-              {studentInfo.progress}% Completed
-            </span>
+            <span className="font-mono font-black text-[#2563EB] text-sm">{studentInfo.progress}% Completed</span>
           </div>
-          <div className="w-full bg-[#F8FAFC] rounded-full h-3 p-0.5 border border-[#E2E8F0]">
+          <div className="w-full bg-slate-100 rounded-full h-3 overflow-hidden p-0.5 border border-slate-200">
             <div
-              className="bg-[#2563EB] h-full rounded-full transition-all duration-500 shadow-xs"
+              className="bg-[#2563EB] h-full rounded-full transition-all duration-700 shadow-xs"
               style={{ width: `${studentInfo.progress}%` }}
-            ></div>
+            />
           </div>
         </div>
       </div>
 
-      {/* 2. COURSE FEE REMINDERS (Requirement #2 - Robust Date Fallback Validation) */}
-      <div id="fee-vouchers-section" className="bg-white rounded-2xl border border-[#E2E8F0] p-6 shadow-sm space-y-4">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-[#E2E8F0] pb-4">
-          <div>
-            <h2 className="text-base font-bold text-[#0F172A] flex items-center gap-2">
-              <FaMoneyBillWave className="text-[#2563EB]" />
-              <span>Course Fee Reminders & Automatic Receipt Generator</span>
-            </h2>
-            <p className="text-xs text-[#64748B] mt-0.5">
-              Proof Upload & Admin Verification Engine
-            </p>
+      {/* === DASHBOARD STATS GRID === */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="p-5 rounded-2xl border border-slate-200 bg-white shadow-xs space-y-2">
+          <div className="flex justify-between items-center text-xs text-slate-500">
+            <span>Current Learning Week</span>
+            <FaCalendarAlt className="text-blue-500" />
           </div>
-
-          <div>
-            {feeStatus.status === "verified" ? (
-              <span className="bg-[#EFF6FF] text-[#2563EB] border border-[#2563EB]/20 px-3.5 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1.5">
-                <FaCheckCircle className="text-xs text-[#2563EB]" /> Fee Verified & Paid
-              </span>
-            ) : (
-              <span className="bg-[#FEF3C7] text-[#92400E] border border-[#F59E0B]/20 px-3.5 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1.5">
-                <FaClock className="text-xs text-[#92400E]" /> Upcoming Cycle Due
-              </span>
-            )}
-          </div>
+          <p className="text-sm font-bold text-slate-900">{studentInfo.currentWeek}</p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
-          <div className="bg-[#F8FAFC] p-4 rounded-xl border border-[#E2E8F0] space-y-1">
-            <span className="text-[#64748B] font-semibold uppercase text-[10px]">Monthly Fee Amount</span>
-            <p className="text-lg font-bold text-[#0F172A]">Rs. {feeStatus.amount.toLocaleString()}</p>
-            {/* Robust Date Validation (Requirement #2) */}
-            <p className="text-[#64748B]">
-              Next Cycle Due Date: <strong className="text-[#0F172A]">{formatSafeDueDate(feeStatus.dueDate)}</strong>
-            </p>
+        <div className="p-5 rounded-2xl border border-slate-200 bg-white shadow-xs space-y-2">
+          <div className="flex justify-between items-center text-xs text-slate-500">
+            <span>Attendance Rate</span>
+            <FaUserCheck className="text-emerald-500" />
           </div>
-
-          <div className="bg-[#F8FAFC] p-4 rounded-xl border border-[#E2E8F0] space-y-2">
-            <span className="text-[#64748B] font-semibold uppercase text-[10px]">Step 1: Student Proof Upload</span>
-            {feeStatus.status === "verified" ? (
-              <p className="text-[#2563EB] font-bold">Proof Verified by Admin ✅</p>
-            ) : (
-              <button
-                onClick={() => setUploadModalOpen(true)}
-                className="w-full bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold py-2 rounded-xl transition-colors shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
-              >
-                <FaFileUpload />
-                <span>Upload Payment Proof Slip</span>
-              </button>
-            )}
-          </div>
-
-          <div className="bg-[#F8FAFC] p-4 rounded-xl border border-[#E2E8F0] space-y-2">
-            <span className="text-[#64748B] font-semibold uppercase text-[10px]">Step 2: Admin Verify & Receipt</span>
-            {feeStatus.status === "verified" ? (
-              <button
-                onClick={handleDownloadReceipt}
-                className="w-full bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold py-2 rounded-xl transition-colors shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
-              >
-                <FaFileDownload />
-                <span>Download Official Fee Receipt (PDF)</span>
-              </button>
-            ) : (
-              <button
-                onClick={handleAdminVerifyPayment}
-                className="w-full bg-white hover:bg-[#F8FAFC] text-[#2563EB] border border-[#E2E8F0] font-bold py-2 rounded-xl transition-colors shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
-              >
-                <FaUserCheck />
-                <span>Admin Verify & Issue Receipt</span>
-              </button>
-            )}
-          </div>
+          <p className="text-xl font-black text-slate-900">{studentInfo.attendance}% <span className="text-xs font-normal text-emerald-600">(Excellent)</span></p>
         </div>
-      </div>
 
-      {/* 3. UNIFIED ACTION SYSTEM FOR PERSONAL DASHBOARD HUB (Requirement #3) */}
-      <div className="bg-white rounded-2xl border border-[#E2E8F0] p-6 shadow-sm space-y-4">
-        <div className="border-b border-[#E2E8F0] pb-3">
-          <h2 className="text-base font-bold text-[#0F172A] flex items-center gap-2">
-            <FaUserCheck className="text-[#2563EB]" />
-            <span>My Personal Dashboard Hub</span>
-          </h2>
-          <p className="text-xs text-[#64748B] mt-0.5">
-            Strictly scoped to your account ({studentInfo.email}).
+        <div className="p-5 rounded-2xl border border-slate-200 bg-white shadow-xs space-y-2">
+          <div className="flex justify-between items-center text-xs text-slate-500">
+            <span>Fee Status</span>
+            <FaMoneyBillWave className="text-emerald-500" />
+          </div>
+          <p className="text-sm font-bold text-emerald-600 flex items-center gap-1">
+            <FaCheckCircle /> {feeStatus.status}
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
-          {/* Card 1: Attendance */}
-          <div className="p-4 rounded-xl border border-[#E2E8F0] bg-white space-y-2 flex flex-col justify-between">
-            <div>
-              <div className="flex items-center justify-between font-bold text-[#0F172A]">
-                <span className="flex items-center gap-1.5 text-[#2563EB]">
-                  <FaUserClock /> My Attendance Log
-                </span>
-                <span className="bg-[#EFF6FF] text-[#2563EB] text-[10px] px-2.5 py-0.5 rounded-full font-bold border border-[#2563EB]/20">94% Present</span>
-              </div>
-              <p className="text-[11px] text-[#64748B] mt-2">
-                Personal daily check-in / check-out times and office IP verification status.
-              </p>
-            </div>
-            <a
-              href="/dashboard/attendance"
-              className="w-full bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold py-2 rounded-xl text-center transition-colors shadow-xs block"
-            >
-              Open Attendance →
-            </a>
+        <div className="p-5 rounded-2xl border border-slate-200 bg-white shadow-xs space-y-2">
+          <div className="flex justify-between items-center text-xs text-slate-500">
+            <span>Active Instructor</span>
+            <FaChalkboardTeacher className="text-indigo-500" />
           </div>
-
-          {/* Card 2: Tasks */}
-          <div className="p-4 rounded-xl border border-[#E2E8F0] bg-white space-y-2 flex flex-col justify-between">
-            <div>
-              <div className="flex items-center justify-between font-bold text-[#0F172A]">
-                <span className="flex items-center gap-1.5 text-[#2563EB]">
-                  <FaTasks /> My Tasks & Progress
-                </span>
-                <span className="bg-[#EFF6FF] text-[#2563EB] text-[10px] px-2.5 py-0.5 rounded-full font-bold border border-[#2563EB]/20">{activeValidTasks.length} Active</span>
-              </div>
-              <p className="text-[11px] text-[#64748B] mt-2">
-                Assigned daily tasks, work stopwatch timer, and active project deadlines.
-              </p>
-            </div>
-            <a
-              href="/dashboard/projects"
-              className="w-full bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold py-2 rounded-xl text-center transition-colors shadow-xs block"
-            >
-              Open Daily Tasks →
-            </a>
-          </div>
-
-          {/* Card 3: Complaints */}
-          <div className="p-4 rounded-xl border border-[#E2E8F0] bg-white space-y-2 flex flex-col justify-between">
-            <div>
-              <div className="flex items-center justify-between font-bold text-[#0F172A]">
-                <span className="flex items-center gap-1.5 text-[#2563EB]">
-                  <FaCommentDots /> My Complaints Ticket
-                </span>
-                <span className="bg-[#EFF6FF] text-[#2563EB] text-[10px] px-2.5 py-0.5 rounded-full font-bold border border-[#2563EB]/20">Helpdesk</span>
-              </div>
-              <p className="text-[11px] text-[#64748B] mt-2">
-                Report Internet, HR, Teacher, or System issues and track 3-stage resolution status.
-              </p>
-            </div>
-            <a
-              href="/dashboard/complaints"
-              className="w-full bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold py-2 rounded-xl text-center transition-colors shadow-xs block"
-            >
-              Open Complaints →
-            </a>
-          </div>
+          <p className="text-xs font-bold text-slate-900">{studentInfo.instructor}</p>
         </div>
       </div>
 
-      {/* 4. EXAMINATION MODULE SECTION (Requirement #4 - Ice Blue Pill Badges & Subtle Completed Indicators) */}
-      <div className="bg-white rounded-2xl border border-[#E2E8F0] p-6 shadow-sm space-y-4">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-[#E2E8F0] pb-4">
+      {/* === SECTION: DAILY TASK MANAGER WITH LIVE TIMER === */}
+      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-xs space-y-6">
+        <div className="flex items-center justify-between border-b border-slate-100 pb-4">
           <div>
-            <h2 className="text-base font-bold text-[#0F172A] flex items-center gap-2">
-              <FaClipboardCheck className="text-[#2563EB]" />
-              <span>Examination Module (Online MCQs, Coding & Practical Tests)</span>
+            <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
+              <FaTasks className="text-blue-600" /> My Daily Work & Assignment Tasks
             </h2>
-            <p className="text-xs text-[#64748B] mt-0.5">
-              Online MCQs & Coding Tests with Automated Grading Engine
-            </p>
+            <p className="text-xs text-slate-500">Start task timers to record working duration and submit daily progress updates.</p>
           </div>
 
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold bg-[#EFF6FF] text-[#2563EB] border border-[#2563EB]/20 px-3 py-1 rounded-full">
-              {userExams.length} Exams Active
-            </span>
-          </div>
+          <button
+            onClick={() => loadStudentTasks(studentInfo.email)}
+            className="px-3 py-1.5 rounded-xl border border-slate-200 bg-slate-50 text-slate-700 text-xs font-semibold hover:bg-slate-100 transition-colors"
+          >
+            Refresh Tasks
+          </button>
         </div>
 
-        {/* Exams List Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
-          {userExams.length === 0 ? (
-            <div className="col-span-3 p-8 text-center text-[#64748B] italic bg-[#F8FAFC] rounded-xl border border-[#E2E8F0]">
-              No examination tests assigned to your logged-in account ({studentInfo.email}).
-            </div>
-          ) : (
-            userExams.map((ex) => {
-              const isGraded = ex.status.includes("Graded") || ex.status.includes("100%") || ex.status.includes("85%");
-
-              return (
-                <div key={ex.id} className="p-4 rounded-xl border border-[#E2E8F0] bg-white space-y-3 flex flex-col justify-between shadow-xs">
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      {/* Compact Ice Blue Pill Badge (Requirement #4) */}
-                      <span className="text-[10px] font-bold uppercase px-2.5 py-0.5 rounded-full bg-[#EFF6FF] text-[#2563EB] border border-[#2563EB]/20 whitespace-nowrap">
-                        {ex.type}
-                      </span>
-                      <span className="text-[10px] text-[#64748B] font-semibold">Due: {formatSafeDueDate(ex.dueDate)}</span>
-                    </div>
-
-                    <h3 className="font-bold text-[#0F172A] text-xs leading-snug">{ex.title}</h3>
-                    <p className="text-[#64748B] text-[11px]">{ex.details}</p>
-
-                    <div className="pt-2 border-t border-[#E2E8F0] space-y-1">
-                      <div className="flex justify-between text-[11px]">
-                        <span className="text-[#64748B]">Auto-Grading:</span>
-                        <span className="font-semibold text-[#0F172A]">{ex.autoGrading ? "Enabled" : "Manual Instructor"}</span>
-                      </div>
-                      <div className="flex justify-between text-[11px]">
-                        <span className="text-[#64748B]">Passing Criteria:</span>
-                        <span className="font-semibold text-[#0F172A]">{ex.passingPercentage}% Minimum</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Lightweight Status Badge replacing large colored footer button (Requirement #4) */}
-                  <div>
-                    {isGraded ? (
-                      <div className="w-full bg-[#EFF6FF] text-[#2563EB] border border-[#2563EB]/20 py-2 rounded-xl font-bold text-center flex items-center justify-center gap-1.5">
-                        <FaCheck className="text-xs text-[#2563EB]" />
-                        <span>✓ Completed ({ex.score})</span>
-                      </div>
-                    ) : (
-                      <button
-                        onClick={() => setActiveTestModal(ex)}
-                        className="w-full bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold py-2 rounded-xl text-center transition-colors shadow-xs cursor-pointer block"
-                      >
-                        Take Test Now →
-                      </button>
-                    )}
-                  </div>
+        {/* Task Cards List */}
+        <div className="space-y-4">
+          {assignedTasks.map((t) => (
+            <div
+              key={t.id}
+              className="p-5 rounded-2xl border border-slate-200 bg-slate-50/50 hover:bg-white transition-all space-y-3"
+            >
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+                <div>
+                  <span className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider mb-1 ${
+                    t.priority === "Urgent" || t.priority === "High"
+                      ? "bg-rose-100 text-rose-700"
+                      : "bg-blue-100 text-blue-700"
+                  }`}>
+                    {t.priority} Priority
+                  </span>
+                  <h3 className="text-sm font-bold text-slate-900">{t.task_title}</h3>
+                  <p className="text-xs text-slate-500">{t.description}</p>
                 </div>
-              );
-            })
-          )}
+
+                <div className="flex items-center gap-2 self-end sm:self-auto">
+                  {t.status === "Pending" && (
+                    <button
+                      onClick={() => handleStartTask(t)}
+                      className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 text-white font-semibold text-xs hover:bg-emerald-700 transition-colors shadow-xs"
+                    >
+                      <FaPlay className="h-3 w-3" /> Start Task
+                    </button>
+                  )}
+
+                  {t.status === "In Progress" && (
+                    <>
+                      <button
+                        onClick={() => handlePauseTask(t)}
+                        className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-amber-500 text-white font-semibold text-xs hover:bg-amber-600 transition-colors"
+                      >
+                        <FaPause className="h-3 w-3" /> Pause
+                      </button>
+                      <button
+                        onClick={() => handleCompleteTask(t)}
+                        className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-blue-600 text-white font-semibold text-xs hover:bg-blue-700 transition-colors shadow-xs"
+                      >
+                        <FaCheckCircle className="h-3 w-3" /> Complete
+                      </button>
+                    </>
+                  )}
+
+                  {t.status === "Completed" && (
+                    <span className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-emerald-100 text-emerald-800 text-xs font-bold">
+                      <FaCheckDouble /> Completed
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between text-[11px] text-slate-400 border-t border-slate-200/60 pt-3">
+                <span>Due Date: <strong>{formatSafeDueDate(t.due_date)}</strong></span>
+                <span>Assigned by: <strong>{t.assigned_by_name}</strong></span>
+                <span className="font-mono text-slate-700">Logged Time: {Math.floor((t.total_working_seconds || 0) / 60)} mins</span>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
 
+      {/* === SECTION: ONLINE EXAMINATIONS & MCQ QUIZ ENGINE === */}
+      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-xs space-y-6">
+        <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+          <div>
+            <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
+              <FaLaptopCode className="text-blue-600" /> Examinations & Testing Suite
+            </h2>
+            <p className="text-xs text-slate-500">Attempt online MCQ tests, live coding evaluations, and submit practical assignments.</p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          {/* MCQ Test Card */}
+          <div className="p-5 rounded-2xl border border-slate-200 bg-gradient-to-br from-blue-50/50 to-white space-y-3">
+            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800 uppercase">
+              Online MCQ Exam
+            </span>
+            <h3 className="font-bold text-slate-900 text-sm">{SAMPLE_MCQ_EXAM.title}</h3>
+            <p className="text-xs text-slate-600">4 Multiple choice questions with timer & auto-grading.</p>
+
+            <button
+              onClick={() => setMcqModalOpen(true)}
+              className="w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs transition-colors shadow-xs"
+            >
+              Start MCQ Exam Now
+            </button>
+          </div>
+
+          {/* Practical Assignment Card */}
+          <div className="p-5 rounded-2xl border border-slate-200 bg-gradient-to-br from-indigo-50/50 to-white space-y-3">
+            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 text-indigo-800 uppercase">
+              Practical Coding Project
+            </span>
+            <h3 className="font-bold text-slate-900 text-sm">Full-Stack MERN E-Commerce App</h3>
+            <p className="text-xs text-slate-600">Submit GitHub Repo link or PDF documentation for teacher review.</p>
+
+            <button
+              onClick={() => showToast("Submission Modal", "Upload your PDF or GitHub URL.", "info")}
+              className="w-full py-2.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-800 font-semibold text-xs transition-colors"
+            >
+              Submit Project Solution
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* === MCQ EXAM RUNNER MODAL === */}
+      {mcqModalOpen && (
+        <Modal
+          isOpen={mcqModalOpen}
+          onClose={() => setMcqModalOpen(false)}
+          title={SAMPLE_MCQ_EXAM.title}
+        >
+          <div className="space-y-6 text-xs text-slate-700">
+            {examSubmittedScore === null ? (
+              <div className="space-y-5">
+                <div className="p-3 rounded-xl bg-blue-50 border border-blue-100 text-blue-900 flex justify-between items-center">
+                  <span>Pass Percentage: <strong>{SAMPLE_MCQ_EXAM.pass_percentage}%</strong></span>
+                  <span>Duration: <strong>{SAMPLE_MCQ_EXAM.duration_minutes} Mins</strong></span>
+                </div>
+
+                {SAMPLE_MCQ_EXAM.questions.map((q, qIdx) => (
+                  <div key={q.id} className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
+                    <p className="font-bold text-slate-900 text-xs">
+                      Q{qIdx + 1}. {q.question}
+                    </p>
+                    <div className="space-y-1.5 pt-1">
+                      {q.options.map((opt, optIdx) => (
+                        <label
+                          key={optIdx}
+                          className={`flex items-center gap-2 p-2 rounded-lg border cursor-pointer transition-colors ${
+                            userAnswers[q.id] === optIdx
+                              ? "bg-blue-100 border-blue-400 text-blue-900 font-semibold"
+                              : "bg-white border-slate-200 hover:bg-slate-100"
+                          }`}
+                        >
+                          <input
+                            type="radio"
+                            name={q.id}
+                            checked={userAnswers[q.id] === optIdx}
+                            onChange={() => setUserAnswers((prev) => ({ ...prev, [q.id]: optIdx }))}
+                            className="text-blue-600"
+                          />
+                          <span>{opt}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+
+                <div className="flex justify-end gap-3 pt-3">
+                  <button
+                    onClick={() => setMcqModalOpen(false)}
+                    className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 font-semibold hover:bg-slate-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleSubmitMcqExam}
+                    className="px-5 py-2 rounded-xl bg-blue-600 text-white font-semibold hover:bg-blue-700 shadow-xs"
+                  >
+                    Submit Exam Answers
+                  </button>
+                </div>
+              </div>
+            ) : (
+              /* Score Display */
+              <div className="text-center py-6 space-y-4">
+                <div className={`mx-auto h-16 w-16 rounded-full flex items-center justify-center text-white text-2xl font-bold ${
+                  examSubmittedScore >= 70 ? "bg-emerald-500" : "bg-amber-500"
+                }`}>
+                  {examSubmittedScore}%
+                </div>
+
+                <div className="space-y-1">
+                  <h3 className="text-base font-bold text-slate-900">
+                    {examSubmittedScore >= 70 ? "Congratulations! Exam Passed 🎉" : "Exam Attempt Completed"}
+                  </h3>
+                  <p className="text-xs text-slate-500">Your score has been logged to your academic record.</p>
+                </div>
+
+                <button
+                  onClick={() => setMcqModalOpen(false)}
+                  className="px-5 py-2 rounded-xl bg-slate-900 text-white font-semibold text-xs"
+                >
+                  Close Exam
+                </button>
+              </div>
+            )}
+          </div>
+        </Modal>
+      )}
+
+      {/* === CERTIFICATE PREVIEW & QR MODAL === */}
+      {certificateModalOpen && (
+        <Modal
+          isOpen={certificateModalOpen}
+          onClose={() => setCertificateModalOpen(false)}
+          title="Official Course Certificate & Verification QR"
+        >
+          <div className="space-y-5 text-xs text-slate-700">
+            <div className="p-6 rounded-2xl border-2 border-blue-200 bg-gradient-to-br from-blue-50/60 via-white to-slate-50 text-center space-y-3">
+              <FaAward className="mx-auto h-12 w-12 text-blue-600" />
+              <h3 className="text-base font-black text-slate-900 uppercase tracking-tight">
+                Certificate of Academic Excellence
+              </h3>
+              <p className="text-xs text-slate-600">This certifies that <strong>{studentInfo.name}</strong> has successfully completed all requirements for <strong>{studentInfo.course}</strong>.</p>
+              
+              <div className="pt-2 flex justify-center">
+                <div className="p-3 bg-white border border-slate-200 rounded-xl inline-block shadow-xs">
+                  <FaQrcode className="h-16 w-16 text-slate-900 mx-auto" />
+                  <p className="text-[9px] font-mono text-slate-500 mt-1">Scan or Visit to Verify</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-between items-center">
+              <Link
+                href="/verify-certificate?id=CERT-NEXA-2026-9901"
+                target="_blank"
+                className="flex items-center gap-1.5 text-blue-600 font-semibold hover:underline"
+              >
+                <FaQrcode /> Open Public Verification Link
+              </Link>
+
+              <button
+                onClick={handlePrintCertificate}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 text-white font-semibold hover:bg-blue-700 transition-colors shadow-xs"
+              >
+                <FaPrint /> Download Certificate PDF
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }

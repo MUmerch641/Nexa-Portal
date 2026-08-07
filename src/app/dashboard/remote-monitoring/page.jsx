@@ -32,7 +32,8 @@ import {
   FaFilter,
   FaFileExport,
   FaChartLine,
-  FaRegLightbulb
+  FaRegLightbulb,
+  FaEllipsisV
 } from "react-icons/fa";
 
 import {
@@ -88,11 +89,13 @@ export default function RemoteMonitoringPage() {
   const [appUsageList, setAppUsageList] = useState(INITIAL_APP_USAGE);
   const [settings, setSettings] = useState({ retentionDays: 60, minInterval: 5, maxInterval: 15 });
 
-  // === Admin Filters & Search State ===
+  // === Admin Filters, Dropdown & Confirm Modal State ===
   const [selectedEmployeeFilter, setSelectedEmployeeFilter] = useState("All");
   const [selectedDepartmentFilter, setSelectedDepartmentFilter] = useState("All");
   const [selectedDateFilter, setSelectedDateFilter] = useState("Today");
   const [searchQuery, setSearchQuery] = useState("");
+  const [isHeaderKebabOpen, setIsHeaderKebabOpen] = useState(false);
+  const [confirmModal, setConfirmModal] = useState({ isOpen: false, loading: false });
 
   // === Image Fallback handling ===
   const [failedImages, setFailedImages] = useState({});
@@ -527,25 +530,42 @@ export default function RemoteMonitoringPage() {
             <FaSync className="h-4 w-4" />
           </button>
 
-          <button
-            onClick={async () => {
-              if (typeof window !== "undefined") {
-                localStorage.removeItem("remote_work_sessions");
-                localStorage.removeItem("remote_screenshot_logs");
-                localStorage.removeItem("remote_work_timelines");
-                localStorage.removeItem("remote_activity_logs");
-                localStorage.removeItem("remote_app_usage_logs");
-              }
-              setRemoteSessions([]);
-              setScreenshots([]);
-              setWorkTimelines([]);
-              showToast("Data Cleared 🗑️", "All dummy sessions and logs removed.", "info");
-            }}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 font-semibold text-xs transition-colors"
-            title="Clear All Sessions & Dummy Data"
-          >
-            <FaTrash className="h-3 w-3" /> Clear All Data
-          </button>
+          {/* Contextual 3-Dots Action Menu (Requirement #2) */}
+          <div className="relative">
+            <button
+              onClick={() => setIsHeaderKebabOpen(!isHeaderKebabOpen)}
+              className="p-2.5 rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 transition-colors cursor-pointer"
+              title="More Actions"
+            >
+              <FaEllipsisV className="h-4 w-4" />
+            </button>
+
+            {isHeaderKebabOpen && (
+              <div className="absolute right-0 mt-2 w-48 rounded-xl bg-white p-1.5 shadow-lg border border-slate-200 z-30 space-y-1 text-xs">
+                <button
+                  onClick={() => {
+                    setIsHeaderKebabOpen(false);
+                    loadMonitoringData();
+                  }}
+                  className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-50 text-slate-700 font-medium transition-colors"
+                >
+                  Sync Database Logs
+                </button>
+
+                <div className="border-t border-slate-100 my-1" />
+
+                <button
+                  onClick={() => {
+                    setIsHeaderKebabOpen(false);
+                    setConfirmModal({ isOpen: true, loading: false });
+                  }}
+                  className="w-full text-left px-3 py-2 rounded-lg hover:bg-rose-50 text-rose-600 font-semibold transition-colors flex items-center gap-2"
+                >
+                  <FaTrash className="h-3 w-3" /> Clear All Data
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -1167,6 +1187,54 @@ export default function RemoteMonitoringPage() {
                 className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 font-semibold"
               >
                 Close Preview
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* === DESTRUCTIVE ACTION CONFIRMATION MODAL (Requirement #2) === */}
+      {confirmModal.isOpen && (
+        <Modal
+          isOpen={confirmModal.isOpen}
+          onClose={() => setConfirmModal({ isOpen: false, loading: false })}
+          title="Confirm Destructive Action"
+        >
+          <div className="space-y-4 text-xs text-slate-700">
+            <div className="flex items-center gap-3 p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800">
+              <FaExclamationTriangle className="h-5 w-5 shrink-0 text-rose-600" />
+              <p className="font-semibold">
+                Are you sure you want to clear all monitoring logs and sessions? This action cannot be undone.
+              </p>
+            </div>
+
+            <div className="flex justify-end gap-3 pt-3">
+              <button
+                onClick={() => setConfirmModal({ isOpen: false, loading: false })}
+                className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 font-semibold hover:bg-slate-50 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  setConfirmModal({ ...confirmModal, loading: true });
+                  if (typeof window !== "undefined") {
+                    localStorage.removeItem("remote_work_sessions");
+                    localStorage.removeItem("remote_screenshot_logs");
+                    localStorage.removeItem("remote_work_timelines");
+                    localStorage.removeItem("remote_activity_logs");
+                    localStorage.removeItem("remote_app_usage_logs");
+                  }
+                  setRemoteSessions([]);
+                  setScreenshots([]);
+                  setWorkTimelines([]);
+                  setConfirmModal({ isOpen: false, loading: false });
+                  showToast("Data Cleared 🗑️", "All dummy monitoring sessions and logs removed.", "info");
+                }}
+                disabled={confirmModal.loading}
+                className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold transition-colors shadow-xs cursor-pointer"
+              >
+                {confirmModal.loading ? "Clearing..." : "Confirm & Clear All Data 🗑️"}
               </button>
             </div>
           </div>
