@@ -8,92 +8,142 @@ import {
   FaUsers,
   FaCalendarCheck,
   FaUserClock,
-  FaMoneyBillWave,
   FaWallet,
   FaGraduationCap,
   FaProjectDiagram,
   FaUserTie,
-  FaTimes,
   FaLandmark,
   FaBuilding,
-  FaFileAlt,
   FaLaptopCode,
   FaExclamationTriangle,
   FaVideo,
   FaTrophy,
   FaDesktop,
   FaBullhorn,
+  FaChevronDown,
+  FaChevronRight,
   FaChevronLeft,
   FaCogs
 } from "react-icons/fa";
 
-const adminMenus = [
-  { name: "Overview Dashboard", href: "/dashboard", icon: FaChartPie },
-  { name: "Company Settings & Branding", href: "/dashboard/settings", icon: FaCogs },
-  { name: "Student Portal Dashboard", href: "/dashboard/student", icon: FaGraduationCap },
-  { name: "Announcement Board", href: "/dashboard/announcements", icon: FaBullhorn },
-  { name: "Remote Monitoring", href: "/dashboard/remote-monitoring", icon: FaDesktop },
-  { name: "Performance & Ranking", href: "/dashboard/performance", icon: FaTrophy },
-  { name: "Meeting Management", href: "/dashboard/meetings", icon: FaVideo },
-  { name: "Complaint System", href: "/dashboard/complaints", icon: FaExclamationTriangle },
-  { name: "Payroll, Payslips & Staff", href: "/dashboard/payroll", icon: FaWallet },
-  { name: "Leave Approvals", href: "/dashboard/leaves", icon: FaUserClock },
-  { name: "Attendance Control", href: "/dashboard/attendance", icon: FaCalendarCheck },
-  { name: "Finance & Accounting", href: "/dashboard/finance", icon: FaLandmark },
-  { name: "Clients & Deals", href: "/dashboard/clients", icon: FaBuilding },
-  { name: "Projects Progress Feed", href: "/dashboard/projects", icon: FaProjectDiagram },
-  { name: "Courses & Paid Students", href: "/dashboard/courses", icon: FaGraduationCap },
-  { name: "3-Month Free Internships", href: "/dashboard/internships", icon: FaLaptopCode },
+const adminMenuGroups = [
+  {
+    title: "Core Management",
+    id: "core",
+    items: [
+      { name: "Overview Dashboard", href: "/dashboard", icon: FaChartPie },
+      { name: "Employees Directory", href: "/dashboard/employees", icon: FaUsers },
+      { name: "Projects Directory", href: "/dashboard/projects", icon: FaProjectDiagram },
+      { name: "Remote Monitoring", href: "/dashboard/remote-monitoring", icon: FaDesktop },
+    ]
+  },
+  {
+    title: "Attendance & HR",
+    id: "hr",
+    items: [
+      { name: "Attendance Control", href: "/dashboard/attendance", icon: FaCalendarCheck },
+      { name: "Leave Approvals", href: "/dashboard/leaves", icon: FaUserClock },
+      { name: "Payroll & Payslips", href: "/dashboard/payroll", icon: FaWallet },
+      { name: "Performance Reviews", href: "/dashboard/performance", icon: FaTrophy },
+      { name: "Complaints Hub", href: "/dashboard/complaints", icon: FaExclamationTriangle },
+    ]
+  },
+  {
+    title: "Academic & Students",
+    id: "academic",
+    items: [
+      { name: "Student Portal", href: "/dashboard/student", icon: FaGraduationCap },
+      { name: "Courses & Students", href: "/dashboard/courses", icon: FaGraduationCap },
+      { name: "3-Month Internships", href: "/dashboard/internships", icon: FaLaptopCode },
+      { name: "Announcement Board", href: "/dashboard/announcements", icon: FaBullhorn },
+    ]
+  },
+  {
+    title: "Finance & Accounting",
+    id: "finance",
+    items: [
+      { name: "Finance Overview", href: "/dashboard/finance", icon: FaLandmark },
+      { name: "Clients & Deals", href: "/dashboard/clients", icon: FaBuilding },
+    ]
+  },
+  {
+    title: "Administration",
+    id: "admin",
+    items: [
+      { name: "Meeting Management", href: "/dashboard/meetings", icon: FaVideo },
+      { name: "Company Settings", href: "/dashboard/settings", icon: FaCogs },
+    ]
+  }
 ];
 
-// Employee / Staff Menus
-const employeeMenus = [
-  { name: "My Dashboard & Staff Portal", href: "/dashboard/employees", icon: FaUserTie },
-  { name: "Company Settings & Branding", href: "/dashboard/settings", icon: FaCogs },
-  { name: "My Salary & Payslips", href: "/dashboard/payroll", icon: FaWallet },
-  { name: "Announcement Board", href: "/dashboard/announcements", icon: FaBullhorn },
-  { name: "Remote Work Monitor", href: "/dashboard/remote-monitoring", icon: FaDesktop },
-  { name: "My Performance Score", href: "/dashboard/performance", icon: FaTrophy },
-  { name: "Meeting Management", href: "/dashboard/meetings", icon: FaVideo },
-  { name: "Complaint System", href: "/dashboard/complaints", icon: FaExclamationTriangle },
-  { name: "My Projects Progress", href: "/dashboard/projects", icon: FaProjectDiagram },
-  { name: "Leave Application", href: "/dashboard/leaves", icon: FaUserClock },
+const employeeMenuGroups = [
+  {
+    title: "Staff Workspace",
+    id: "staff_core",
+    items: [
+      { name: "My Staff Portal", href: "/dashboard/employees", icon: FaUserTie },
+      { name: "My Projects Progress", href: "/dashboard/projects", icon: FaProjectDiagram },
+      { name: "Remote Work Monitor", href: "/dashboard/remote-monitoring", icon: FaDesktop },
+    ]
+  },
+  {
+    title: "HR & Self Service",
+    id: "staff_hr",
+    items: [
+      { name: "My Salary & Payslips", href: "/dashboard/payroll", icon: FaWallet },
+      { name: "Leave Applications", href: "/dashboard/leaves", icon: FaUserClock },
+      { name: "My Performance", href: "/dashboard/performance", icon: FaTrophy },
+      { name: "Meeting Room", href: "/dashboard/meetings", icon: FaVideo },
+    ]
+  },
+  {
+    title: "Support & Settings",
+    id: "staff_support",
+    items: [
+      { name: "Announcements", href: "/dashboard/announcements", icon: FaBullhorn },
+      { name: "Complaints Box", href: "/dashboard/complaints", icon: FaExclamationTriangle },
+      { name: "Company Settings", href: "/dashboard/settings", icon: FaCogs },
+    ]
+  }
 ];
 
-// Course Student Specific Menus
-const courseStudentMenus = [
-  { name: "Student Portal Dashboard", href: "/dashboard/student", icon: FaGraduationCap },
-  { name: "Announcement Board", href: "/dashboard/announcements", icon: FaBullhorn },
-  { name: "Remote Work Monitor", href: "/dashboard/remote-monitoring", icon: FaDesktop },
-  { name: "Student Performance Score", href: "/dashboard/performance", icon: FaTrophy },
-  { name: "Meeting Management", href: "/dashboard/meetings", icon: FaVideo },
-  { name: "Complaint System", href: "/dashboard/complaints", icon: FaExclamationTriangle },
-  { name: "Leave Application", href: "/dashboard/leaves", icon: FaUserClock },
-];
-
-// Intern Specific Menus
-const internMenus = [
-  { name: "My 3-Month Internship", href: "/dashboard/internships", icon: FaLaptopCode },
-  { name: "Announcement Board", href: "/dashboard/announcements", icon: FaBullhorn },
-  { name: "Remote Work Monitor", href: "/dashboard/remote-monitoring", icon: FaDesktop },
-  { name: "My Performance Score", href: "/dashboard/performance", icon: FaTrophy },
-  { name: "Meeting Management", href: "/dashboard/meetings", icon: FaVideo },
-  { name: "Complaint System", href: "/dashboard/complaints", icon: FaExclamationTriangle },
-  { name: "My Assigned Project", href: "/dashboard/projects", icon: FaProjectDiagram },
-  { name: "Leave Application", href: "/dashboard/leaves", icon: FaUserClock },
-];
-
-const clientMenus = [
-  { name: "My Client Portal Dashboard", href: "/dashboard/client-portal", icon: FaProjectDiagram },
+const studentMenuGroups = [
+  {
+    title: "Academic Portal",
+    id: "student_core",
+    items: [
+      { name: "Student Dashboard", href: "/dashboard/student", icon: FaGraduationCap },
+      { name: "My Internships", href: "/dashboard/internships", icon: FaLaptopCode },
+      { name: "Assigned Projects", href: "/dashboard/projects", icon: FaProjectDiagram },
+      { name: "Remote Work Monitor", href: "/dashboard/remote-monitoring", icon: FaDesktop },
+    ]
+  },
+  {
+    title: "Activities & Support",
+    id: "student_support",
+    items: [
+      { name: "Announcements", href: "/dashboard/announcements", icon: FaBullhorn },
+      { name: "Performance Score", href: "/dashboard/performance", icon: FaTrophy },
+      { name: "Meetings", href: "/dashboard/meetings", icon: FaVideo },
+      { name: "Leave Request", href: "/dashboard/leaves", icon: FaUserClock },
+      { name: "Complaints Box", href: "/dashboard/complaints", icon: FaExclamationTriangle },
+    ]
+  }
 ];
 
 export default function Sidebar({ isOpen, onClose }) {
   const pathname = usePathname();
   const [role, setRole] = useState("admin");
+  const [collapsedGroups, setCollapsedGroups] = useState({});
 
   useEffect(() => {
     const savedRole = localStorage.getItem("user_role") || "admin";
     setRole(savedRole);
+
+    try {
+      const savedState = localStorage.getItem("sidebar_collapsed_groups");
+      if (savedState) setCollapsedGroups(JSON.parse(savedState));
+    } catch(e) {}
 
     const handleRoleChange = () => {
       setRole(localStorage.getItem("user_role") || "admin");
@@ -103,77 +153,85 @@ export default function Sidebar({ isOpen, onClose }) {
     return () => window.removeEventListener("roleChanged", handleRoleChange);
   }, []);
 
+  const toggleGroup = (groupId) => {
+    setCollapsedGroups(prev => {
+      const updated = { ...prev, [groupId]: !prev[groupId] };
+      try {
+        localStorage.setItem("sidebar_collapsed_groups", JSON.stringify(updated));
+      } catch(e) {}
+      return updated;
+    });
+  };
+
   const changeRole = (newRole) => {
     setRole(newRole);
     localStorage.setItem("user_role", newRole);
     window.dispatchEvent(new Event("roleChanged"));
   };
 
-  const navItems =
-    role === "admin"
-      ? adminMenus
-      : role === "client"
-      ? clientMenus
-      : role === "intern" || role === "internship"
-      ? internMenus
-      : role === "student" || role === "course_student" || role === "course"
-      ? courseStudentMenus
-      : employeeMenus;
+  const groups =
+    role === "admin" || role === "hr" || role === "manager" || role === "accounts"
+      ? adminMenuGroups
+      : role === "student" || role === "course_student" || role === "intern"
+      ? studentMenuGroups
+      : employeeMenuGroups;
 
-  // Allow Sidebar for client role as well
   if (role !== "admin" && role !== "hr" && role !== "manager" && role !== "accounts" && role !== "client") {
     return null;
   }
 
   return (
     <>
-      {/* Mobile Backdrop */}
+      {/* Mobile Backdrop Overlay */}
       {isOpen && (
         <div
-          className="fixed inset-0 z-40 bg-slate-900/50 backdrop-blur-xs md:hidden"
+          className="fixed inset-0 z-40 bg-slate-900/40 backdrop-blur-xs md:hidden"
           onClick={onClose}
         />
       )}
 
-      {/* Main Sidebar */}
+      {/* Enterprise Blue & White Sidebar */}
       <aside
-        className={`fixed top-0 bottom-0 left-0 z-50 flex w-64 flex-col bg-blue-700 text-white shadow-xl transition-all duration-300 ${
+        className={`fixed top-0 bottom-0 left-0 z-50 flex w-64 flex-col bg-white text-slate-800 shadow-sm border-r border-[#E2E8F0] transition-transform duration-200 ${
           isOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
         {/* Sidebar Brand Header */}
-        <div className="flex h-16 items-center justify-between border-b border-blue-600/50 px-5">
+        <div className="flex h-16 items-center justify-between border-b border-[#E2E8F0] px-4 bg-white">
           <Link href="/dashboard" className="flex items-center gap-3">
-            <img
-              src="/logo.jpeg"
-              alt="NEXA Logo"
-              className="h-9 w-9 rounded-lg object-cover border border-white/20 shadow-xs"
-            />
+            <div className="h-9 w-9 flex items-center justify-center">
+              <img
+                src="/logo.svg"
+                alt="NEXA Logo"
+                className="h-full w-full object-contain"
+              />
+            </div>
             <div>
-              <span className="text-sm font-black tracking-tight text-white block leading-tight">
-                NEXA
+              <span className="text-sm font-bold tracking-tight text-[#0F172A] block leading-none">
+                NEXA PORTAL
               </span>
-              <span className="text-[10px] text-blue-200 uppercase font-bold tracking-wider">
-                Software House System
+              <span className="text-[10px] text-[#2563EB] font-bold uppercase tracking-wider">
+                Enterprise SaaS
               </span>
             </div>
           </Link>
 
+          {/* Desktop & Mobile Collapse Button */}
           <button
             onClick={onClose}
-            className="p-2 rounded-xl text-blue-100 hover:text-white hover:bg-blue-600/80 transition-all border border-blue-500/50 cursor-pointer flex items-center gap-1.5 shadow-sm"
-            title="Close / Minimize Sidebar"
+            className="p-1.5 rounded-lg text-[#64748B] hover:text-[#0F172A] hover:bg-[#F8FAFC] transition-colors border border-[#E2E8F0] cursor-pointer flex items-center justify-center"
+            title="Collapse Sidebar"
           >
-            <FaTimes className="text-base" />
+            <FaChevronLeft className="text-xs text-[#2563EB]" />
           </button>
         </div>
 
-        {/* Role Indicator & Admin Role Switcher */}
-        <div className="border-b border-blue-600/50 p-4 bg-blue-800/40">
-          <div className="text-[10px] font-bold uppercase tracking-wider text-blue-200 mb-1.5 flex items-center justify-between">
+        {/* Role View Mode Switcher */}
+        <div className="border-b border-[#E2E8F0] p-3 bg-[#F8FAFC]">
+          <div className="text-[10px] font-bold uppercase tracking-wider text-[#64748B] mb-1 flex items-center justify-between">
             <span>Portal View Mode</span>
             {role === "admin" && (
-              <span className="text-[9px] bg-amber-400 text-slate-900 px-1.5 py-0.5 rounded font-extrabold">
+              <span className="text-[9px] bg-[#EFF6FF] text-[#2563EB] px-1.5 py-0.5 rounded font-bold border border-[#2563EB]/20">
                 ADMIN
               </span>
             )}
@@ -183,47 +241,80 @@ export default function Sidebar({ isOpen, onClose }) {
             <select
               value={role}
               onChange={(e) => changeRole(e.target.value)}
-              className="w-full rounded-lg bg-blue-900/80 border border-blue-500/50 px-3 py-1.5 text-xs text-white outline-none font-medium cursor-pointer"
+              className="w-full rounded-xl bg-white border border-[#E2E8F0] px-2.5 py-1.5 text-xs text-[#0F172A] outline-none font-semibold cursor-pointer hover:border-[#2563EB] transition-colors"
             >
-              <option value="admin">Admin View Mode</option>
-              <option value="employee">Student / Staff View Mode</option>
-              <option value="client">Client View Mode</option>
+              <option value="admin">Admin Portal Mode</option>
+              <option value="employee">Staff / Employee View</option>
+              <option value="client">Client Portal View</option>
             </select>
           ) : (
-            <div className="flex items-center gap-2 text-xs font-bold text-white bg-blue-900/60 px-3 py-1.5 rounded-lg border border-blue-500/40">
-              <FaUserTie className="text-amber-300" />
-              <span>{role === "client" ? "Client Portal Mode" : "Student / Staff Mode"}</span>
+            <div className="flex items-center gap-2 text-xs font-semibold text-[#0F172A] bg-white px-2.5 py-1.5 rounded-xl border border-[#E2E8F0]">
+              <FaUserTie className="text-[#2563EB]" />
+              <span>{role === "client" ? "Client Portal Mode" : "User Portal Mode"}</span>
             </div>
           )}
         </div>
 
-        {/* Navigation Items */}
-        <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-1">
-          {navItems.map((item) => {
-            const isActive = pathname === item.href;
-            const Icon = item.icon;
+        {/* Navigation Items Organized into Collapsible Sections */}
+        <nav className="flex-1 overflow-y-auto px-3 py-3 space-y-4">
+          {groups.map((group) => {
+            const isCollapsed = collapsedGroups[group.id];
 
             return (
-              <Link
-                key={item.name}
-                href={item.href}
-                onClick={onClose}
-                className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
-                  isActive
-                    ? "bg-white text-blue-700 shadow-md font-bold"
-                    : "text-blue-100 hover:bg-blue-600/70 hover:text-white"
-                }`}
-              >
-                <Icon className={`text-base ${isActive ? "text-blue-700" : "text-blue-200"}`} />
-                <span>{item.name}</span>
-              </Link>
+              <div key={group.id} className="space-y-1">
+                {/* Section Header with Smooth Arrow Rotation */}
+                <button
+                  type="button"
+                  onClick={() => toggleGroup(group.id)}
+                  className="w-full flex items-center justify-between px-2 py-1.5 text-[11px] font-bold text-[#64748B] hover:text-[#0F172A] uppercase tracking-wider cursor-pointer group transition-colors"
+                >
+                  <span>{group.title}</span>
+                  <FaChevronDown
+                    className={`text-[10px] text-[#64748B] transition-transform duration-300 ease-in-out ${
+                      isCollapsed ? "-rotate-90" : "rotate-0"
+                    }`}
+                  />
+                </button>
+
+                {/* Section Items with Smooth Slow Expansion & Fade Animation */}
+                <div
+                  className={`overflow-hidden transition-all duration-300 ease-in-out ${
+                    isCollapsed ? "max-h-0 opacity-0 pointer-events-none" : "max-h-96 opacity-100 space-y-0.5"
+                  }`}
+                >
+                  {group.items.map((item) => {
+                    const isActive = pathname === item.href;
+                    const Icon = item.icon;
+
+                    return (
+                      <Link
+                        key={item.name}
+                        href={item.href}
+                        onClick={onClose}
+                        className={`flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs transition-all duration-200 ease-in-out hover:translate-x-1 active:scale-98 relative ${
+                          isActive
+                            ? "bg-[#EFF6FF] text-[#2563EB] font-bold shadow-xs"
+                            : "text-[#64748B] hover:bg-[#F8FAFC] hover:text-[#0F172A] font-medium"
+                        }`}
+                      >
+                        {/* Active Blue Indicator Bar */}
+                        {isActive && (
+                          <span className="absolute left-0 top-1.5 bottom-1.5 w-1 bg-[#2563EB] rounded-r-full transition-all duration-200" />
+                        )}
+                        <Icon className={`text-sm transition-transform duration-200 group-hover:scale-110 ${isActive ? "text-[#2563EB]" : "text-[#64748B]"}`} />
+                        <span className="truncate">{item.name}</span>
+                      </Link>
+                    );
+                  })}
+                </div>
+              </div>
             );
           })}
         </nav>
 
         {/* Sidebar Footer */}
-        <div className="border-t border-blue-600/50 p-4 text-center text-[11px] text-blue-200">
-          <p>© 2026 Software House System</p>
+        <div className="border-t border-[#E2E8F0] p-3 text-center text-[11px] text-[#64748B] bg-[#F8FAFC]">
+          <p>© 2026 Enterprise SaaS System</p>
         </div>
       </aside>
     </>

@@ -30,6 +30,7 @@ export default function PayrollDashboardPage() {
   const [role, setRole] = useState("admin");
   const [userEmail, setUserEmail] = useState("");
   const [selectedMonth, setSelectedMonth] = useState("2026-08");
+  const [loading, setLoading] = useState(true);
 
   // Initial Employee Master Salary & Payroll List
   const [payrolls, setPayrolls] = useState([
@@ -420,38 +421,47 @@ export default function PayrollDashboardPage() {
     return p.email && p.email.toLowerCase().trim() === userEmail.toLowerCase().trim();
   });
 
+  if (loading) {
+    return (
+      <div className="min-h-[400px] flex flex-col items-center justify-center space-y-3 text-[#0F172A]">
+        <div className="w-8 h-8 border-3 border-[#2563EB] border-t-transparent rounded-full animate-spin"></div>
+        <p className="text-xs font-bold text-[#64748B]">Loading Payroll & Salary Records...</p>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
       {/* Alert Modal */}
       <Modal isOpen={modal.isOpen} title={modal.title} message={modal.message} type={modal.type} onClose={closeModal} />
 
       {/* Top Banner */}
-      <div className="bg-gradient-to-r from-slate-900 via-emerald-950 to-slate-900 text-white rounded-2xl p-6 shadow-xl border border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="bg-white rounded-2xl p-6 border border-[#E2E8F0] shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <span className="text-[10px] font-extrabold uppercase tracking-widest text-emerald-400 bg-emerald-950/90 px-3 py-1 rounded-full border border-emerald-800">
-              Finance & Accounting Sub-Module
+            <span className="text-[10px] font-bold uppercase tracking-wider text-[#2563EB] bg-[#EFF6FF] px-2.5 py-1 rounded-full border border-[#2563EB]/20">
+              Finance & Payroll Sub-Module
             </span>
-            <span className="text-[10px] font-bold text-slate-400 bg-slate-800 px-2.5 py-1 rounded-full">
+            <span className="text-[10px] font-semibold text-[#64748B] bg-[#F8FAFC] px-2.5 py-1 rounded-full border border-[#E2E8F0]">
               Automated Salary Calculation Engine
             </span>
           </div>
-          <h1 className="text-2xl md:text-3xl font-black mt-2 text-white flex items-center gap-2.5">
-            <FaMoneyBillWave className="text-emerald-400" />
+          <h1 className="text-xl md:text-2xl font-bold mt-1.5 text-[#0F172A] flex items-center gap-2.5">
+            <FaMoneyBillWave className="text-[#2563EB]" />
             <span>Enterprise Payroll & Salary Engine</span>
           </h1>
-          <p className="text-xs text-slate-300 mt-1">
-            Automated Calculations: Basic Salary + Overtime + Bonuses − Deductions (Leaves/Late Fines/Loans) • Personal Employee Dashboard View
+          <p className="text-xs text-[#64748B] mt-0.5">
+            Automated Salary Processing: Basic Salary + Overtime + Bonuses − Deductions (Leaves / Late Fines / Loans).
           </p>
         </div>
 
         <div className="flex items-center gap-3 self-start md:self-auto shrink-0">
-          <div className="flex items-center gap-2 bg-slate-800 border border-slate-700 px-3 py-2 rounded-xl text-xs font-semibold">
-            <FaFilter className="text-slate-400" />
+          <div className="flex items-center gap-2 bg-[#F8FAFC] border border-[#E2E8F0] px-3 py-2 rounded-xl text-xs font-semibold">
+            <FaFilter className="text-[#64748B]" />
             <select
               value={selectedMonth}
               onChange={(e) => setSelectedMonth(e.target.value)}
-              className="bg-transparent text-white font-bold outline-none cursor-pointer"
+              className="bg-transparent text-[#0F172A] font-bold outline-none cursor-pointer"
             >
               <option value="2026-08">🗓️ August 2026</option>
               <option value="2026-07">🗓️ July 2026</option>
@@ -461,9 +471,9 @@ export default function PayrollDashboardPage() {
           {(role === "admin" || role === "hr" || role === "accounts" || role === "manager") && (
             <button
               onClick={() => setCreateModalOpen(true)}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white font-black px-4 py-2.5 rounded-xl text-xs transition-all shadow-lg flex items-center gap-2 border border-emerald-500/40 cursor-pointer"
+              className="bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold px-4 py-2 rounded-xl text-xs transition-colors shadow-xs flex items-center gap-1.5 cursor-pointer"
             >
-              <FaPlusCircle className="text-base" />
+              <FaPlusCircle className="text-sm" />
               <span>+ Add Employee Salary</span>
             </button>
           )}
@@ -548,8 +558,28 @@ export default function PayrollDashboardPage() {
             <tbody className="divide-y divide-slate-100">
               {displayPayrolls.length === 0 ? (
                 <tr>
-                  <td colSpan="7" className="py-8 text-center text-slate-400 text-xs">
-                    No payroll records found for {selectedMonth} matching email ({userEmail}).
+                  <td colSpan={7} className="py-12 px-4 text-center">
+                    <div className="flex flex-col items-center justify-center space-y-3 max-w-sm mx-auto">
+                      <div className="w-12 h-12 rounded-full bg-[#EFF6FF] text-[#2563EB] flex items-center justify-center text-xl border border-[#2563EB]/20">
+                        <FaCalculator />
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-bold text-[#0F172A]">No Payroll Records Found</h3>
+                        <p className="text-xs text-[#64748B] mt-0.5">
+                          Payroll records will appear here once employee salaries are processed for {selectedMonth}.
+                        </p>
+                      </div>
+                      {(role === "admin" || role === "hr" || role === "accounts" || role === "manager") && (
+                        <button
+                          type="button"
+                          onClick={() => setCreateModalOpen(true)}
+                          className="bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold text-xs px-4 py-2 rounded-xl transition-colors cursor-pointer flex items-center gap-1.5 shadow-xs"
+                        >
+                          <FaPlusCircle className="text-xs" />
+                          <span>Generate Payroll</span>
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ) : (

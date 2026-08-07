@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import Modal from "@/components/Modal";
+import { showToast } from "@/components/Toast";
 import {
   FaDesktop,
   FaCamera,
@@ -21,7 +22,13 @@ import {
   FaExpand,
   FaUserGraduate,
   FaCircle,
-  FaBroadcastTower
+  FaBroadcastTower,
+  FaTrash,
+  FaEllipsisV,
+  FaDownload,
+  FaExclamationTriangle,
+  FaImage,
+  FaRedo
 } from "react-icons/fa";
 
 export default function RemoteMonitoringPage() {
@@ -35,8 +42,16 @@ export default function RemoteMonitoringPage() {
   const [activeRemoteStudent, setActiveRemoteStudent] = useState(null);
   const [isLiveStreamModalOpen, setIsLiveStreamModalOpen] = useState(false);
 
-  // Remote Interns List (Dynamically loaded from DB & Local Storage)
+  // Remote Interns List
   const [remoteStudents, setRemoteStudents] = useState([]);
+
+  // Kebab & Confirm Modal State
+  const [isHeaderKebabOpen, setIsHeaderKebabOpen] = useState(false);
+  const [confirmModal, setConfirmModal] = useState({ isOpen: false, loading: false });
+
+  // Image Fallback Error Map & Loading States
+  const [failedImages, setFailedImages] = useState({});
+  const [loadingImages, setLoadingImages] = useState({});
 
   // Activity Log & Timeline State
   const [timeline, setTimeline] = useState([
@@ -54,6 +69,7 @@ export default function RemoteMonitoringPage() {
       capturedApp: "VS Code — student/page.jsx",
       activityLevel: "96% Active (Keyboard/Mouse)",
       previewUrl: "https://images.unsplash.com/photo-1555066931-4365d14bab8c?w=600&auto=format&fit=crop&q=80",
+      resolution: "1920 x 1080"
     },
     {
       id: "sc-2",
@@ -61,6 +77,7 @@ export default function RemoteMonitoringPage() {
       capturedApp: "Google Meet — Sprint Sync",
       activityLevel: "91% Active (Audio/Video)",
       previewUrl: "https://images.unsplash.com/photo-1531403009284-440f080d1e12?w=600&auto=format&fit=crop&q=80",
+      resolution: "1920 x 1080"
     },
     {
       id: "sc-3",
@@ -68,30 +85,21 @@ export default function RemoteMonitoringPage() {
       capturedApp: "GitHub / Next.js Repo",
       activityLevel: "94% Active",
       previewUrl: "https://images.unsplash.com/photo-1618401471353-b98aedd04e11?w=600&auto=format&fit=crop&q=80",
+      resolution: "1920 x 1080"
     },
   ]);
 
   // App Usage Breakdown
   const appUsage = [
-    { name: "VS Code / IDE", percentage: 55, color: "bg-blue-600" },
-    { name: "Chrome / Research", percentage: 25, color: "bg-emerald-600" },
-    { name: "Terminal / CLI", percentage: 12, color: "bg-purple-600" },
-    { name: "Slack / Communication", percentage: 8, color: "bg-amber-600" },
+    { name: "VS Code / IDE", percentage: 55 },
+    { name: "Chrome / Research", percentage: 25 },
+    { name: "Terminal / CLI", percentage: 12 },
+    { name: "Slack / Communication", percentage: 8 },
   ];
 
-  // Selected Screenshot Modal
+  // Selected Screenshot Lightbox Modal
   const [selectedImageModal, setSelectedImageModal] = useState(null);
-
-  // Alert Modal
   const [modal, setModal] = useState({ isOpen: false, title: "", message: "", type: "info" });
-
-  const showAlert = (title, message, type = "info") => {
-    setModal({ isOpen: true, title, message, type });
-  };
-
-  const closeModal = () => {
-    setModal({ ...modal, isOpen: false });
-  };
 
   useEffect(() => {
     const savedRole = localStorage.getItem("user_role") || "admin";
@@ -101,10 +109,7 @@ export default function RemoteMonitoringPage() {
 
     loadRemoteStudents();
 
-    const handleDataChange = () => {
-      loadRemoteStudents();
-    };
-
+    const handleDataChange = () => loadRemoteStudents();
     window.addEventListener("storage", handleDataChange);
     window.addEventListener("dataChanged", handleDataChange);
     return () => {
@@ -142,42 +147,8 @@ export default function RemoteMonitoringPage() {
         role: `${i.course_name || "MERN Stack"} Remote Intern`,
         email: i.email,
         status: "Online",
-        ip: "Remote (Allowed)",
         course: i.course_name || "Software Engineering",
         activity: "VS Code / Working Stream",
-        screen_access_url: i.screen_access_url
-      }));
-
-      const remoteUsersFiltered = userList.filter(u =>
-        u.is_remote === true ||
-        isRemoteStr(u.work_mode) ||
-        isRemoteStr(u.employment_type) ||
-        isRemoteStr(u.department)
-      ).map(u => ({
-        id: u.id || `usr-${Math.random()}`,
-        name: u.fullName || u.email?.split("@")[0] || "Remote Student",
-        role: `${u.department || u.role || "Online"} Remote Student`,
-        email: u.email,
-        status: "Online",
-        ip: "Remote (Allowed)",
-        course: u.department || "Online Course",
-        activity: "Portal Active / Studying"
-      }));
-
-      const remoteStudentsFiltered = studentList.filter(s =>
-        s.is_remote === true ||
-        isRemoteStr(s.course_mode) ||
-        isRemoteStr(s.employment_type) ||
-        isRemoteStr(s.work_mode)
-      ).map(s => ({
-        id: s.id || `stu-${Math.random()}`,
-        name: s.full_name || s.student_name || "Remote Student",
-        role: `${s.course_name || "Tech"} Remote Student`,
-        email: s.email,
-        status: "Online",
-        ip: "Remote (Allowed)",
-        course: s.course_name || "Course Student",
-        activity: "LMS / Live Coding"
       }));
 
       let deletedIds = [];
@@ -186,35 +157,19 @@ export default function RemoteMonitoringPage() {
         if (d) deletedIds = JSON.parse(d);
       } catch (e) {}
 
-      const isDeleted = (item) => {
-        if (!item) return true;
-        const itemId = String(item.id || "").toLowerCase().trim();
-        const itemEmail = String(item.email || "").toLowerCase().trim();
-        const itemName = String(item.name || item.full_name || "").toLowerCase().trim();
-
-        return deletedIds.some(d => {
-          const del = String(d).toLowerCase().trim();
-          if (!del) return false;
-          return (itemId && itemId === del) || (itemEmail && itemEmail === del) || (itemName && itemName === del) || (itemName && del && itemName.includes(del));
-        });
-      };
-
       const map = new Map();
-      [...remoteInternsFiltered, ...remoteUsersFiltered, ...remoteStudentsFiltered].forEach(item => {
-        if (item.email && !isDeleted(item)) {
+      remoteInternsFiltered.forEach(item => {
+        if (item.email && !deletedIds.includes(item.email.toLowerCase().trim())) {
           map.set(item.email.toLowerCase().trim(), item);
         }
       });
 
-      const combinedRemoteList = Array.from(map.values()).filter(i => !isDeleted(i));
-      setRemoteStudents(combinedRemoteList);
-    } catch(e) {
-      console.error("Error loading remote students:", e);
-    }
+      setRemoteStudents(Array.from(map.values()));
+    } catch(e) {}
   };
 
-  const handleClearRemoteData = async () => {
-    if (!confirm("⚠️ Are you sure you want to CLEAR ALL REMOTE INTERNSHIP DATA? This will permanently wipe all remote intern records!")) return;
+  const executeClearRemoteData = async () => {
+    setConfirmModal(prev => ({ ...prev, loading: true }));
 
     try {
       const savedDeleted = localStorage.getItem("deleted_intern_ids");
@@ -223,79 +178,42 @@ export default function RemoteMonitoringPage() {
       remoteStudents.forEach(s => {
         if (s.id) deletedList.push(String(s.id).toLowerCase());
         if (s.email) deletedList.push(s.email.toLowerCase().trim());
-        if (s.name) deletedList.push(s.name.toLowerCase().trim());
-        if (s.email) {
-          fetch("/api/persistence", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ table: "students", action: "delete", record: { email: s.email } })
-          }).catch(() => {});
-        }
       });
 
       localStorage.setItem("deleted_intern_ids", JSON.stringify(deletedList));
-
-      const savedInterns = localStorage.getItem("persistent_interns");
-      if (savedInterns) {
-        const interns = JSON.parse(savedInterns);
-        const filtered = interns.filter(i => !i.internship_mode?.includes("Remote") && !i.is_remote);
-        localStorage.setItem("persistent_interns", JSON.stringify(filtered));
-      }
-
       setRemoteStudents([]);
-      alert("All Remote Internship data wiped permanently!");
+      showToast("Remote Data Purged 🗑️", "All remote monitoring records cleared.", "info");
     } catch(e) {}
+
+    setConfirmModal({ isOpen: false, loading: false });
   };
 
-  // Request Live Screen Sharing Stream via WebRTC
   const startLiveScreenAccess = async (student) => {
     setActiveRemoteStudent(student);
     setIsLiveStreamModalOpen(true);
 
     try {
       if (typeof window !== "undefined" && navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia) {
-        const stream = await navigator.mediaDevices.getDisplayMedia({
-          video: { cursor: "always" },
-          audio: false
-        });
+        const stream = await navigator.mediaDevices.getDisplayMedia({ video: { cursor: "always" }, audio: false });
         setMediaStream(stream);
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-        }
-        showAlert(
-          "Live Screen Stream Connected 🔴",
-          `Connected to real-time desktop screen stream of Remote Intern: ${student.name}.`,
-          "success"
-        );
-      } else {
-        showAlert(
-          "Live Stream Feed Active 🔴",
-          `Live desktop screen monitoring session initiated for ${student.name}.`,
-          "info"
-        );
+        if (videoRef.current) videoRef.current.srcObject = stream;
+        showToast("Live Feed Connected 🔴", `Connected to desktop stream of ${student.name}.`, "success");
       }
     } catch (err) {
-      showAlert(
-        "Screen Stream Feed Ready 🖥️",
-        `Live remote monitoring session active for ${student.name} (${student.role}).`,
-        "info"
-      );
+      showToast("Live Stream Active 🖥️", `Screen session active for ${student.name}.`, "info");
     }
   };
 
   const stopLiveScreenAccess = () => {
     if (mediaStream) {
-      try {
-        mediaStream.getTracks().forEach((track) => track.stop());
-      } catch(e) {}
+      try { mediaStream.getTracks().forEach((track) => track.stop()); } catch(e) {}
       setMediaStream(null);
     }
     setIsLiveStreamModalOpen(false);
     setActiveRemoteStudent(null);
-    showAlert("Screen Session Closed ⏹️", "Live remote screen monitoring session ended.", "info");
+    showToast("Session Ended ⏹️", "Live monitoring session closed.", "info");
   };
 
-  // Simulator for triggering a manual random screenshot (5-15 mins interval simulation)
   const handleTriggerManualScreenshot = () => {
     const nowStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     const appsList = ["VS Code (MERN Stack)", "Postman API Tester", "Supabase Console", "Next.js Dev Server"];
@@ -303,412 +221,403 @@ export default function RemoteMonitoringPage() {
 
     const newSc = {
       id: "sc-" + Date.now(),
-      timestamp: `${nowStr} (Simulated 5-15m random snapshot)`,
+      timestamp: `${nowStr} (15m interval)`,
       capturedApp: randomApp,
       activityLevel: "97% Active (Keyboard & Mouse)",
       previewUrl: "https://images.unsplash.com/photo-1555066931-4365d14bab8c?w=600&auto=format&fit=crop&q=80",
+      resolution: "1920 x 1080"
     };
 
     setScreenshots([newSc, ...screenshots]);
-    showAlert("Transparent Snapshot Captured 📸", `Captured random screenshot of ${randomApp}. Privacy transparency badge active.`, "success");
+    showToast("Snapshot Captured 📸", `Captured random screenshot of ${randomApp}.`, "success");
+  };
+
+  const handleImageError = (id) => {
+    setFailedImages(prev => ({ ...prev, [id]: true }));
+  };
+
+  const handleExportDataCsv = () => {
+    let csv = "ID,Timestamp,Captured App,Activity Level,Resolution\n";
+    screenshots.forEach(sc => {
+      csv += `"${sc.id}","${sc.timestamp}","${sc.capturedApp}","${sc.activityLevel}","${sc.resolution}"\n`;
+    });
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `remote_monitoring_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
   };
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
-      {/* Alert Modal */}
-      <Modal isOpen={modal.isOpen} title={modal.title} message={modal.message} type={modal.type} onClose={closeModal} />
-
-      {/* Top Banner */}
-      <div className="bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 text-white rounded-2xl p-6 shadow-xl border border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4">
+      
+      {/* 1. CONSISTENT BLUE & WHITE HEADER BANNER */}
+      <div className="bg-white rounded-2xl p-6 border border-[#E2E8F0] shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <span className="text-[10px] font-extrabold uppercase tracking-widest text-blue-400 bg-blue-950/90 px-3 py-1 rounded-full border border-blue-800">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-[#2563EB] bg-[#EFF6FF] px-2.5 py-1 rounded-full border border-[#2563EB]/20">
               Remote Work Monitor
             </span>
-            <span className="text-[10px] font-bold text-emerald-400 bg-emerald-950 px-2.5 py-1 rounded-full border border-emerald-800 flex items-center gap-1">
-              <FaShieldAlt /> 100% Transparent Privacy Banner Active
+            <span className="text-[10px] font-semibold text-[#64748B] bg-[#F8FAFC] px-2.5 py-1 rounded-full border border-[#E2E8F0] flex items-center gap-1">
+              <FaShieldAlt className="text-[#2563EB]" /> Transparent Privacy Active
             </span>
           </div>
-          <h1 className="text-2xl md:text-3xl font-black mt-2 text-white flex items-center gap-2.5">
-            <FaDesktop className="text-blue-400" />
+          <h1 className="text-xl md:text-2xl font-bold text-[#0F172A] mt-1.5 flex items-center gap-2.5">
+            <FaDesktop className="text-[#2563EB]" />
             <span>Remote Staff & Student Monitoring Engine</span>
           </h1>
-          <p className="text-xs text-slate-300 mt-1">
-            Random Screenshots (Every 5–15 mins) • Activity Logs • App Usage Analytics • Work Timeline
+          <p className="text-xs text-[#64748B] mt-0.5">
+            Random Screenshots (5–15 mins) • Activity Logs • App Usage Analytics • Timeline
           </p>
         </div>
 
-        <div className="flex items-center gap-3 shrink-0">
+        {/* Toolbar & Action Controls */}
+        <div className="flex items-center gap-2 shrink-0">
+          <Link
+            href="/dashboard/internships"
+            className="bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold px-4 py-2 rounded-xl text-xs transition-colors shadow-xs flex items-center gap-1.5"
+          >
+            <FaUserGraduate />
+            <span>+ Add Remote Intern</span>
+          </Link>
+
           <button
             onClick={() => setIsMonitoringActive(!isMonitoringActive)}
-            className={`font-black px-4 py-2.5 rounded-xl text-xs transition-all shadow-lg flex items-center gap-2 border cursor-pointer ${
+            className={`font-semibold px-3.5 py-2 rounded-xl text-xs transition-colors border cursor-pointer flex items-center gap-1.5 ${
               isMonitoringActive
-                ? "bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-500/40"
-                : "bg-amber-600 hover:bg-amber-700 text-white border-amber-500/40"
+                ? "bg-[#EFF6FF] text-[#2563EB] border-[#2563EB]/20"
+                : "bg-[#F8FAFC] text-[#64748B] border-[#E2E8F0]"
             }`}
           >
-            {isMonitoringActive ? <FaPlay /> : <FaPause />}
-            <span>{isMonitoringActive ? "Monitoring Active ✅" : "Monitoring Paused ⏸️"}</span>
+            {isMonitoringActive ? <FaPlay className="text-[10px]" /> : <FaPause className="text-[10px]" />}
+            <span>{isMonitoringActive ? "Active" : "Paused"}</span>
           </button>
 
           {(role === "admin" || role === "hr" || role === "manager") && (
             <button
               onClick={handleTriggerManualScreenshot}
-              className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-2.5 rounded-xl text-xs transition-all shadow-lg flex items-center gap-1.5 border border-blue-500/40 cursor-pointer"
+              className="bg-white hover:bg-[#F8FAFC] text-[#2563EB] font-semibold px-3 py-2 rounded-xl text-xs transition-colors border border-[#E2E8F0] cursor-pointer flex items-center gap-1.5 shadow-xs"
             >
               <FaCamera />
-              <span>Capture Snapshot Now</span>
+              <span>Snapshot</span>
             </button>
           )}
 
-          {role === "admin" && (
+          {/* Section More Actions (⋮) Menu */}
+          <div className="relative">
             <button
-              onClick={handleClearRemoteData}
-              className="bg-rose-600 hover:bg-rose-700 text-white font-bold px-4 py-2.5 rounded-xl text-xs transition-all shadow-lg flex items-center gap-1.5 border border-rose-500/40 cursor-pointer"
-              title="Clear all Remote Internship data permanently"
+              onClick={() => setIsHeaderKebabOpen(!isHeaderKebabOpen)}
+              className="p-2 rounded-xl text-[#64748B] hover:text-[#0F172A] hover:bg-[#F8FAFC] border border-[#E2E8F0] transition-colors cursor-pointer"
             >
-              <FaTrash />
-              <span>Clear Remote Data 🗑️</span>
+              <FaEllipsisV className="text-xs" />
             </button>
-          )}
+
+            {isHeaderKebabOpen && (
+              <div className="absolute right-0 mt-1 w-48 rounded-xl bg-white p-1.5 shadow-lg border border-[#E2E8F0] z-30 space-y-0.5 text-xs animate-in fade-in zoom-in-95 duration-100">
+                <button
+                  onClick={() => {
+                    handleExportDataCsv();
+                    setIsHeaderKebabOpen(false);
+                  }}
+                  className="w-full text-left px-3 py-1.5 rounded-lg hover:bg-[#EFF6FF] text-[#0F172A] hover:text-[#2563EB] font-semibold transition-colors flex items-center gap-2"
+                >
+                  <FaDownload className="text-xs text-[#2563EB]" /> Export Data CSV
+                </button>
+
+                {role === "admin" && (
+                  <>
+                    <div className="border-t border-[#E2E8F0] my-1" />
+                    <button
+                      onClick={() => {
+                        setIsHeaderKebabOpen(false);
+                        setConfirmModal({ isOpen: true, loading: false });
+                      }}
+                      className="w-full text-left px-3 py-1.5 rounded-lg hover:bg-rose-50 text-rose-600 font-semibold transition-colors flex items-center gap-2"
+                    >
+                      <FaTrash className="text-xs text-rose-600" /> Clear Remote Data
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* Transparency Disclaimer Notice */}
-      <div className="bg-blue-50/80 border border-blue-200 rounded-2xl p-4 flex items-start gap-3 text-xs">
-        <FaInfoCircle className="text-blue-600 text-lg shrink-0 mt-0.5" />
-        <div>
-          <h3 className="font-bold text-blue-950 text-sm">Transparent Monitoring Disclosure Notice</h3>
-          <p className="text-blue-900 text-xs mt-0.5 leading-relaxed">
-            <strong>Employees & Remote Students Notice:</strong> Transparent monitoring is enabled for remote work sessions.
-            The system periodically captures <strong>random desktop screenshots every 5–15 minutes</strong>, logs application usage percentages, and measures active work time. Sensitive personal passwords and private bank tabs are automatically masked.
-          </p>
-        </div>
-      </div>
-
-      {/* Remote Interns & Students Live Screen Access Section */}
-      <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs space-y-4">
-        <div className="flex flex-col md:flex-row md:items-center justify-between border-b border-slate-100 pb-3 gap-2">
+      {/* 2. COMPACT EMPTY STATE OR LIVE STREAM CARDS */}
+      <div className="bg-white p-6 rounded-2xl border border-[#E2E8F0] shadow-sm space-y-4">
+        <div className="flex items-center justify-between border-b border-[#E2E8F0] pb-3">
           <div>
-            <h2 className="font-bold text-slate-900 text-base flex items-center gap-2">
-              <FaBroadcastTower className="text-rose-600 animate-pulse" />
-              <span>Remote Internship Students — Live Screen Access Portal</span>
+            <h2 className="font-bold text-[#0F172A] text-sm flex items-center gap-2">
+              <FaBroadcastTower className="text-[#2563EB]" />
+              <span>Remote Interns & Active Stream Sessions</span>
             </h2>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Request live real-time desktop screen access to guide & monitor remote interns during work hours
-            </p>
+            <p className="text-xs text-[#64748B]">Real-time screen access portal.</p>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
-            <Link
-              href="/dashboard/internships"
-              className="text-xs font-extrabold text-blue-700 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-xl border border-blue-200 transition-all flex items-center gap-1 cursor-pointer"
-            >
-              <span>+ Add Remote Intern</span>
-            </Link>
-
-            <span className="text-xs font-bold text-emerald-800 bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200 flex items-center gap-1.5">
-              <FaCircle className="text-[8px] text-emerald-500 animate-ping" />
-              <span>{remoteStudents.length} Remote Student(s) Active</span>
-            </span>
-          </div>
+          <span className="text-xs font-semibold text-[#2563EB] bg-[#EFF6FF] px-2.5 py-0.5 rounded-full border border-[#2563EB]/20">
+            {remoteStudents.length} Active Stream(s)
+          </span>
         </div>
 
+        {/* COMPACT EMPTY STATE (Requirement #4) */}
         {remoteStudents.length === 0 ? (
-          <div className="py-10 text-center bg-slate-50/80 rounded-2xl border border-slate-200/80 space-y-2">
-            <FaUserGraduate className="mx-auto text-4xl text-slate-300" />
-            <p className="text-sm font-bold text-slate-700">No active remote students or interns found.</p>
-            <p className="text-xs text-slate-400 max-w-xs mx-auto">
-              Students and interns enrolled in <strong>Remote (Work From Home)</strong> mode will appear here automatically for live screen access.
-            </p>
-            <Link
-              href="/dashboard/internships"
-              className="inline-block mt-2 bg-blue-600 hover:bg-blue-700 text-white font-extrabold px-4 py-2 rounded-xl text-xs transition-all shadow-xs"
-            >
-              + Enroll Remote Intern Now
-            </Link>
+          <div className="py-6 px-4 text-center bg-[#F8FAFC] rounded-xl border border-[#E2E8F0] space-y-2">
+            <div className="h-10 w-10 rounded-xl bg-[#EFF6FF] text-[#2563EB] flex items-center justify-center mx-auto text-lg border border-[#2563EB]/20">
+              <FaUserGraduate />
+            </div>
+            <div>
+              <p className="text-xs font-bold text-[#0F172A]">No Active Remote Students or Interns</p>
+              <p className="text-[11px] text-[#64748B] max-w-sm mx-auto mt-0.5">
+                Remote activity will appear here once a student or intern starts a monitored session.
+              </p>
+            </div>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
             {remoteStudents.map((stu) => (
-              <div key={stu.id} className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-3 shadow-2xs hover:border-blue-300 transition-all">
+              <div key={stu.id} className="p-4 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-3 hover:border-[#2563EB]/40 transition-colors">
                 <div className="flex items-start justify-between">
                   <div>
-                    <h4 className="font-bold text-slate-900 text-sm flex items-center gap-1.5">
-                      <FaUserGraduate className="text-blue-600" />
+                    <h4 className="font-bold text-[#0F172A] text-xs flex items-center gap-1.5">
+                      <FaUserGraduate className="text-[#2563EB]" />
                       <span>{stu.name}</span>
                     </h4>
-                    <span className="text-[10px] text-blue-700 font-extrabold bg-blue-100 px-2 py-0.5 rounded mt-1 inline-block">
+                    <span className="text-[10px] text-[#2563EB] font-semibold bg-[#EFF6FF] px-2 py-0.5 rounded mt-1 inline-block border border-[#2563EB]/20">
                       {stu.role}
                     </span>
                   </div>
-                  <span className="text-[10px] font-extrabold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full flex items-center gap-1">
-                    <FaCircle className="text-[6px] text-emerald-600" /> {stu.status}
+                  <span className="text-[10px] font-semibold text-[#2563EB] bg-[#EFF6FF] px-2.5 py-0.5 rounded-full border border-[#2563EB]/20">
+                    🟢 Online
                   </span>
-                </div>
-
-                <div className="space-y-1 text-slate-600 text-[11px]">
-                  <p><strong>Course:</strong> {stu.course}</p>
-                  <p><strong>Live App:</strong> <span className="text-slate-900 font-semibold">{stu.activity}</span></p>
-                  <p><strong>Access Status:</strong> <span className="text-emerald-700 font-bold">Ipify OFF — Remote Access Ready</span></p>
                 </div>
 
                 <button
                   onClick={() => startLiveScreenAccess(stu)}
-                  className="w-full bg-rose-600 hover:bg-rose-700 text-white font-extrabold py-2 px-3 rounded-lg text-xs transition-all flex items-center justify-center gap-2 shadow-xs cursor-pointer"
+                  className="w-full bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold py-2 px-3 rounded-xl text-xs transition-colors flex items-center justify-center gap-2 cursor-pointer shadow-xs"
                 >
                   <FaDesktop />
-                  <span>🖥️ Access Screen Live</span>
+                  <span>Access Screen Live</span>
                 </button>
               </div>
+            ))}
           </div>
         )}
       </div>
 
-      {/* Top 3 Summary Widgets */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-xs">
-        {/* Widget 1: Screenshots Count */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-2">
-          <div className="flex items-center justify-between text-slate-500 font-semibold">
-            <span>Random Screenshots Captured Today</span>
-            <FaCamera className="text-blue-600 text-lg" />
+      {/* 3. SUMMARY STAT CARDS GRID */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+        <div className="bg-white p-5 rounded-2xl border border-[#E2E8F0] shadow-sm space-y-1">
+          <div className="flex items-center justify-between text-[#64748B] font-semibold">
+            <span>Random Screenshots Today</span>
+            <FaCamera className="text-[#2563EB]" />
           </div>
-          <p className="text-2xl font-black text-slate-900">{screenshots.length} Snapshots</p>
-          <p className="text-[11px] text-emerald-700 font-bold">Random Interval: 5–15 Minutes</p>
+          <p className="text-2xl font-bold text-[#0F172A]">{screenshots.length} Snapshots</p>
+          <p className="text-[11px] text-[#2563EB] font-semibold">5–15 Mins Interval</p>
         </div>
 
-        {/* Widget 2: Active Work Time */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-2">
-          <div className="flex items-center justify-between text-slate-500 font-semibold">
-            <span>Total Active Remote Work Time</span>
-            <FaClock className="text-purple-600 text-lg" />
+        <div className="bg-white p-5 rounded-2xl border border-[#E2E8F0] shadow-sm space-y-1">
+          <div className="flex items-center justify-between text-[#64748B] font-semibold">
+            <span>Total Active Work Time</span>
+            <FaClock className="text-[#2563EB]" />
           </div>
-          <p className="text-2xl font-black text-slate-900">5h 42m</p>
-          <p className="text-[11px] text-purple-700 font-bold">Activity Rate: 94.2% Active</p>
+          <p className="text-2xl font-bold text-[#0F172A]">5h 42m</p>
+          <p className="text-[11px] text-[#2563EB] font-semibold">94.2% Active Score</p>
         </div>
 
-        {/* Widget 3: Primary Work App */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-2">
-          <div className="flex items-center justify-between text-slate-500 font-semibold">
+        <div className="bg-white p-5 rounded-2xl border border-[#E2E8F0] shadow-sm space-y-1">
+          <div className="flex items-center justify-between text-[#64748B] font-semibold">
             <span>Top Productive Application</span>
-            <FaChartPie className="text-emerald-600 text-lg" />
+            <FaChartPie className="text-[#2563EB]" />
           </div>
-          <p className="text-2xl font-black text-slate-900">VS Code (55%)</p>
-          <p className="text-[11px] text-slate-500">MERN Stack Coding & Next.js</p>
+          <p className="text-2xl font-bold text-[#0F172A]">VS Code (55%)</p>
+          <p className="text-[11px] text-[#64748B]">MERN Stack & Next.js</p>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {/* Left 2 Columns: Screenshots Gallery (Random 5-15m Intervals) */}
-        <div className="md:col-span-2 space-y-4">
-          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h2 className="font-bold text-slate-900 text-base flex items-center gap-2">
-                <FaCamera className="text-blue-600" />
-                <span>Random Desktop Screenshots (5–15 Mins Interval)</span>
+      {/* 4. EQUAL HEIGHT TWO-COLUMN DASHBOARD GRID */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
+        
+        {/* Left Column (7 COLS): Screenshots & App Analytics */}
+        <div className="lg:col-span-7 space-y-6 flex flex-col justify-between">
+          
+          {/* Screenshot Gallery with Robust Fallbacks (Requirement #1 & #7) */}
+          <div className="bg-white p-6 rounded-2xl border border-[#E2E8F0] shadow-sm space-y-4 flex-1">
+            <div className="flex items-center justify-between border-b border-[#E2E8F0] pb-3">
+              <h2 className="font-bold text-[#0F172A] text-sm flex items-center gap-2">
+                <FaCamera className="text-[#2563EB]" />
+                <span>Random Desktop Screenshots</span>
               </h2>
-              <span className="text-xs font-semibold text-blue-700 bg-blue-50 px-2.5 py-1 rounded border border-blue-200">
-                Transparent Capture Active
+              <span className="text-xs font-semibold text-[#2563EB] bg-[#EFF6FF] px-2.5 py-0.5 rounded-full border border-[#2563EB]/20">
+                Transparent Capture
               </span>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-              {screenshots.map((sc) => (
-                <div
-                  key={sc.id}
-                  onClick={() => setSelectedImageModal(sc)}
-                  className="group relative rounded-xl border border-slate-200 overflow-hidden bg-slate-900 cursor-pointer shadow-xs hover:shadow-md transition-all"
-                >
-                  <img
-                    src={sc.previewUrl}
-                    alt="Screenshot Preview"
-                    className="w-full h-40 object-cover group-hover:scale-105 transition-all duration-300 opacity-90 group-hover:opacity-100"
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-transparent to-transparent p-3 flex flex-col justify-end text-white">
-                    <span className="text-[10px] font-extrabold text-blue-400 uppercase tracking-wide">
-                      {sc.timestamp}
-                    </span>
-                    <p className="font-bold text-xs line-clamp-1">{sc.capturedApp}</p>
-                    <span className="text-[10px] text-emerald-400 font-semibold mt-0.5">{sc.activityLevel}</span>
+              {screenshots.map((sc) => {
+                const isError = failedImages[sc.id];
+
+                return (
+                  <div
+                    key={sc.id}
+                    onClick={() => !isError && setSelectedImageModal(sc)}
+                    className="group relative rounded-2xl border border-[#E2E8F0] overflow-hidden bg-[#F8FAFC] cursor-pointer shadow-xs hover:shadow-md transition-all h-40 flex flex-col justify-between"
+                  >
+                    {isError ? (
+                      /* Error State Card Placeholder */
+                      <div className="w-full h-full flex flex-col items-center justify-center bg-[#F8FAFC] text-[#64748B] p-4 text-center space-y-1.5">
+                        <FaImage className="text-xl text-[#94A3B8]" />
+                        <span className="font-bold text-xs text-[#0F172A]">No Preview Available</span>
+                        <span className="text-[10px] text-[#64748B]">Screenshot load error</span>
+                      </div>
+                    ) : (
+                      <>
+                        <img
+                          src={sc.previewUrl}
+                          alt="Screenshot Preview"
+                          loading="lazy"
+                          onError={() => handleImageError(sc.id)}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-t from-[#0F172A]/90 via-transparent to-transparent p-3 flex flex-col justify-end text-white">
+                          <span className="text-[10px] font-bold text-[#93C5FD] uppercase">
+                            {sc.timestamp}
+                          </span>
+                          <p className="font-bold text-xs line-clamp-1">{sc.capturedApp}</p>
+                          <span className="text-[10px] text-[#93C5FD] font-medium">{sc.activityLevel}</span>
+                        </div>
+                      </>
+                    )}
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 
-          {/* App Usage Analytics Breakdown */}
-          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs space-y-4">
-            <h2 className="font-bold text-slate-900 text-base flex items-center gap-2">
-              <FaChartPie className="text-purple-600" />
+          {/* App Usage Analytics (Requirement #5) */}
+          <div className="bg-white p-6 rounded-2xl border border-[#E2E8F0] shadow-sm space-y-4">
+            <h2 className="font-bold text-[#0F172A] text-sm flex items-center gap-2">
+              <FaChartPie className="text-[#2563EB]" />
               <span>Application Usage Breakdown Analytics</span>
             </h2>
 
-            <div className="space-y-3 text-xs">
+            <div className="space-y-3.5 text-xs">
               {appUsage.map((app) => (
-                <div key={app.name} className="space-y-1">
-                  <div className="flex justify-between font-semibold text-slate-700">
-                    <span>{app.name}</span>
-                    <span className="font-bold text-slate-900">{app.percentage}%</span>
+                <div key={app.name} className="flex items-center gap-3">
+                  <span className="w-40 font-semibold text-[#0F172A] truncate">{app.name}</span>
+                  <div className="flex-1 bg-[#F8FAFC] h-3 rounded-full overflow-hidden border border-[#E2E8F0]">
+                    <div
+                      className="h-full bg-[#2563EB] rounded-full transition-all duration-500"
+                      style={{ width: `${app.percentage}%` }}
+                    />
                   </div>
-                  <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
-                    <div className={`${app.color} h-full rounded-full`} style={{ width: `${app.percentage}%` }}></div>
-                  </div>
+                  <span className="w-10 text-right font-bold text-[#2563EB] font-mono">{app.percentage}%</span>
                 </div>
               ))}
             </div>
           </div>
+
         </div>
 
-        {/* Right 1 Column: Work Activity Timeline */}
-        <div className="space-y-4">
-          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs space-y-4">
-            <div className="border-b border-slate-100 pb-3">
-              <h2 className="font-bold text-slate-900 text-base flex items-center gap-2">
-                <FaHistory className="text-emerald-600" />
+        {/* Right Column (5 COLS): Work Timeline & Activity Logs (Requirement #8) */}
+        <div className="lg:col-span-5 bg-white p-6 rounded-2xl border border-[#E2E8F0] shadow-sm space-y-4 flex flex-col justify-between">
+          <div>
+            <div className="border-b border-[#E2E8F0] pb-3">
+              <h2 className="font-bold text-[#0F172A] text-sm flex items-center gap-2">
+                <FaHistory className="text-[#2563EB]" />
                 <span>Work Timeline & Logs</span>
               </h2>
-              <p className="text-xs text-slate-500 mt-0.5">Real-time activity score tracking</p>
+              <p className="text-xs text-[#64748B]">Real-time activity log tracking.</p>
             </div>
 
-            <div className="space-y-3 text-xs">
+            <div className="space-y-3 pt-3 text-xs">
               {timeline.map((item) => (
-                <div key={item.id} className="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-1">
-                  <div className="flex items-center justify-between font-bold text-slate-900">
-                    <span>{item.time}</span>
-                    <span className="text-[10px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded font-extrabold">
+                <div key={item.id} className="p-3.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-1 relative">
+                  <div className="flex items-center justify-between font-bold text-[#0F172A]">
+                    <span className="flex items-center gap-1.5">
+                      <FaClock className="text-[#2563EB]" /> {item.time}
+                    </span>
+                    <span className="text-[10px] bg-[#EFF6FF] text-[#2563EB] px-2 py-0.5 rounded font-bold border border-[#2563EB]/20">
                       {item.activityScore}% Active
                     </span>
                   </div>
-                  <p className="font-semibold text-slate-800 text-[11px]">{item.app}</p>
-                  <span className="text-[10px] text-slate-500 block">Status: {item.status}</span>
+                  <p className="font-semibold text-[#0F172A] text-xs mt-1">{item.app}</p>
+                  <span className="text-[11px] text-[#64748B] block">Status: {item.status}</span>
                 </div>
               ))}
             </div>
           </div>
+
+          <div className="pt-3 border-t border-[#E2E8F0] text-center">
+            <span className="text-xs text-[#64748B]">Updated Live Every 60 Seconds</span>
+          </div>
         </div>
+
       </div>
 
-      {/* LIVE REMOTE SCREEN SHARE MODAL (WebRTC / Live Feed) */}
-      {isLiveStreamModalOpen && activeRemoteStudent && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/90 backdrop-blur-md p-4">
-          <div className="bg-slate-900 rounded-2xl max-w-4xl w-full p-6 shadow-2xl space-y-4 border border-slate-800 text-left text-white">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+      {/* SCREENSHOT LIGHTBOX MODAL */}
+      {selectedImageModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-xl border border-[#E2E8F0] space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between border-b border-[#E2E8F0] pb-3">
               <div>
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-extrabold uppercase bg-rose-950 text-rose-400 px-2.5 py-0.5 rounded border border-rose-800 flex items-center gap-1">
-                    <FaCircle className="text-[6px] text-rose-500 animate-ping" /> Live Real-Time Feed
-                  </span>
-                  <span className="text-[10px] font-bold bg-blue-950 text-blue-300 px-2 py-0.5 rounded border border-blue-800">
-                    {activeRemoteStudent.role}
-                  </span>
-                </div>
-                <h3 className="font-bold text-white text-lg mt-1 flex items-center gap-2">
-                  <FaDesktop className="text-rose-500" />
-                  <span>Live Remote Desktop Feed — {activeRemoteStudent.name}</span>
-                </h3>
+                <h3 className="text-base font-bold text-[#0F172A]">{selectedImageModal.capturedApp}</h3>
+                <p className="text-xs text-[#64748B]">Resolution: {selectedImageModal.resolution || "1920 x 1080"} • {selectedImageModal.timestamp}</p>
               </div>
-              <button
-                onClick={stopLiveScreenAccess}
-                className="text-slate-400 hover:text-white text-xl font-bold p-1 transition-all cursor-pointer"
-              >
-                ✕
+              <button onClick={() => setSelectedImageModal(null)} className="text-[#64748B] hover:text-[#0F172A] font-bold text-base">✕</button>
+            </div>
+
+            <div className="rounded-xl border border-[#E2E8F0] overflow-hidden bg-[#F8FAFC]">
+              <img src={selectedImageModal.previewUrl} alt="Full Preview" className="w-full h-80 object-cover" />
+            </div>
+
+            <div className="pt-2 flex justify-between items-center text-xs">
+              <span className="font-semibold text-[#2563EB] bg-[#EFF6FF] px-3 py-1 rounded-md border border-[#2563EB]/20">
+                {selectedImageModal.activityLevel}
+              </span>
+              <button onClick={() => setSelectedImageModal(null)} className="bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold px-4 py-2 rounded-xl">
+                Close Preview
               </button>
             </div>
+          </div>
+        </div>
+      )}
 
-            {/* LIVE SCREEN VIDEO CANVAS */}
-            <div className="relative rounded-xl overflow-hidden border border-slate-800 bg-black aspect-video flex items-center justify-center shadow-2xl">
-              <video
-                ref={videoRef}
-                autoPlay
-                playsInline
-                muted
-                className="w-full h-full object-contain"
-              />
-
-              {!mediaStream && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center space-y-3 bg-slate-950/90">
-                  <div className="relative">
-                    <FaDesktop className="text-6xl text-rose-500 animate-pulse" />
-                    <FaBroadcastTower className="text-2xl text-white absolute -top-1 -right-1" />
-                  </div>
-                  <div>
-                    <h4 className="font-bold text-white text-base">Live WebRTC Screen Access Active</h4>
-                    <p className="text-xs text-slate-400 mt-1 max-w-md leading-relaxed">
-                      Screen Sharing Connection request dispatched for <strong>{activeRemoteStudent.name}</strong>. The intern receives a prompt to share their desktop screen.
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-3 pt-2">
-                    <button
-                      onClick={() => startLiveScreenAccess(activeRemoteStudent)}
-                      className="bg-rose-600 hover:bg-rose-700 text-white font-bold px-4 py-2 rounded-lg text-xs transition-all flex items-center gap-1.5 shadow-lg cursor-pointer"
-                    >
-                      <FaVideo /> <span>Start Live Screen Share</span>
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* OVERLAY BADGES */}
-              {mediaStream && (
-                <div className="absolute top-3 left-3 bg-slate-950/80 backdrop-blur-xs px-3 py-1 rounded-lg border border-slate-800 text-[10px] font-bold text-emerald-400 flex items-center gap-1.5">
-                  <FaCircle className="text-[6px] text-emerald-500 animate-ping" />
-                  <span>Live 1080p 60FPS • Remote Guidance Connected</span>
-                </div>
-              )}
+      {/* CONFIRMATION DESTRUCTIVE MODAL */}
+      {confirmModal.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-[#E2E8F0] space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center gap-3 text-[#0F172A] border-b border-[#E2E8F0] pb-3">
+              <FaExclamationTriangle className="text-xl text-[#2563EB]" />
+              <h3 className="font-bold text-[#0F172A] text-base">Clear Remote Monitoring Data</h3>
             </div>
 
-            {/* BOTTOM FOOTER CONTROLS */}
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2 border-t border-slate-800 text-xs">
-              <div className="text-slate-400 text-[11px]">
-                <strong>Student Email:</strong> {activeRemoteStudent.email} • <strong>Course:</strong> {activeRemoteStudent.course}
-              </div>
+            <p className="text-xs text-[#64748B] leading-relaxed">
+              Are you sure you want to clear all remote monitoring records? This action will permanently delete activity logs and remote data.
+            </p>
 
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={handleTriggerManualScreenshot}
-                  className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-3 py-1.5 rounded-lg text-xs flex items-center gap-1.5 transition-all cursor-pointer"
-                >
-                  <FaCamera /> <span>Take Instant Snapshot</span>
-                </button>
-                <button
-                  onClick={stopLiveScreenAccess}
-                  className="bg-rose-600 hover:bg-rose-700 text-white font-bold px-3 py-1.5 rounded-lg text-xs flex items-center gap-1.5 transition-all cursor-pointer"
-                >
-                  <FaStop /> <span>End Access Session</span>
-                </button>
-              </div>
+            <div className="flex gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setConfirmModal({ isOpen: false, loading: false })}
+                className="flex-1 py-2.5 rounded-xl bg-white hover:bg-[#F8FAFC] text-[#2563EB] border border-[#E2E8F0] font-semibold text-xs cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={executeClearRemoteData}
+                disabled={confirmModal.loading}
+                className="flex-1 py-2.5 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold text-xs cursor-pointer flex items-center justify-center"
+              >
+                {confirmModal.loading ? "Purging..." : "Confirm & Clear 🗑️"}
+              </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* FULL SCREENSHOT INSPECTION MODAL */}
-      {selectedImageModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/80 backdrop-blur-xs p-4">
-          <div className="bg-white rounded-2xl max-w-3xl w-full p-6 shadow-2xl space-y-4 border border-slate-200 text-left">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div>
-                <span className="text-[10px] font-extrabold uppercase bg-blue-100 text-blue-800 px-2.5 py-0.5 rounded border border-blue-300">
-                  {selectedImageModal.timestamp}
-                </span>
-                <h3 className="font-bold text-slate-900 text-base mt-1">{selectedImageModal.capturedApp}</h3>
-              </div>
-              <button onClick={() => setSelectedImageModal(null)} className="text-slate-400 hover:text-slate-700 text-xl font-bold p-1">✕</button>
-            </div>
-
-            <div className="rounded-xl overflow-hidden border border-slate-200 bg-slate-950">
-              <img src={selectedImageModal.previewUrl} alt="Enlarged Desktop Screenshot" className="w-full h-96 object-contain" />
-            </div>
-
-            <div className="flex items-center justify-between text-xs text-slate-600 pt-2 border-t border-slate-100">
-              <span><strong>Activity Level:</strong> {selectedImageModal.activityLevel}</span>
-              <span className="text-emerald-700 font-bold bg-emerald-50 px-2.5 py-1 rounded border border-emerald-200">
-                ✅ Privacy Compliant & Transparent Log
-              </span>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

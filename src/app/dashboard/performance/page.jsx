@@ -213,21 +213,21 @@ export default function PerformancePage() {
       <Modal isOpen={modal.isOpen} title={modal.title} message={modal.message} type={modal.type} onClose={closeModal} />
 
       {/* Top Banner - Blue & White Theme */}
-      <div className="bg-blue-700 text-white rounded-2xl p-6 shadow-xl border border-blue-600 flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="bg-white rounded-2xl p-6 border border-[#E2E8F0] shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <span className="text-[10px] font-extrabold uppercase tracking-widest text-blue-700 bg-white px-3 py-1 rounded-full border border-blue-200">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-[#2563EB] bg-[#EFF6FF] px-2.5 py-1 rounded-full border border-[#2563EB]/20">
               Employee Performance Engine
             </span>
-            <span className="text-[10px] font-bold text-blue-100 bg-blue-800/60 px-2.5 py-1 rounded-full border border-blue-600">
+            <span className="text-[10px] font-semibold text-[#64748B] bg-[#F8FAFC] px-2.5 py-1 rounded-full border border-[#E2E8F0]">
               8-Factor Evaluation & Monthly Leaderboard
             </span>
           </div>
-          <h1 className="text-2xl md:text-3xl font-black mt-2 text-white flex items-center gap-2.5">
-            <FaTrophy className="text-white" />
-            <span>Employee Performance & Monthly Ranking</span>
+          <h1 className="text-xl md:text-2xl font-bold mt-1.5 text-[#0F172A] flex items-center gap-2.5 whitespace-nowrap">
+            <FaTrophy className="text-[#2563EB] shrink-0" />
+            <span className="whitespace-nowrap">Employee Performance & Monthly Ranking</span>
           </h1>
-          <p className="text-xs text-blue-100 mt-1">
+          <p className="text-xs text-[#64748B] mt-0.5">
             Scores based on: Attendance • Task Completion • Deadlines • Client Feedback • Social Media Activity • Behavior • Leave Record • Productivity
           </p>
         </div>
@@ -236,7 +236,7 @@ export default function PerformancePage() {
           <select
             value={selectedMonth}
             onChange={(e) => setSelectedMonth(e.target.value)}
-            className="bg-blue-800 border border-blue-500 text-white font-bold px-3 py-2 rounded-xl text-xs outline-none cursor-pointer"
+            className="bg-[#F8FAFC] border border-[#E2E8F0] text-[#0F172A] font-bold px-3 py-2 rounded-xl text-xs outline-none cursor-pointer"
           >
             <option value="August 2026">August 2026 Leaderboard</option>
             <option value="July 2026">July 2026 Leaderboard</option>
@@ -247,9 +247,9 @@ export default function PerformancePage() {
 
       {/* Monthly Ranking Leaderboard Grid */}
       <div className="space-y-6">
-        <h2 className="text-base font-black text-slate-900 flex items-center gap-2">
-          <FaStar className="text-blue-600 text-lg" />
-          <span>Monthly Employee Performance Leaderboard ({selectedMonth})</span>
+        <h2 className="text-base font-bold text-[#0F172A] flex items-center gap-2 max-w-full overflow-hidden">
+          <FaStar className="text-[#2563EB] text-[#2563EB] text-base shrink-0" />
+          <span className="whitespace-nowrap truncate font-bold text-[#0F172A]">Monthly Employee Performance Leaderboard ({selectedMonth})</span>
         </h2>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

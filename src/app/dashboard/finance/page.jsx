@@ -355,17 +355,17 @@ export default function ComprehensiveFinanceAccountingPage() {
 
   return (
     <div className="max-w-7xl mx-auto space-y-6 bg-white min-h-screen p-3 sm:p-6 text-slate-900">
-      {/* Top Banner & Multi-Tab Navigation */}
-      <div className="bg-slate-900 rounded-3xl p-6 text-white shadow-md flex flex-col lg:flex-row lg:items-center justify-between gap-6 border border-slate-800">
+      {/* Top Banner & Multi-Tab Navigation (Requirement #1) */}
+      <div className="bg-white rounded-2xl p-6 border border-[#E2E8F0] shadow-sm flex flex-col lg:flex-row lg:items-center justify-between gap-6">
         <div>
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/20 border border-blue-400/30 text-blue-300 text-[10px] font-black uppercase tracking-wider">
-            💎 Master Treasury & Accounts Control Center
+          <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-[#EFF6FF] text-[#2563EB] text-[10px] font-bold uppercase tracking-wider border border-[#2563EB]/20">
+            Master Treasury & Accounts Control Center
           </div>
-          <h1 className="text-2xl sm:text-3xl font-black text-white mt-2 flex items-center gap-3">
-            <FaLandmark className="text-blue-400" />
+          <h1 className="text-xl sm:text-2xl font-bold text-[#0F172A] mt-1.5 flex items-center gap-2.5">
+            <FaLandmark className="text-[#2563EB]" />
             <span>Finance & Accounting Suite</span>
           </h1>
-          <p className="text-xs text-slate-300 mt-1 max-w-xl">
+          <p className="text-xs text-[#64748B] mt-0.5 max-w-xl">
             Complete management for company expenses, client revenue, utility bills, employee salary payouts, and profit/loss statements.
           </p>
         </div>
@@ -373,57 +373,57 @@ export default function ComprehensiveFinanceAccountingPage() {
         <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={() => setNewExpenseModal(true)}
-            className="bg-blue-600 hover:bg-blue-500 text-white font-extrabold px-4 py-2.5 rounded-xl text-xs flex items-center gap-2 transition-all shadow-md cursor-pointer border border-blue-400"
+            className="bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold px-4 py-2 rounded-xl text-xs flex items-center gap-1.5 transition-colors shadow-xs cursor-pointer"
           >
-            <FaPlusCircle />
+            <FaPlusCircle className="text-sm" />
             <span>+ Record Expense</span>
           </button>
 
           <button
             onClick={() => setNewIncomeModal(true)}
-            className="bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold px-4 py-2.5 rounded-xl text-xs flex items-center gap-2 transition-all shadow-md cursor-pointer border border-emerald-400"
+            className="bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold px-4 py-2 rounded-xl text-xs flex items-center gap-1.5 transition-colors shadow-xs cursor-pointer"
           >
-            <FaMoneyBillWave />
+            <FaMoneyBillWave className="text-sm" />
             <span>+ Record Income</span>
           </button>
         </div>
       </div>
 
       {/* Navigation Tabs Bar */}
-      <div className="flex items-center gap-2 border-b border-slate-200 pb-2 overflow-x-auto">
+      <div className="flex items-center gap-2 border-b border-[#E2E8F0] pb-2 overflow-x-auto">
         <button
           onClick={() => setActiveTab("dashboard")}
-          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${activeTab === "dashboard" ? "bg-blue-600 text-white shadow-sm" : "bg-slate-100 text-slate-700 hover:bg-slate-200"}`}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-colors flex items-center gap-2 whitespace-nowrap cursor-pointer ${activeTab === "dashboard" ? "bg-[#2563EB] text-white shadow-xs" : "bg-white text-[#64748B] border border-[#E2E8F0] hover:bg-[#F8FAFC]"}`}
         >
           <FaLandmark /> Executive Dashboard
         </button>
         <button
           onClick={() => setActiveTab("expenses")}
-          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${activeTab === "expenses" ? "bg-blue-600 text-white shadow-sm" : "bg-slate-100 text-slate-700 hover:bg-slate-200"}`}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-colors flex items-center gap-2 whitespace-nowrap cursor-pointer ${activeTab === "expenses" ? "bg-[#2563EB] text-white shadow-xs" : "bg-white text-[#64748B] border border-[#E2E8F0] hover:bg-[#F8FAFC]"}`}
         >
           <FaReceipt /> Expenses ({expenses.length})
         </button>
         <button
           onClick={() => setActiveTab("incomes")}
-          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${activeTab === "incomes" ? "bg-blue-600 text-white shadow-sm" : "bg-slate-100 text-slate-700 hover:bg-slate-200"}`}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-colors flex items-center gap-2 whitespace-nowrap cursor-pointer ${activeTab === "incomes" ? "bg-[#2563EB] text-white shadow-xs" : "bg-white text-[#64748B] border border-[#E2E8F0] hover:bg-[#F8FAFC]"}`}
         >
           <FaMoneyBillWave /> Income Management ({incomes.length})
         </button>
         <button
           onClick={() => setActiveTab("utility_bills")}
-          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${activeTab === "utility_bills" ? "bg-blue-600 text-white shadow-sm" : "bg-slate-100 text-slate-700 hover:bg-slate-200"}`}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-colors flex items-center gap-2 whitespace-nowrap cursor-pointer ${activeTab === "utility_bills" ? "bg-[#2563EB] text-white shadow-xs" : "bg-white text-[#64748B] border border-[#E2E8F0] hover:bg-[#F8FAFC]"}`}
         >
           <FaBolt /> Utility Bills ({utilityBills.length})
         </button>
         <button
           onClick={() => setActiveTab("salary_audit")}
-          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${activeTab === "salary_audit" ? "bg-blue-600 text-white shadow-sm" : "bg-slate-100 text-slate-700 hover:bg-slate-200"}`}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-colors flex items-center gap-2 whitespace-nowrap cursor-pointer ${activeTab === "salary_audit" ? "bg-[#2563EB] text-white shadow-xs" : "bg-white text-[#64748B] border border-[#E2E8F0] hover:bg-[#F8FAFC]"}`}
         >
           <FaUserCheck /> Auto Salary Audit
         </button>
         <button
           onClick={() => setActiveTab("pnl_reports")}
-          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${activeTab === "pnl_reports" ? "bg-blue-600 text-white shadow-sm" : "bg-slate-100 text-slate-700 hover:bg-slate-200"}`}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-colors flex items-center gap-2 whitespace-nowrap cursor-pointer ${activeTab === "pnl_reports" ? "bg-[#2563EB] text-white shadow-xs" : "bg-white text-[#64748B] border border-[#E2E8F0] hover:bg-[#F8FAFC]"}`}
         >
           <FaChartLine /> P&L & Reports
         </button>
@@ -432,86 +432,86 @@ export default function ComprehensiveFinanceAccountingPage() {
       {/* TAB 1: EXECUTIVE DASHBOARD */}
       {activeTab === "dashboard" && (
         <div className="space-y-6">
-          {/* Summary KPI Cards Grid (Exact 8 Key Cards Requested) */}
+          {/* Summary KPI Cards Grid (Exact 8 Key Cards Requested - Requirement #2 & Requirement #4) */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {/* Total Income */}
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs hover:border-emerald-300 transition-all space-y-2">
+            <div className="rounded-2xl border border-[#E2E8F0] bg-white p-5 shadow-sm space-y-2">
               <div className="flex items-center justify-between">
-                <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">Total Income</span>
-                <div className="p-2 bg-emerald-50 text-emerald-600 rounded-xl border border-emerald-200"><FaArrowUp /></div>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-[#64748B]">Total Income</span>
+                <div className="p-2 bg-[#EFF6FF] text-[#2563EB] rounded-xl border border-[#2563EB]/20"><FaArrowUp /></div>
               </div>
-              <p className="text-2xl font-black text-slate-900">Rs. {totalIncome.toLocaleString()}</p>
-              <p className="text-[11px] text-emerald-700 font-semibold">Total Revenue Generated</p>
+              <p className="text-2xl font-bold text-[#0F172A]">Rs. {totalIncome.toLocaleString()}</p>
+              <p className="text-[11px] text-[#64748B]">Total Revenue Generated</p>
             </div>
 
             {/* Total Expenses */}
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs hover:border-rose-300 transition-all space-y-2">
+            <div className="rounded-2xl border border-[#E2E8F0] bg-white p-5 shadow-sm space-y-2">
               <div className="flex items-center justify-between">
-                <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">Total Expenses</span>
-                <div className="p-2 bg-rose-50 text-rose-600 rounded-xl border border-rose-200"><FaArrowDown /></div>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-[#64748B]">Total Expenses</span>
+                <div className="p-2 bg-[#EFF6FF] text-[#2563EB] rounded-xl border border-[#2563EB]/20"><FaArrowDown /></div>
               </div>
-              <p className="text-2xl font-black text-slate-900">Rs. {totalExpenses.toLocaleString()}</p>
-              <p className="text-[11px] text-slate-500 font-medium">All Operating Expenses</p>
+              <p className="text-2xl font-bold text-[#0F172A]">Rs. {totalExpenses.toLocaleString()}</p>
+              <p className="text-[11px] text-[#64748B]">All Operating Expenses</p>
             </div>
 
             {/* Net Profit / Loss */}
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs hover:border-blue-300 transition-all space-y-2">
+            <div className="rounded-2xl border border-[#E2E8F0] bg-white p-5 shadow-sm space-y-2">
               <div className="flex items-center justify-between">
-                <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">Net Profit / (Loss)</span>
-                <div className={`p-2 rounded-xl border ${netProfitLoss >= 0 ? "bg-emerald-50 text-emerald-600 border-emerald-200" : "bg-rose-50 text-rose-600 border-rose-200"}`}><FaChartLine /></div>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-[#64748B]">Net Profit / (Loss)</span>
+                <div className="p-2 bg-[#EFF6FF] text-[#2563EB] rounded-xl border border-[#2563EB]/20"><FaChartLine /></div>
               </div>
-              <p className={`text-2xl font-black ${netProfitLoss >= 0 ? "text-emerald-600" : "text-rose-600"}`}>Rs. {netProfitLoss.toLocaleString()}</p>
-              <p className="text-[11px] font-bold text-slate-600">{netProfitLoss >= 0 ? "🟢 Net Surplus" : "🔴 Deficit Recorded"}</p>
+              <p className="text-2xl font-bold text-[#0F172A]">Rs. {netProfitLoss.toLocaleString()}</p>
+              <p className="text-[11px] font-semibold text-[#2563EB]">{netProfitLoss >= 0 ? "Surplus" : "Deficit"}</p>
             </div>
 
             {/* Monthly Income */}
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs hover:border-blue-300 transition-all space-y-2">
+            <div className="rounded-2xl border border-[#E2E8F0] bg-white p-5 shadow-sm space-y-2">
               <div className="flex items-center justify-between">
-                <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">Monthly Income ({selectedMonth})</span>
-                <div className="p-2 bg-blue-50 text-blue-600 rounded-xl border border-blue-200"><FaCalendarAlt /></div>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-[#64748B]">Monthly Income ({selectedMonth})</span>
+                <div className="p-2 bg-[#EFF6FF] text-[#2563EB] rounded-xl border border-[#2563EB]/20"><FaCalendarAlt /></div>
               </div>
-              <p className="text-2xl font-black text-slate-900">Rs. {monthlyIncome.toLocaleString()}</p>
-              <p className="text-[11px] text-slate-500 font-medium">Recorded in {selectedMonth}</p>
+              <p className="text-2xl font-bold text-[#0F172A]">Rs. {monthlyIncome.toLocaleString()}</p>
+              <p className="text-[11px] text-[#64748B]">Recorded in {selectedMonth}</p>
             </div>
 
             {/* Monthly Expenses */}
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs hover:border-amber-300 transition-all space-y-2">
+            <div className="rounded-2xl border border-[#E2E8F0] bg-white p-5 shadow-sm space-y-2">
               <div className="flex items-center justify-between">
-                <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">Monthly Expenses ({selectedMonth})</span>
-                <div className="p-2 bg-amber-50 text-amber-600 rounded-xl border border-amber-200"><FaReceipt /></div>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-[#64748B]">Monthly Expenses ({selectedMonth})</span>
+                <div className="p-2 bg-[#EFF6FF] text-[#2563EB] rounded-xl border border-[#2563EB]/20"><FaReceipt /></div>
               </div>
-              <p className="text-2xl font-black text-slate-900">Rs. {monthlyExpenses.toLocaleString()}</p>
-              <p className="text-[11px] text-slate-500 font-medium">Expenses for {selectedMonth}</p>
+              <p className="text-2xl font-bold text-[#0F172A]">Rs. {monthlyExpenses.toLocaleString()}</p>
+              <p className="text-[11px] text-[#64748B]">Expenses for {selectedMonth}</p>
             </div>
 
             {/* Pending Payments */}
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs hover:border-rose-300 transition-all space-y-2">
+            <div className="rounded-2xl border border-[#E2E8F0] bg-white p-5 shadow-sm space-y-2">
               <div className="flex items-center justify-between">
-                <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">Pending Payments (Unpaid)</span>
-                <div className="p-2 bg-rose-50 text-rose-600 rounded-xl border border-rose-200"><FaTimesCircle /></div>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-[#64748B]">Pending Payments (Unpaid)</span>
+                <div className={`p-2 rounded-xl border ${pendingPayments > 0 ? "bg-[#FEF3C7] text-[#92400E] border-[#F59E0B]/20" : "bg-[#EFF6FF] text-[#2563EB] border-[#2563EB]/20"}`}><FaTimesCircle /></div>
               </div>
-              <p className="text-2xl font-black text-rose-600">Rs. {pendingPayments.toLocaleString()}</p>
-              <p className="text-[11px] text-rose-700 font-medium">Unpaid Dues & Bills</p>
+              <p className="text-2xl font-bold text-[#0F172A]">Rs. {pendingPayments.toLocaleString()}</p>
+              <p className="text-[11px] text-[#64748B]">Unpaid Dues & Bills</p>
             </div>
 
             {/* Employee Salary Expense */}
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs hover:border-emerald-300 transition-all space-y-2">
+            <div className="rounded-2xl border border-[#E2E8F0] bg-white p-5 shadow-sm space-y-2">
               <div className="flex items-center justify-between">
-                <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">Employee Salary Expense</span>
-                <div className="p-2 bg-emerald-50 text-emerald-600 rounded-xl border border-emerald-200"><FaUserCheck /></div>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-[#64748B]">Employee Salary Expense</span>
+                <div className="p-2 bg-[#EFF6FF] text-[#2563EB] rounded-xl border border-[#2563EB]/20"><FaUserCheck /></div>
               </div>
-              <p className="text-2xl font-black text-slate-900">Rs. {totalSalaryExpense.toLocaleString()}</p>
-              <p className="text-[11px] text-emerald-700 font-semibold">Synced from Payroll Master</p>
+              <p className="text-2xl font-bold text-[#0F172A]">Rs. {totalSalaryExpense.toLocaleString()}</p>
+              <p className="text-[11px] text-[#64748B]">Synced from Payroll Master</p>
             </div>
 
             {/* Cash Balance */}
-            <div className="rounded-2xl border border-blue-200 bg-blue-50/30 p-5 shadow-xs hover:border-blue-400 transition-all space-y-2">
+            <div className="rounded-2xl border border-[#E2E8F0] bg-white p-5 shadow-sm space-y-2">
               <div className="flex items-center justify-between">
-                <span className="text-[10px] font-black uppercase tracking-wider text-blue-800">Cash Balance</span>
-                <div className="p-2 bg-blue-100 text-blue-700 rounded-xl border border-blue-200"><FaHandHoldingUsd /></div>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-[#64748B]">Cash Balance</span>
+                <div className="p-2 bg-[#EFF6FF] text-[#2563EB] rounded-xl border border-[#2563EB]/20"><FaHandHoldingUsd /></div>
               </div>
-              <p className="text-2xl font-black text-blue-950">Rs. {cashBalance.toLocaleString()}</p>
-              <p className="text-[11px] text-blue-700 font-semibold">Opening + Revenue - Expense</p>
+              <p className="text-2xl font-bold text-[#0F172A]">Rs. {cashBalance.toLocaleString()}</p>
+              <p className="text-[11px] text-[#64748B]">Opening + Revenue - Expense</p>
             </div>
           </div>
 

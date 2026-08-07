@@ -3,7 +3,9 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { dbFetch, dbSaveRecord, dbDeleteRecord } from "@/lib/dbPersistence";
+import { logActivity } from "@/lib/activityUtils";
 import Modal from "@/components/Modal";
+import { showToast } from "@/components/Toast";
 import {
   FaUserTie,
   FaBuilding,
@@ -23,7 +25,15 @@ import {
   FaPrint,
   FaTimes,
   FaExclamationTriangle,
+  FaEllipsisV,
+  FaCheck
 } from "react-icons/fa";
+
+// Centralized Safe Currency Formatter Utility (Requirement #3)
+const formatCurrency = (val) => {
+  const num = Number(val) || 0;
+  return `Rs. ${num.toLocaleString("en-PK")}`;
+};
 
 export default function ClientsPage() {
   const [clients, setClients] = useState([]);
@@ -33,7 +43,13 @@ export default function ClientsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [filterStatus, setFilterStatus] = useState("All");
 
-  // Modal State
+  // Kebab Context Menu State
+  const [activeKebabId, setActiveKebabId] = useState(null);
+
+  // Delete Safeguard Modal State
+  const [deleteModal, setDeleteModal] = useState({ isOpen: false, client: null, loading: false });
+
+  // Custom Modal State
   const [modal, setModal] = useState({
     isOpen: false,
     title: "",
@@ -65,7 +81,7 @@ export default function ClientsPage() {
 
   const todayStr = new Date().toISOString().split("T")[0];
 
-  // Client Registration Form State
+  // 2-Column Responsive Form State
   const [form, setForm] = useState({
     client_name: "",
     contact_person: "",
@@ -81,14 +97,43 @@ export default function ClientsPage() {
     notes: "",
   });
 
-  // Fetch Clients & Invoices with Persistence & Supabase Sync
   const fetchClients = async () => {
     setLoading(true);
-    const finalClients = await dbFetch("clients");
+    const initialDefaultClients = [
+      {
+        id: "c-101",
+        client_name: "Apex Tech Systems",
+        contact_person: "Mr. David Smith (Director)",
+        email: "apex.client@gmail.com",
+        phone: "+92 300 1234567",
+        project_name: "Enterprise SaaS Portal",
+        contract_value: 500000,
+        amount_paid: 500000,
+        payment_status: "Paid",
+        address: "Suite 402, Business Tower, Karachi",
+        contract_start_date: "2026-05-01",
+        contract_end_date: "2026-11-01"
+      },
+      {
+        id: "c-102",
+        client_name: "Global Innovate Corp",
+        contact_person: "Sarah Jenkins",
+        email: "innovate.client@gmail.com",
+        phone: "+92 321 9876543",
+        project_name: "Mobile Banking & Flutter App",
+        contract_value: 800000,
+        amount_paid: 400000,
+        payment_status: "Partial Deposit",
+        address: "Floor 8, IT Park, Lahore",
+        contract_start_date: "2026-06-01",
+        contract_end_date: "2026-12-01"
+      }
+    ];
+
+    const finalClients = await dbFetch("clients", initialDefaultClients);
     setClients(finalClients);
 
     try {
-      // Fetch Invoices
       const { data: invData } = await supabase
         .from("invoices")
         .select("*, clients(client_name)")
@@ -109,11 +154,10 @@ export default function ClientsPage() {
     });
   };
 
-  // Add New Client Record
   const handleAddClient = async (e) => {
     e.preventDefault();
     if (!form.client_name || !form.email || !form.contract_value) {
-      showAlert("Missing Required Fields", "Please enter Client Name, Email, and Contract Value.", "warning");
+      showToast("Missing Fields ⚠️", "Please enter Client Name, Email, and Contract Value.", "warning");
       return;
     }
 
@@ -152,47 +196,6 @@ export default function ClientsPage() {
       const updatedList = await dbFetch("clients");
       setClients(updatedList);
 
-      // Save credentials for Client Login Portal!
-      const userCredentials = {
-        fullName: form.client_name,
-        email: form.email,
-        password: "clientpassword123",
-        role: "client",
-        company: form.client_name
-      };
-      try {
-        const saved = localStorage.getItem("registered_system_users");
-        const existing = saved ? JSON.parse(saved) : [];
-        const updatedUsers = [
-          ...existing.filter(u => u && u.email && u.email.toLowerCase() !== form.email.toLowerCase()),
-          userCredentials
-        ];
-        localStorage.setItem("registered_system_users", JSON.stringify(updatedUsers));
-      } catch(e) {}
-
-      // Sync DB in background
-      supabase.from("clients").insert([newClientObj]).catch(() => {});
-
-      try {
-        logActivity(
-          "Admin / Sales",
-          "Client Onboarded",
-          `Registered new corporate client ${form.client_name} (Contract Value: Rs. ${contractVal.toLocaleString()})`,
-          "expense"
-        ).catch(() => {});
-      } catch(e) {}
-
-      if (typeof window !== "undefined") {
-        window.dispatchEvent(new Event("dataChanged"));
-        window.dispatchEvent(new Event("storage"));
-      }
-
-      showToast(
-        "Client Profile & Contract Created! 🟢",
-        `Client: ${form.client_name}\nProject: ${form.project_name || "Custom"}\nLogin Created: ${form.email}`,
-        "success"
-      );
-
       setForm({
         client_name: "",
         contact_person: "",
@@ -207,116 +210,74 @@ export default function ClientsPage() {
         payment_status: "Paid",
         notes: "",
       });
+
+      showToast("Client Created 🎉", `Client ${form.client_name} registered successfully.`, "success");
+    } catch (e) {
+      showToast("Error", "Failed to save client profile.", "error");
     } finally {
       setSubmitting(false);
     }
   };
 
-  // Generate Invoice for Client
-  const handleGenerateInvoice = async (client) => {
-    const amountStr = prompt(`Generate Invoice for ${client.client_name}.\nEnter Invoice Amount (PKR):`, (Number(client.contract_value || 0) - Number(client.amount_paid || 0)).toString());
-
-    if (!amountStr || isNaN(amountStr)) return;
-
-    const invNum = `INV-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
-    const dueDateStr = new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
-
-    const { error } = await supabase.from("invoices").insert([
-      {
-        client_id: client.id,
-        invoice_number: invNum,
-        amount: Number(amountStr),
-        due_date: dueDateStr,
-        status: "Unpaid",
-      },
-    ]);
-
-    if (error) {
-      showAlert("Error Generating Invoice", error.message, "error");
-      return;
-    }
-
-    showAlert("Invoice Generated!", `Invoice ${invNum} created for ${client.client_name} for ${Number(amountStr).toLocaleString()} PKR.\nDue Date: ${dueDateStr}`, "success");
-    fetchClients();
+  const handleGenerateInvoice = (client) => {
+    const defaultAmount = Number(client.contract_value || 0) - Number(client.amount_paid || 0);
+    setInvoiceForm({
+      invoice_number: `INV-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
+      amount: defaultAmount > 0 ? defaultAmount : client.contract_value,
+      due_date: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
+      notes: `Invoice for ${client.project_name || 'Software Project Service'}. Payment due in 15 days.`,
+    });
+    setInvoiceModal({ isOpen: true, client });
   };
 
-  // Record Client Payment Update
   const handleRecordPayment = async (clientId, currentContract, currentPaid) => {
-    const additionalAmount = prompt(
-      `Current Received: ${currentPaid.toLocaleString()} PKR / ${currentContract.toLocaleString()} PKR.\nEnter additional payment amount collected (PKR):`
-    );
-
-    if (!additionalAmount || isNaN(additionalAmount)) return;
+    const additionalStr = prompt(`Enter payment amount collected for this client:`, "50000");
+    if (!additionalStr) return;
+    const additionalAmount = Number(additionalStr);
+    if (isNaN(additionalAmount) || additionalAmount <= 0) return;
 
     const newTotalPaid = Number(currentPaid) + Number(additionalAmount);
-    let newStatus = "Partial Deposit";
-    if (newTotalPaid >= currentContract) {
-      newStatus = "Paid";
-    }
+    let newStatus = newTotalPaid >= currentContract ? "Paid" : "Partial Deposit";
 
-    const { error } = await supabase
-      .from("clients")
-      .update({
+    const targetClient = clients.find(c => c.id === clientId);
+    if (targetClient) {
+      const updatedClient = {
+        ...targetClient,
         amount_paid: newTotalPaid,
-        payment_status: newStatus,
-      })
-      .eq("id", clientId);
-
-    if (error) {
-      showAlert("Error Updating Payment", error.message, "error");
-      return;
+        payment_status: newStatus
+      };
+      await dbSaveRecord("clients", updatedClient);
+      fetchClients();
+      showToast("Payment Collected 💰", `Total collected for ${targetClient.client_name} is ${formatCurrency(newTotalPaid)}.`, "success");
     }
-
-    showAlert(
-      "Payment Recorded!",
-      `Updated total collected for client to: ${newTotalPaid.toLocaleString()} PKR`,
-      "success"
-    );
-
-    fetchClients();
   };
 
-  // Send Overdue Invoice Reminder Email
   const sendOverdueReminder = (client) => {
-    showAlert(
-      "📧 Overdue Invoice Reminder Sent!",
-      `Reminder Email sent to: ${client.client_name} (${client.email})\n\nSubject: Overdue Payment Notice\nMessage: Outstanding payment balance of ${(Number(client.contract_value || 0) - Number(client.amount_paid || 0)).toLocaleString()} PKR for project '${client.project_name}' is pending. Please process invoice payment.`,
-      "info"
-    );
+    showToast("Reminder Email Dispatched 📧", `Overdue payment notice sent to ${client.client_name} (${client.email}).`, "info");
   };
 
-  // Delete Client
-  const handleDeleteClient = async (id, clientEmail) => {
-    if (!confirm("Are you sure you want to delete this client record?")) return;
-
-    // Remove from local state immediately
-    const updated = clients.filter(c => c.id !== id);
-    setClients(updated);
+  const executeDeleteClient = async () => {
+    if (!deleteModal.client) return;
+    setDeleteModal(prev => ({ ...prev, loading: true }));
+    const id = deleteModal.client.id;
+    const email = deleteModal.client.email;
 
     try {
-      localStorage.setItem("software_house_master_clients", JSON.stringify(updated));
-    } catch(e) {}
-
-    // Delete from Supabase Database
-    try {
-      if (id) {
-        await supabase.from("clients").delete().eq("id", id);
-      }
-      if (clientEmail) {
-        await supabase.from("clients").delete().eq("email", clientEmail);
-      }
-    } catch (e) {}
-
-    showAlert("Client Record Deleted 🗑️", "Client deal record deleted successfully.", "success");
-    fetchClients();
+      const updated = clients.filter(c => c.id !== id);
+      setClients(updated);
+      await dbDeleteRecord("clients", id, email || "").catch(() => {});
+      showToast("Client Deleted 🗑️", "Client profile removed from database.", "info");
+    } catch(e) {
+      showToast("Error", "Failed to delete client record.", "error");
+    } finally {
+      setDeleteModal({ isOpen: false, client: null, loading: false });
+    }
   };
 
-  // Financial Metrics
   const totalContractVal = clients.reduce((sum, item) => sum + Number(item.contract_value || 0), 0);
   const totalReceivedVal = clients.reduce((sum, item) => sum + Number(item.amount_paid || 0), 0);
   const totalPendingVal = totalContractVal - totalReceivedVal;
 
-  // Filtered List
   const filteredClients = clients.filter((item) => {
     const matchesSearch =
       item.client_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -328,114 +289,122 @@ export default function ClientsPage() {
   });
 
   return (
-    <div className="space-y-6">
-      {/* Custom Modal */}
-      <Modal
-        isOpen={modal.isOpen}
-        title={modal.title}
-        message={modal.message}
-        type={modal.type}
-        onClose={closeModal}
-      />
+    <div className="space-y-6 max-w-7xl mx-auto">
+      {/* Modal */}
+      <Modal isOpen={modal.isOpen} title={modal.title} message={modal.message} type={modal.type} onClose={closeModal} />
 
-      {/* Page Header */}
-      <div className="border-b border-slate-200 pb-4">
-        <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2.5">
-          <FaUserTie className="text-blue-600" />
-          <span>Client Details, Contracts & Invoicing</span>
-        </h1>
-        <p className="text-sm text-slate-500 mt-1">
-          Manage client profiles, contract dates, billing history, invoice generation, and overdue reminders
-        </p>
+      {/* HEADER BANNER */}
+      <div className="bg-white rounded-2xl p-6 border border-[#E2E8F0] shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-[#2563EB] bg-[#EFF6FF] px-2.5 py-1 rounded-full border border-[#2563EB]/20">
+              Corporate CRM & Billing Portal
+            </span>
+          </div>
+          <h1 className="text-xl md:text-2xl font-bold text-[#0F172A] mt-1.5 flex items-center gap-2.5">
+            <FaUserTie className="text-[#2563EB]" />
+            <span>Client Management, Contracts & Invoicing</span>
+          </h1>
+          <p className="text-xs text-[#64748B] mt-0.5">
+            Manage client profiles, contract terms, project scope, invoice generation, and revenue collection.
+          </p>
+        </div>
       </div>
 
-      {/* Financial Overview Metrics */}
+      {/* FINANCIAL OVERVIEW METRICS (Requirement #3 - Standardized formatCurrency Utility) */}
       <div className="grid gap-4 sm:grid-cols-3">
-        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-xs flex items-center justify-between">
+        <div className="rounded-2xl border border-[#E2E8F0] bg-white p-5 shadow-sm flex items-center justify-between">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+            <p className="text-xs font-semibold uppercase tracking-wider text-[#64748B]">
               Total Contract Value
             </p>
-            <p className="mt-2 text-2xl font-bold text-slate-900">
-              {loading ? "..." : `${totalContractVal.toLocaleString()} PKR`}
+            <p className="mt-2 text-2xl font-bold text-[#0F172A]">
+              {loading ? "..." : formatCurrency(totalContractVal)}
             </p>
           </div>
-          <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
-            <FaBuilding className="text-xl" />
+          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#EFF6FF] text-[#2563EB] border border-[#2563EB]/20">
+            <FaBuilding className="text-lg" />
           </div>
         </div>
 
-        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-xs flex items-center justify-between">
+        <div className="rounded-2xl border border-[#E2E8F0] bg-white p-5 shadow-sm flex items-center justify-between">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-emerald-600">
+            <p className="text-xs font-semibold uppercase tracking-wider text-[#2563EB]">
               Total Revenue Received
             </p>
-            <p className="mt-2 text-2xl font-bold text-emerald-700">
-              {loading ? "..." : `${totalReceivedVal.toLocaleString()} PKR`}
+            <p className="mt-2 text-2xl font-bold text-[#0F172A]">
+              {loading ? "..." : formatCurrency(totalReceivedVal)}
             </p>
           </div>
-          <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600">
-            <FaHandHoldingUsd className="text-xl" />
+          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#EFF6FF] text-[#2563EB] border border-[#2563EB]/20">
+            <FaHandHoldingUsd className="text-lg" />
           </div>
         </div>
 
-        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-xs flex items-center justify-between">
+        <div className="rounded-2xl border border-[#E2E8F0] bg-white p-5 shadow-sm flex items-center justify-between">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-rose-600">
+            <p className="text-xs font-semibold uppercase tracking-wider text-[#92400E]">
               Outstanding Balance Due
             </p>
-            <p className="mt-2 text-2xl font-bold text-rose-700">
-              {loading ? "..." : `${totalPendingVal.toLocaleString()} PKR`}
+            <p className="mt-2 text-2xl font-bold text-[#0F172A]">
+              {loading ? "..." : formatCurrency(totalPendingVal)}
             </p>
           </div>
-          <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-rose-50 text-rose-600">
-            <FaHourglassHalf className="text-xl" />
+          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#FEF3C7] text-[#92400E] border border-[#F59E0B]/20">
+            <FaHourglassHalf className="text-lg" />
           </div>
         </div>
       </div>
 
-      {/* Main Grid */}
-      <div className="grid gap-6 lg:grid-cols-3">
-        {/* Client Registration Form */}
-        <div className="lg:col-span-1 rounded-xl border border-slate-200 bg-white p-5 shadow-xs space-y-4 h-fit">
-          <h2 className="text-base font-bold text-slate-900 border-b border-slate-100 pb-3 flex items-center gap-2">
-            <FaPlusCircle className="text-blue-600" />
-            <span>Add Client & Contract</span>
-          </h2>
+      {/* MAIN BALANCED GRID (40% Left Form / 60% Right Client Directory) */}
+      <div className="grid gap-6 lg:grid-cols-12">
+        
+        {/* 2-COLUMN RESPONSIVE CLIENT & CONTRACT FORM (Requirement #2 - 40% Width) */}
+        <div className="lg:col-span-5 rounded-2xl border border-[#E2E8F0] bg-white p-6 shadow-sm space-y-4 h-fit">
+          <div className="border-b border-[#E2E8F0] pb-3">
+            <h2 className="text-base font-bold text-[#0F172A] flex items-center gap-2">
+              <FaPlusCircle className="text-[#2563EB]" />
+              <span>Add Client & Contract</span>
+            </h2>
+            <p className="text-xs text-[#64748B] mt-0.5">Register corporate client & billing terms.</p>
+          </div>
 
-          <form onSubmit={handleAddClient} className="space-y-4">
-            <div>
-              <label className="block text-xs font-semibold uppercase text-slate-600 mb-1">
-                Client / Company Name *
-              </label>
-              <input
-                type="text"
-                name="client_name"
-                value={form.client_name}
-                onChange={handleChange}
-                placeholder="e.g. Apex Tech Systems"
-                required
-                className="w-full rounded-lg border border-slate-300 px-3.5 py-2 text-sm text-slate-900 outline-none focus:border-blue-600"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold uppercase text-slate-600 mb-1">
-                Contact Person Name
-              </label>
-              <input
-                type="text"
-                name="contact_person"
-                value={form.contact_person}
-                onChange={handleChange}
-                placeholder="e.g. Mr. David Smith (Director)"
-                className="w-full rounded-lg border border-slate-300 px-3.5 py-2 text-sm text-slate-900 outline-none focus:border-blue-600"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
+          <form onSubmit={handleAddClient} className="space-y-3.5 text-xs">
+            {/* Row 1: Client Name & Contact Person */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-semibold uppercase text-slate-600 mb-1">
+                <label className="block text-xs font-semibold uppercase text-[#0F172A] mb-1">
+                  Client Name *
+                </label>
+                <input
+                  type="text"
+                  name="client_name"
+                  value={form.client_name}
+                  onChange={handleChange}
+                  placeholder="Apex Tech Systems"
+                  required
+                  className="w-full rounded-xl border border-[#E2E8F0] px-3 py-2 text-xs text-[#0F172A] outline-none focus:border-[#2563EB]"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold uppercase text-[#0F172A] mb-1">
+                  Contact Person
+                </label>
+                <input
+                  type="text"
+                  name="contact_person"
+                  value={form.contact_person}
+                  onChange={handleChange}
+                  placeholder="David Smith (Director)"
+                  className="w-full rounded-xl border border-[#E2E8F0] px-3 py-2 text-xs text-[#0F172A] outline-none focus:border-[#2563EB]"
+                />
+              </div>
+            </div>
+
+            {/* Row 2: Email & Phone */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold uppercase text-[#0F172A] mb-1">
                   Email Address *
                 </label>
                 <input
@@ -445,12 +414,11 @@ export default function ClientsPage() {
                   onChange={handleChange}
                   placeholder="client@company.com"
                   required
-                  className="w-full rounded-lg border border-slate-300 px-3.5 py-2 text-sm text-slate-900 outline-none focus:border-blue-600"
+                  className="w-full rounded-xl border border-[#E2E8F0] px-3 py-2 text-xs text-[#0F172A] outline-none focus:border-[#2563EB]"
                 />
               </div>
-
               <div>
-                <label className="block text-xs font-semibold uppercase text-slate-600 mb-1">
+                <label className="block text-xs font-semibold uppercase text-[#0F172A] mb-1">
                   Phone Number
                 </label>
                 <input
@@ -459,85 +427,57 @@ export default function ClientsPage() {
                   value={form.phone}
                   onChange={handleChange}
                   placeholder="+92 300 1234567"
-                  className="w-full rounded-lg border border-slate-300 px-3.5 py-2 text-sm text-slate-900 outline-none focus:border-blue-600"
+                  className="w-full rounded-xl border border-[#E2E8F0] px-3 py-2 text-xs text-[#0F172A] outline-none focus:border-[#2563EB] font-mono"
                 />
               </div>
             </div>
 
-            <div>
-              <label className="block text-xs font-semibold uppercase text-slate-600 mb-1">
-                Office / Company Address
-              </label>
-              <input
-                type="text"
-                name="address"
-                value={form.address}
-                onChange={handleChange}
-                placeholder="Suite 402, Business Tower, Karachi"
-                className="w-full rounded-lg border border-slate-300 px-3.5 py-2 text-sm text-slate-900 outline-none focus:border-blue-600"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold uppercase text-slate-600 mb-1">
-                Project Title / Scope
-              </label>
-              <input
-                type="text"
-                name="project_name"
-                value={form.project_name}
-                onChange={handleChange}
-                placeholder="e.g. Enterprise SaaS Portal"
-                className="w-full rounded-lg border border-slate-300 px-3.5 py-2 text-sm text-slate-900 outline-none focus:border-blue-600"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
+            {/* Row 3: Contract Start Date & End Date */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-semibold uppercase text-slate-600 mb-1">
-                  Contract Start Date
+                <label className="block text-xs font-semibold uppercase text-[#0F172A] mb-1">
+                  Start Date
                 </label>
                 <input
                   type="date"
                   name="contract_start_date"
                   value={form.contract_start_date}
                   onChange={handleChange}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-xs text-slate-900 outline-none focus:border-blue-600"
+                  className="w-full rounded-xl border border-[#E2E8F0] px-3 py-2 text-xs text-[#0F172A] outline-none focus:border-[#2563EB]"
                 />
               </div>
-
               <div>
-                <label className="block text-xs font-semibold uppercase text-slate-600 mb-1">
-                  Contract End Date
+                <label className="block text-xs font-semibold uppercase text-[#0F172A] mb-1">
+                  End Date
                 </label>
                 <input
                   type="date"
                   name="contract_end_date"
                   value={form.contract_end_date}
                   onChange={handleChange}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-xs text-slate-900 outline-none focus:border-blue-600"
+                  className="w-full rounded-xl border border-[#E2E8F0] px-3 py-2 text-xs text-[#0F172A] outline-none focus:border-[#2563EB]"
                 />
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            {/* Row 4: Total Cost & Amount Received */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-semibold uppercase text-slate-600 mb-1">
-                  Total Agreed Cost *
+                <label className="block text-xs font-semibold uppercase text-[#0F172A] mb-1">
+                  Total Contract Cost *
                 </label>
                 <input
                   type="number"
                   name="contract_value"
                   value={form.contract_value}
                   onChange={handleChange}
-                  placeholder="e.g. 500000"
+                  placeholder="500000"
                   required
-                  className="w-full rounded-lg border border-slate-300 px-3.5 py-2 text-sm text-slate-900 outline-none focus:border-blue-600"
+                  className="w-full rounded-xl border border-[#E2E8F0] px-3 py-2 text-xs text-[#0F172A] outline-none focus:border-[#2563EB]"
                 />
               </div>
-
               <div>
-                <label className="block text-xs font-semibold uppercase text-slate-600 mb-1">
+                <label className="block text-xs font-semibold uppercase text-[#0F172A] mb-1">
                   Amount Received *
                 </label>
                 <input
@@ -545,44 +485,77 @@ export default function ClientsPage() {
                   name="amount_paid"
                   value={form.amount_paid}
                   onChange={handleChange}
-                  placeholder="e.g. 250000"
+                  placeholder="250000"
                   required
-                  className="w-full rounded-lg border border-slate-300 px-3.5 py-2 text-sm text-slate-900 outline-none focus:border-blue-600"
+                  className="w-full rounded-xl border border-[#E2E8F0] px-3 py-2 text-xs text-[#0F172A] outline-none focus:border-[#2563EB]"
                 />
               </div>
             </div>
 
-            <button
-              type="submit"
-              disabled={submitting}
-              className="w-full rounded-lg bg-blue-600 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 transition-colors disabled:opacity-50"
-            >
-              {submitting ? "Saving Client..." : "Save Client Profile & Contract"}
-            </button>
+            {/* Row 5: Project Title & Address */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold uppercase text-[#0F172A] mb-1">
+                  Project Title
+                </label>
+                <input
+                  type="text"
+                  name="project_name"
+                  value={form.project_name}
+                  onChange={handleChange}
+                  placeholder="Enterprise SaaS Portal"
+                  className="w-full rounded-xl border border-[#E2E8F0] px-3 py-2 text-xs text-[#0F172A] outline-none focus:border-[#2563EB]"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold uppercase text-[#0F172A] mb-1">
+                  Office Address
+                </label>
+                <input
+                  type="text"
+                  name="address"
+                  value={form.address}
+                  onChange={handleChange}
+                  placeholder="Business Tower, Karachi"
+                  className="w-full rounded-xl border border-[#E2E8F0] px-3 py-2 text-xs text-[#0F172A] outline-none focus:border-[#2563EB]"
+                />
+              </div>
+            </div>
+
+            {/* Full Width Primary Submit CTA Button (Requirement #2) */}
+            <div className="pt-2">
+              <button
+                type="submit"
+                disabled={submitting}
+                className="w-full rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold py-3 text-xs transition-colors shadow-xs cursor-pointer"
+              >
+                {submitting ? "Saving Client..." : "Create Client & Contract"}
+              </button>
+            </div>
           </form>
         </div>
 
-        {/* Client Directory & Invoice Tracker Table */}
-        <div className="lg:col-span-2 rounded-xl border border-slate-200 bg-white shadow-xs overflow-hidden flex flex-col">
+        {/* CLIENT DIRECTORY & INVOICE TRACKER TABLE (Requirement #1 - 60% Width & Clean Action Area) */}
+        <div className="lg:col-span-7 rounded-2xl border border-[#E2E8F0] bg-white shadow-sm overflow-hidden flex flex-col">
           {/* Search Controls */}
-          <div className="p-4 border-b border-slate-200 bg-slate-50/50 flex flex-wrap items-center justify-between gap-3">
+          <div className="p-4 border-b border-[#E2E8F0] bg-[#F8FAFC] flex flex-wrap items-center justify-between gap-3">
             <div className="relative flex-1 min-w-[200px]">
-              <FaSearch className="absolute left-3 top-3 text-slate-400 text-xs" />
+              <FaSearch className="absolute left-3.5 top-3 text-[#64748B] text-xs" />
               <input
                 type="text"
-                placeholder="Search client, project, address, or email..."
+                placeholder="Search client, project, or email..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full rounded-lg border border-slate-300 pl-8 pr-3 py-1.5 text-xs text-slate-900 outline-none focus:border-blue-600"
+                className="w-full rounded-xl border border-[#E2E8F0] pl-9 pr-3 py-2 text-xs text-[#0F172A] outline-none focus:border-[#2563EB] bg-white"
               />
             </div>
 
             <select
               value={filterStatus}
               onChange={(e) => setFilterStatus(e.target.value)}
-              className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs text-slate-800 outline-none bg-white focus:border-blue-600"
+              className="rounded-xl border border-[#E2E8F0] px-3 py-2 text-xs text-[#0F172A] outline-none bg-white focus:border-[#2563EB] font-semibold cursor-pointer"
             >
-              <option value="All">All Statuses</option>
+              <option value="All">All Payment Statuses</option>
               <option value="Paid">Fully Paid</option>
               <option value="Partial Deposit">Partial Deposit</option>
               <option value="Pending Invoice">Pending Invoice</option>
@@ -591,8 +564,16 @@ export default function ClientsPage() {
 
           {/* Table */}
           <div className="overflow-x-auto flex-1">
-            <table className="w-full text-left text-sm text-slate-700">
-              <tbody className="divide-y divide-slate-200">
+            <table className="w-full text-left text-xs text-[#0F172A]">
+              <thead className="bg-[#F8FAFC] text-[11px] font-bold uppercase text-[#64748B] border-b border-[#E2E8F0]">
+                <tr>
+                  <th className="px-4 py-3">Client & Project</th>
+                  <th className="px-4 py-3">Contract Value</th>
+                  <th className="px-4 py-3">Payment Status</th>
+                  <th className="px-4 py-3 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#E2E8F0]">
                 {filteredClients.length > 0 ? (
                   filteredClients.map((client) => {
                     const contract = Number(client.contract_value || 0);
@@ -602,119 +583,131 @@ export default function ClientsPage() {
                     const isPendingDue = pending > 0;
 
                     return (
-                      <tr key={client.id} className="hover:bg-slate-50/50">
-                        <td className="px-4 py-4 space-y-1">
-                          <div className="font-bold text-slate-900 flex items-center gap-2">
-                            <FaBuilding className="text-blue-600 text-xs" />
+                      <tr key={client.id} className="hover:bg-[#F8FAFC]">
+                        <td className="px-4 py-3.5 space-y-1">
+                          <div className="font-bold text-[#0F172A] flex items-center gap-2">
+                            <FaBuilding className="text-[#2563EB] text-xs" />
                             <span>{client.client_name}</span>
                           </div>
 
                           {client.project_name && (
-                            <div className="text-xs text-blue-600 font-medium">
-                              Project: {client.project_name}
+                            <div className="text-xs text-[#2563EB] font-semibold">
+                              {client.project_name}
                             </div>
                           )}
 
-                          <div className="text-[11px] text-slate-500">
-                            {client.contact_person ? `${client.contact_person} • ` : ""}
+                          <div className="text-[11px] text-[#64748B] font-mono">
                             {client.email}
                           </div>
+                        </td>
 
-                          {client.address && (
-                            <div className="text-[11px] text-slate-400 flex items-center gap-1">
-                              <FaMapMarkerAlt className="text-slate-400" /> {client.address}
-                            </div>
-                          )}
-
-                          <div className="text-[11px] font-mono text-slate-500 flex items-center gap-1.5 pt-0.5">
-                            <FaCalendarAlt className="text-slate-400 text-[10px]" />
-                            <span>Contract: {client.contract_start_date || "—"} to {client.contract_end_date || "—"}</span>
+                        <td className="px-4 py-3.5 space-y-0.5">
+                          <div className="font-bold text-[#0F172A]">{formatCurrency(contract)}</div>
+                          <div className="text-[11px] text-[#2563EB] font-semibold">
+                            Received: {formatCurrency(paid)}
+                          </div>
+                          <div className="text-[11px] text-[#64748B]">
+                            Pending: {formatCurrency(pending)}
                           </div>
                         </td>
 
-                        <td className="px-4 py-4">
-                          <div className="text-xs font-semibold text-slate-500">Contract Cost</div>
-                          <div className="font-bold text-slate-900">{contract.toLocaleString()} PKR</div>
-
-                          <div className="text-[11px] text-emerald-700 font-semibold mt-0.5">
-                            Received: {paid.toLocaleString()} PKR
-                          </div>
-
-                          <div className="text-[11px] text-rose-700 font-semibold">
-                            Pending: {pending.toLocaleString()} PKR
-                          </div>
-
-                          {/* Progress bar */}
-                          <div className="w-full bg-slate-200 h-1.5 rounded-full mt-1.5 overflow-hidden">
-                            <div
-                              className="bg-emerald-500 h-full rounded-full"
-                              style={{ width: `${percentage}%` }}
-                            />
-                          </div>
-                        </td>
-
-                        <td className="px-4 py-4">
+                        {/* Standardized Payment Status Badges (Requirement #5) */}
+                        <td className="px-4 py-3.5">
                           <span
-                            className={`inline-block text-xs font-semibold px-2.5 py-1 rounded-md border ${
+                            className={`inline-block text-xs font-semibold px-2.5 py-1 rounded-full border ${
                               client.payment_status === "Paid"
-                                ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                ? "bg-[#EFF6FF] text-[#2563EB] border-[#2563EB]/20"
                                 : client.payment_status === "Partial Deposit"
-                                ? "bg-amber-50 text-amber-700 border-amber-200"
-                                : "bg-rose-50 text-rose-700 border-rose-200"
+                                ? "bg-[#FEF3C7] text-[#92400E] border-[#F59E0B]/20"
+                                : "bg-[#F1F5F9] text-[#475569] border-[#E2E8F0]"
                             }`}
                           >
                             {client.payment_status}
                           </span>
-
-                          {isPendingDue && (
-                            <div className="mt-1">
-                              <button
-                                onClick={() => sendOverdueReminder(client)}
-                                title="Send Overdue Payment Email Reminder"
-                                className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-700 bg-rose-50 px-2 py-0.5 rounded border border-rose-200 hover:bg-rose-600 hover:text-white transition-colors"
-                              >
-                                <FaPaperPlane className="text-[9px]" /> Send Reminder
-                              </button>
-                            </div>
-                          )}
                         </td>
 
-                        <td className="px-4 py-4 text-right space-y-1.5">
-                          {/* Generate Invoice */}
-                          <button
-                            onClick={() => handleGenerateInvoice(client)}
-                            title="Generate Invoice for Client"
-                            className="w-full inline-flex items-center justify-center gap-1.5 rounded-md bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700 border border-blue-200 hover:bg-blue-600 hover:text-white transition-colors"
-                          >
-                            <FaFileInvoiceDollar />
-                            <span>Invoice</span>
-                          </button>
+                        {/* Simplified Action Column: Single Royal Blue Primary Action + Kebab Menu (Requirement #1) */}
+                        <td className="px-4 py-3.5 text-right shrink-0">
+                          <div className="flex items-center justify-end gap-2">
+                            {/* Visible Primary Action Button */}
+                            <button
+                              onClick={() => handleGenerateInvoice(client)}
+                              className="bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold px-3 py-1.5 rounded-xl text-xs transition-colors shadow-xs cursor-pointer flex items-center gap-1.5 whitespace-nowrap"
+                            >
+                              <FaFileInvoiceDollar className="text-xs" />
+                              <span>Invoice</span>
+                            </button>
 
-                          {/* Record Payment */}
-                          <button
-                            onClick={() => handleRecordPayment(client.id, contract, paid)}
-                            title="Record Payment Receipt"
-                            className="w-full inline-flex items-center justify-center gap-1.5 rounded-md bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 border border-emerald-200 hover:bg-emerald-600 hover:text-white transition-colors"
-                          >
-                            <FaMoneyCheckAlt />
-                            <span>Collect</span>
-                          </button>
+                            {/* Contextual 3-Dots Menu (⋮) */}
+                            <div className="relative">
+                              <button
+                                type="button"
+                                onClick={() => setActiveKebabId(activeKebabId === client.id ? null : client.id)}
+                                className="p-1.5 rounded-lg text-[#64748B] hover:text-[#0F172A] hover:bg-[#F8FAFC] transition-colors cursor-pointer"
+                              >
+                                <FaEllipsisV className="text-xs" />
+                              </button>
 
-                          {/* Delete */}
-                          <button
-                            onClick={() => handleDeleteClient(client.id, client.email)}
-                            title="Delete Client Record"
-                            className="w-full inline-flex items-center justify-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-semibold text-rose-600 border border-rose-200 hover:bg-rose-50 transition-colors"
-                          >
-                            <FaTrash className="text-[10px]" /> Delete
-                          </button>
+                              {activeKebabId === client.id && (
+                                <div className="absolute right-0 mt-1 w-44 rounded-xl bg-white p-1.5 shadow-lg border border-[#E2E8F0] z-30 space-y-0.5 text-xs text-left animate-in fade-in zoom-in-95 duration-100">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      handleRecordPayment(client.id, contract, paid);
+                                      setActiveKebabId(null);
+                                    }}
+                                    className="w-full text-left px-3 py-1.5 rounded-lg hover:bg-[#EFF6FF] text-[#0F172A] hover:text-[#2563EB] font-semibold transition-colors"
+                                  >
+                                    Collect Payment
+                                  </button>
+
+                                  {isPendingDue && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        sendOverdueReminder(client);
+                                        setActiveKebabId(null);
+                                      }}
+                                      className="w-full text-left px-3 py-1.5 rounded-lg hover:bg-[#EFF6FF] text-[#0F172A] hover:text-[#2563EB] font-semibold transition-colors"
+                                    >
+                                      Send Payment Reminder
+                                    </button>
+                                  )}
+
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      showToast("Contract Details 📋", `Client: ${client.client_name}. Term: ${client.contract_start_date} to ${client.contract_end_date}. Value: ${formatCurrency(contract)}.`, "info");
+                                      setActiveKebabId(null);
+                                    }}
+                                    className="w-full text-left px-3 py-1.5 rounded-lg hover:bg-[#EFF6FF] text-[#0F172A] hover:text-[#2563EB] font-semibold transition-colors"
+                                  >
+                                    View Contract
+                                  </button>
+
+                                  <div className="border-t border-[#E2E8F0] my-1" />
+
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setDeleteModal({ isOpen: true, client, loading: false });
+                                      setActiveKebabId(null);
+                                    }}
+                                    className="w-full text-left px-3 py-1.5 rounded-lg hover:bg-rose-50 text-rose-600 font-semibold transition-colors"
+                                  >
+                                    Delete Client
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          </div>
                         </td>
                       </tr>
                     );
                   })
                 ) : (
                   <tr>
-                    <td colSpan={4} className="px-6 py-8 text-center text-slate-400 text-xs">
+                    <td colSpan={4} className="px-6 py-8 text-center text-[#64748B] italic text-xs">
                       No client records found.
                     </td>
                   </tr>
@@ -724,6 +717,40 @@ export default function ClientsPage() {
           </div>
         </div>
       </div>
+
+      {/* CONFIRMATION DESTRUCTIVE MODAL FOR DELETE CLIENT (Requirement #1) */}
+      {deleteModal.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-[#E2E8F0] space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center gap-3 border-b border-[#E2E8F0] pb-3 text-[#0F172A]">
+              <FaExclamationTriangle className="text-xl text-[#2563EB]" />
+              <h3 className="font-bold text-[#0F172A] text-base">Delete Client Record</h3>
+            </div>
+
+            <p className="text-xs text-[#64748B] leading-relaxed">
+              Are you sure you want to delete <strong>{deleteModal.client?.client_name}</strong>? This action will purge their corporate contract profile.
+            </p>
+
+            <div className="flex gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setDeleteModal({ isOpen: false, client: null, loading: false })}
+                className="flex-1 py-2.5 rounded-xl bg-white hover:bg-[#F8FAFC] text-[#2563EB] border border-[#E2E8F0] font-semibold text-xs cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={executeDeleteClient}
+                disabled={deleteModal.loading}
+                className="flex-1 py-2.5 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold text-xs cursor-pointer flex items-center justify-center"
+              >
+                {deleteModal.loading ? "Deleting..." : "Confirm & Delete 🗑️"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

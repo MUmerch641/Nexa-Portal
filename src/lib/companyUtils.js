@@ -2,7 +2,7 @@ import { supabase } from "@/lib/supabase";
 
 export const DEFAULT_COMPANY_INFO = {
   company_name: "Antigravity Software House (Pvt) Ltd",
-  company_logo: "https://cdn-icons-png.flaticon.com/512/1006/1006771.png",
+  company_logo: "/logo.svg",
   currency_symbol: "Rs.",
   company_address: "Corporate Tech Campus, Innovation Parkway, Phase 6",
   contact_number: "+92 300 1234567",

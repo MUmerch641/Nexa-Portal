@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { logout } from "@/lib/auth";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import {
   FaBars,
@@ -21,14 +21,30 @@ import {
   FaProjectDiagram,
   FaCheckCircle,
   FaBullhorn,
+  FaSearch,
+  FaGraduationCap,
+  FaUsers,
+  FaLandmark,
+  FaFilter,
+  FaFileInvoiceDollar
 } from "react-icons/fa";
 
 export default function Navbar({ onMenuClick, isSidebarOpen = true }) {
   const router = useRouter();
+  const pathname = usePathname();
   const [role, setRole] = useState("admin");
   const [userEmail, setUserEmail] = useState("admin@gmail.com");
   
-  // Admin Lists
+  // Header Date
+  const [currentDateStr, setCurrentDateStr] = useState("");
+
+  // Global Search Modal State (Ctrl + K)
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState([]);
+  const searchInputRef = useRef(null);
+
+  // Admin Notifications Lists
   const [pendingLeaves, setPendingLeaves] = useState([]);
   const [pendingComplaints, setPendingComplaints] = useState([]);
 
@@ -36,10 +52,99 @@ export default function Navbar({ onMenuClick, isSidebarOpen = true }) {
   const [userAlerts, setUserAlerts] = useState([]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [hasSeenNotifications, setHasSeenNotifications] = useState(false);
-  const [selectedTaskDetail, setSelectedTaskDetail] = useState(null);
-
-  // Track dismissed/read notification IDs for current user
   const [dismissedNotifIds, setDismissedNotifIds] = useState([]);
+  const [activeNotifCategory, setActiveNotifCategory] = useState("all");
+
+  useEffect(() => {
+    const options = { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' };
+    setCurrentDateStr(new Date().toLocaleDateString('en-US', options));
+  }, []);
+
+  // Keyboard shortcut (Ctrl + K or Cmd + K) for Global Search
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setIsSearchOpen(prev => !prev);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
+  useEffect(() => {
+    if (isSearchOpen && searchInputRef.current) {
+      setTimeout(() => searchInputRef.current?.focus(), 100);
+    }
+  }, [isSearchOpen]);
+
+  // Global Search logic
+  useEffect(() => {
+    if (!searchQuery.trim()) {
+      setSearchResults([]);
+      return;
+    }
+
+    const q = searchQuery.toLowerCase().trim();
+    const results = [];
+
+    try {
+      const emps = JSON.parse(localStorage.getItem("persistent_employees") || "[]");
+      emps.forEach(e => {
+        if (!e) return;
+        const name = (e.full_name || e.name || "").toLowerCase();
+        const email = (e.email || "").toLowerCase();
+        const dept = (e.department || "").toLowerCase();
+        if (name.includes(q) || email.includes(q) || dept.includes(q)) {
+          results.push({
+            id: `emp-${e.id || e.email}`,
+            title: e.full_name || "Employee",
+            subtitle: `${e.department || "Staff"} • ${e.email}`,
+            category: "Employees",
+            icon: FaUsers,
+            link: "/dashboard/employees"
+          });
+        }
+      });
+
+      const stus = JSON.parse(localStorage.getItem("persistent_courses") || "[]");
+      stus.forEach(s => {
+        if (!s) return;
+        const name = (s.full_name || s.name || "").toLowerCase();
+        const email = (s.email || "").toLowerCase();
+        const course = (s.course_name || "").toLowerCase();
+        if (name.includes(q) || email.includes(q) || course.includes(q)) {
+          results.push({
+            id: `stu-${s.id || s.email}`,
+            title: s.full_name || "Student",
+            subtitle: `${s.course_name || "Course Student"} • ${s.email}`,
+            category: "Students",
+            icon: FaGraduationCap,
+            link: "/dashboard/student"
+          });
+        }
+      });
+
+      const projs = JSON.parse(localStorage.getItem("software_house_assigned_tasks") || "[]");
+      projs.forEach(p => {
+        if (!p) return;
+        const title = (p.title || p.task || "").toLowerCase();
+        const assignee = (p.assignedToName || p.assignedToEmail || "").toLowerCase();
+        if (title.includes(q) || assignee.includes(q)) {
+          results.push({
+            id: `proj-${p.id}`,
+            title: p.title || p.task || "Project Task",
+            subtitle: `Assigned to: ${p.assignedToName || p.assignedToEmail || "Team"}`,
+            category: "Projects & Tasks",
+            icon: FaProjectDiagram,
+            link: "/dashboard/projects"
+          });
+        }
+      });
+    } catch(e) {}
+
+    setSearchResults(results.slice(0, 8));
+  }, [searchQuery]);
 
   useEffect(() => {
     try {
@@ -49,51 +154,15 @@ export default function Navbar({ onMenuClick, isSidebarOpen = true }) {
     } catch(e) {}
   }, [userEmail]);
 
-  const dismissNotifItem = (id) => {
-    const email = localStorage.getItem("current_user_email") || "admin@gmail.com";
-    const updated = Array.from(new Set([...dismissedNotifIds, id]));
-    setDismissedNotifIds(updated);
-    try {
-      localStorage.setItem(`dismissed_notifs_${email}`, JSON.stringify(updated));
-    } catch(e) {}
-  };
-
-  const handleResolveComplaint = (id) => {
-    try {
-      const saved = localStorage.getItem("software_house_complaints_list");
-      if (saved) {
-        const list = JSON.parse(saved);
-        const updated = list.map(c => c.id === id ? { ...c, status: "Resolved" } : c);
-        localStorage.setItem("software_house_complaints_list", JSON.stringify(updated));
-      }
-    } catch(e) {}
-    dismissNotifItem(id);
-    loadAllNotifications();
-    window.dispatchEvent(new Event("storage"));
-  };
-
-  // Read leaves, complaints, announcements, and student/employee alerts
   const loadAllNotifications = () => {
     const currentRole = localStorage.getItem("user_role") || "admin";
     const email = localStorage.getItem("current_user_email") || "admin@gmail.com";
 
     try {
-      const seen = localStorage.getItem(`notifications_seen_${email}_${currentRole}`);
-      if (seen === "true") {
-        setHasSeenNotifications(true);
-      }
-    } catch(e) {}
-
-    // 1. Load Admin Action Items
-    try {
       const savedLeaves = localStorage.getItem("software_house_leaves");
       if (savedLeaves) {
         const list = JSON.parse(savedLeaves);
         setPendingLeaves(list.filter(l => l.status === "pending"));
-      } else {
-        setPendingLeaves([
-          { id: "1", employee_name: "Muhammad Rahim Bugti", type: "Emergency Leave", reason: "Family emergency medical checkup", start_date: "2026-08-01", end_date: "2026-08-01" }
-        ]);
       }
     } catch(e) {}
 
@@ -102,188 +171,8 @@ export default function Navbar({ onMenuClick, isSidebarOpen = true }) {
       if (savedComplaints) {
         const cList = JSON.parse(savedComplaints);
         setPendingComplaints(cList.filter(c => c.status === "Pending"));
-      } else {
-        setPendingComplaints([
-          { id: "comp-101", submitted_by: "Ali Hassan (Student)", category: "Internet Issues", title: "Optix Fiber WiFi latency spike in Lab #3", created_at: "2026-08-01 10:30 AM" },
-          { id: "comp-103", submitted_by: "Muhammad Rahim Bugti (Student)", category: "Teacher Complaints", title: "Request for extra lab session on Node.js REST APIs", created_at: "2026-08-01 11:00 AM" }
-        ]);
       }
     } catch(e) {}
-
-    // 2. Generate Student / Employee Automatic Notifications
-    const alerts = [];
-
-    // Check for Admin Broadcast Announcements in localStorage
-    try {
-      const savedAnn = localStorage.getItem("software_house_announcements_list");
-      if (savedAnn) {
-        const annList = JSON.parse(savedAnn);
-        const todayStr = new Date().toISOString().split("T")[0];
-
-        annList.forEach((ann) => {
-          // Validate expiration
-          if (ann.expiry_date && ann.expiry_date < todayStr) return;
-
-          // Audience matching: All Users, Employees Only, Students Only, HR Department
-          const target = (ann.target_audience || "All Users").toLowerCase();
-          const roleLower = currentRole.toLowerCase();
-
-          const isTargeted =
-            target.includes("all") ||
-            (target.includes("employee") && (roleLower.includes("employee") || roleLower.includes("staff") || roleLower.includes("admin"))) ||
-            (target.includes("student") && (roleLower.includes("student") || roleLower.includes("course") || roleLower.includes("intern"))) ||
-            (target.includes("hr") && (roleLower.includes("hr") || roleLower.includes("admin")));
-
-          if (isTargeted) {
-            alerts.unshift({
-              id: `ann-${ann.id}`,
-              type: ann.category || "Announcement",
-              priority: ann.priority || "Urgent",
-              icon: <FaBullhorn className="text-rose-500" />,
-              title: `📢 ${ann.title}`,
-              message: `${ann.content} (Target: ${ann.target_audience || "All Users"})`,
-              link: "/dashboard/announcements",
-              color: ann.priority === "Urgent" ? "bg-rose-50 border-rose-300 text-rose-950 font-extrabold" : "bg-blue-50 border-blue-200 text-blue-900 font-bold"
-            });
-          }
-        });
-      }
-    } catch(e) {}
-
-    // Read User-Specific Inbox Notifications (e.g. Tasks Assigned by Admin)
-    try {
-      const userNotifKey = `user_notifications_${email.toLowerCase().trim()}`;
-      const savedUserNotifs = localStorage.getItem(userNotifKey);
-      if (savedUserNotifs) {
-        const userNotifList = JSON.parse(savedUserNotifs);
-        userNotifList.forEach(n => {
-          alerts.unshift({
-            id: n.id,
-            type: "Task Assigned",
-            icon: <FaTasks className="text-blue-600" />,
-            title: n.title,
-            message: n.message,
-            priority: n.priority,
-            dueDate: n.dueDate,
-            fullTaskObj: {
-              title: n.title,
-              description: n.message,
-              priority: n.priority || "High",
-              dueDate: n.dueDate || "Today",
-              assignedBy: "Admin",
-              assignedAt: n.timestamp ? new Date(n.timestamp).toLocaleString() : "Just now",
-            },
-            link: currentRole.includes("student") ? "/dashboard/student" : "/dashboard/projects",
-            color: "bg-blue-50 border-blue-200 text-blue-900 font-bold"
-          });
-        });
-      }
-    } catch(e) {}
-
-    if (currentRole === "student" || currentRole === "course_student") {
-      // Fee Due Alert
-      alerts.push({
-        id: "alert-fee",
-        type: "Fee Due",
-        icon: <FaMoneyBillWave className="text-amber-500" />,
-        title: "Monthly Course Fee Due Reminder 💳",
-        message: "August 2026 tuition fee due Rs. 15,000. Pay before Aug 10 to avoid late fine.",
-        link: "/dashboard/student",
-        color: "bg-amber-50 border-amber-200 text-amber-900"
-      });
-
-      // New Task Assigned Alert
-      alerts.push({
-        id: "alert-task",
-        type: "New Task",
-        icon: <FaTasks className="text-blue-500" />,
-        title: "New Practical Task Assigned 📋",
-        message: "Admin assigned: 'Task 1: Next.js Auth & Dynamic Routing'. Due: Aug 8, 2026.",
-        link: "/dashboard/student",
-        color: "bg-blue-50 border-blue-200 text-blue-900"
-      });
-
-      // Leave Approval Alert
-      alerts.push({
-        id: "alert-leave",
-        type: "Leave Approval",
-        icon: <FaCheckCircle className="text-emerald-500" />,
-        title: "Leave Application Approved ✅",
-        message: "Your sick leave request for Aug 1, 2026 has been approved by HR.",
-        link: "/dashboard/leaves",
-        color: "bg-emerald-50 border-emerald-200 text-emerald-900"
-      });
-
-      // Meeting Reminder Alert
-      alerts.push({
-        id: "alert-meet",
-        type: "Meeting Reminder",
-        icon: <FaVideo className="text-purple-500" />,
-        title: "Meeting Reminder 📹",
-        message: "Sprint Planning & MERN Architecture Sync scheduled today at 10:30 AM.",
-        link: "/dashboard/meetings",
-        color: "bg-purple-50 border-purple-200 text-purple-900"
-      });
-
-      // Birthday Alert
-      alerts.push({
-        id: "alert-bday",
-        type: "Birthdays",
-        icon: <FaGift className="text-rose-500" />,
-        title: "Happy Birthday Ali Hassan! 🎉",
-        message: "The Software House team wishes you a fantastic birthday!",
-        link: "/dashboard/student",
-        color: "bg-rose-50 border-rose-200 text-rose-900"
-      });
-    }
-
-    if (currentRole === "employee" || currentRole === "intern" || currentRole === "staff") {
-      // Salary Day Alert
-      alerts.push({
-        id: "alert-salary",
-        type: "Salary Day",
-        icon: <FaMoneyBillWave className="text-emerald-500" />,
-        title: "Salary Day Credit Alert 💰",
-        message: "July Monthly Salary Rs. 85,000 processed & transferred to bank account.",
-        link: "/dashboard/payroll",
-        color: "bg-emerald-50 border-emerald-200 text-emerald-900"
-      });
-
-      // Project Deadline Alert
-      alerts.push({
-        id: "alert-proj",
-        type: "Project Deadline",
-        icon: <FaProjectDiagram className="text-indigo-500" />,
-        title: "Project Milestone Deadline ⏳",
-        message: "E-Commerce Mobile App API v2 release deadline approaching in 3 days.",
-        link: "/dashboard/projects",
-        color: "bg-indigo-50 border-indigo-200 text-indigo-900"
-      });
-
-      // Meeting Reminder Alert
-      alerts.push({
-        id: "alert-meet-emp",
-        type: "Meeting Reminder",
-        icon: <FaVideo className="text-purple-500" />,
-        title: "Client Pitch & Standup Meeting 📹",
-        message: "Join Google Meet at 02:00 PM for client demo walkthrough.",
-        link: "/dashboard/meetings",
-        color: "bg-purple-50 border-purple-200 text-purple-900"
-      });
-
-      // Birthday Alert
-      alerts.push({
-        id: "alert-bday-emp",
-        type: "Birthdays",
-        icon: <FaGift className="text-rose-500" />,
-        title: "Staff Birthday Celebration 🎂",
-        message: "Join us at 4:00 PM in cafeteria for cake cutting!",
-        link: "/dashboard/employees",
-        color: "bg-rose-50 border-rose-200 text-rose-900"
-      });
-    }
-
-    setUserAlerts(alerts);
   };
 
   useEffect(() => {
@@ -307,388 +196,223 @@ export default function Navbar({ onMenuClick, isSidebarOpen = true }) {
     };
   }, []);
 
-  const handleApprove = (id) => {
-    try {
-      const saved = localStorage.getItem("software_house_leaves");
-      if (saved) {
-        const list = JSON.parse(saved);
-        const updated = list.map(l => l.id === id ? { ...l, status: "approved", salary_cut: false } : l);
-        localStorage.setItem("software_house_leaves", JSON.stringify(updated));
-      }
-    } catch(e) {}
-    dismissNotifItem(id);
-    loadAllNotifications();
-    window.dispatchEvent(new Event("storage"));
-  };
-
-  const handleReject = (id) => {
-    try {
-      const saved = localStorage.getItem("software_house_leaves");
-      if (saved) {
-        const list = JSON.parse(saved);
-        const updated = list.map(l => l.id === id ? { ...l, status: "rejected", salary_cut: true } : l);
-        localStorage.setItem("software_house_leaves", JSON.stringify(updated));
-      }
-    } catch(e) {}
-    dismissNotifItem(id);
-    loadAllNotifications();
-    window.dispatchEvent(new Event("storage"));
-  };
-
   const handleToggleNotifications = () => {
-    const nextState = !showNotifications;
-    setShowNotifications(nextState);
-    if (nextState) {
-      setHasSeenNotifications(true);
-      try {
-        localStorage.setItem(`notifications_seen_${userEmail}_${role}`, "true");
-      } catch (e) {}
-    }
+    setShowNotifications(!showNotifications);
   };
 
   const activeComplaints = pendingComplaints.filter(c => !dismissedNotifIds.includes(c.id));
   const activeLeaves = pendingLeaves.filter(l => !dismissedNotifIds.includes(l.id));
-  const activeUserAlerts = userAlerts.filter(a => !dismissedNotifIds.includes(a.id));
-
   const totalAdminCount = activeComplaints.length + activeLeaves.length;
-  const totalUserCount = activeUserAlerts.length;
   const isAdminRole = role === "admin" || role === "hr" || role === "manager" || role === "accounts";
-
-  const handleMarkAllRead = () => {
-    setHasSeenNotifications(true);
-    setShowNotifications(false);
-    const allIds = [
-      ...pendingComplaints.map(c => c.id),
-      ...pendingLeaves.map(l => l.id),
-      ...userAlerts.map(a => a.id)
-    ];
-    const updated = Array.from(new Set([...dismissedNotifIds, ...allIds]));
-    setDismissedNotifIds(updated);
-    try {
-      localStorage.setItem(`dismissed_notifs_${userEmail}`, JSON.stringify(updated));
-      localStorage.setItem(`notifications_seen_${userEmail}_${role}`, "true");
-    } catch (e) {}
-  };
 
   const handleLogout = async () => {
     await logout();
     router.push("/login");
   };
 
+  const getBreadcrumbTitle = () => {
+    if (pathname === "/dashboard") return "Overview Dashboard";
+    const segment = pathname.split("/").pop();
+    if (!segment) return "Dashboard";
+    return segment.charAt(0).toUpperCase() + segment.slice(1).replace("-", " ");
+  };
+
+  const getUserInitials = (email) => {
+    if (!email) return "RB";
+    const name = email.split("@")[0];
+    const parts = name.split(/[\._-]/);
+    if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+    return name.slice(0, 2).toUpperCase();
+  };
+
   return (
-    <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-slate-200 bg-white px-6">
-      <div className="flex items-center gap-3">
-        {/* Hamburger Icon is hidden when Sidebar is Open, and appears ONLY when Sidebar is closed/minimized */}
-        {(!isSidebarOpen && isAdminRole) && (
+    <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-[#E2E8F0] bg-white/95 backdrop-blur-md px-6">
+      {/* Left: Hamburger & Breadcrumb */}
+      <div className="flex items-center gap-4">
+        {isAdminRole && (
           <button
             onClick={onMenuClick}
-            className="rounded-lg p-2 text-slate-600 hover:bg-slate-100 transition-all border border-slate-200 cursor-pointer flex items-center gap-1.5 shadow-2xs"
-            aria-label="Open Sidebar"
-            title="Open Sidebar Menu"
+            className="rounded-xl p-2 text-[#64748B] hover:text-[#0F172A] hover:bg-[#F8FAFC] transition-colors border border-[#E2E8F0] cursor-pointer flex items-center justify-center"
+            aria-label="Toggle Sidebar"
           >
-            <FaBars className="text-base text-blue-600" />
+            <FaBars className="text-sm text-[#2563EB]" />
           </button>
         )}
 
-        <img
-          src="/logo.jpeg"
-          alt="Logo"
-          className="h-8 w-8 rounded-md object-cover border border-slate-200"
-        />
-        <div>
-          <h2 className="text-base font-bold text-slate-900 leading-tight">
-            Nexa Innovation and Technology
-          </h2>
-          <p className="text-xs text-slate-500 font-medium">
-            {role === "employee" ? "Employee Portal" : role === "student" ? "Student Portal" : "Admin Panel"}
-          </p>
+        <div className="hidden sm:block">
+          <div className="flex items-center gap-2 text-xs font-medium text-[#64748B]">
+            <span>Nexa Portal</span>
+            <span>/</span>
+            <span className="text-[#2563EB] font-semibold">{getBreadcrumbTitle()}</span>
+          </div>
+          <h1 className="text-sm font-bold text-[#0F172A] leading-tight">
+            Software House Management
+          </h1>
         </div>
       </div>
 
-      <div className="flex items-center gap-4">
-        {/* Universal Notification Bell for Admin, Students & Employees */}
+      {/* Center: Global Search Bar (Ctrl + K) */}
+      <div className="flex-1 max-w-md mx-6 hidden md:block">
+        <button
+          type="button"
+          onClick={() => setIsSearchOpen(true)}
+          className="w-full flex items-center justify-between bg-[#F8FAFC] hover:bg-white text-[#64748B] border border-[#E2E8F0] px-3.5 py-1.5 rounded-xl text-xs transition-colors cursor-pointer group"
+        >
+          <div className="flex items-center gap-2">
+            <FaSearch className="text-[#64748B] group-hover:text-[#2563EB] transition-colors" />
+            <span className="font-normal text-[#64748B]">Search employees, students, projects...</span>
+          </div>
+          <kbd className="hidden lg:inline-block bg-white text-[#64748B] font-mono text-[10px] font-semibold px-2 py-0.5 rounded border border-[#E2E8F0]">
+            Ctrl + K
+          </kbd>
+        </button>
+      </div>
+
+      {/* Right: Date, Notifications, User Badge & Logout */}
+      <div className="flex items-center gap-3">
+        <div className="hidden lg:block text-right pr-3 border-r border-[#E2E8F0]">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-[#64748B]">Today</p>
+          <p className="text-xs font-bold text-[#0F172A]">{currentDateStr || "Aug 7, 2026"}</p>
+        </div>
+
+        {/* Global Search Mobile Button */}
+        <button
+          type="button"
+          onClick={() => setIsSearchOpen(true)}
+          className="md:hidden p-2 text-[#64748B] hover:text-[#0F172A] hover:bg-[#F8FAFC] rounded-xl border border-[#E2E8F0] cursor-pointer"
+        >
+          <FaSearch className="text-sm text-[#2563EB]" />
+        </button>
+
+        {/* Notifications Bell */}
         <div className="relative">
           <button
             onClick={handleToggleNotifications}
-            className="relative p-2 text-slate-600 hover:bg-slate-100 rounded-xl transition-all cursor-pointer"
-            title="Live Notifications"
+            className="relative p-2 text-[#64748B] hover:bg-[#F8FAFC] rounded-xl transition-colors border border-[#E2E8F0] cursor-pointer"
+            title="Notification Center"
           >
-            <FaBell className="text-lg text-amber-500" />
-            {!hasSeenNotifications && (
-              role === "admin" ? (
-                totalAdminCount > 0 && (
-                  <span className="absolute top-1 right-1 flex h-4 w-4 items-center justify-center rounded-full bg-rose-600 text-[10px] font-extrabold text-white animate-pulse">
-                    {totalAdminCount}
-                  </span>
-                )
-              ) : (
-                totalUserCount > 0 && (
-                  <span className="absolute top-1 right-1 flex h-4 w-4 items-center justify-center rounded-full bg-blue-600 text-[10px] font-extrabold text-white animate-pulse">
-                    {totalUserCount}
-                  </span>
-                )
-              )
+            <FaBell className="text-base text-[#2563EB]" />
+            {totalAdminCount > 0 && (
+              <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-[#2563EB] text-[10px] font-bold text-white">
+                {totalAdminCount}
+              </span>
             )}
           </button>
 
-          {/* Notification Dropdown Panel */}
+          {/* Notifications Dropdown Panel */}
           {showNotifications && (
-            <div className="absolute right-0 mt-2 w-88 rounded-2xl bg-white p-4 shadow-2xl border border-slate-200 space-y-3 z-50">
-              <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                <h4 className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
-                  <FaBell className="text-amber-500" />
-                  <span>{role === "admin" ? "Admin Notifications Hub" : "Automatic Alert Notifications"}</span>
+            <div className="absolute right-0 mt-2 w-88 rounded-2xl bg-white p-4 shadow-lg border border-[#E2E8F0] space-y-3 z-50 animate-in fade-in zoom-in-95 duration-150 text-[#0F172A]">
+              <div className="flex items-center justify-between border-b border-[#E2E8F0] pb-2">
+                <h4 className="text-xs font-bold text-[#0F172A] flex items-center gap-1.5">
+                  <FaBell className="text-[#2563EB]" />
+                  <span>Notifications</span>
                 </h4>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={handleMarkAllRead}
-                    className="text-[10px] font-bold text-blue-600 hover:text-blue-800 underline cursor-pointer"
-                  >
-                    Mark Read
-                  </button>
-                  <span className="text-[10px] font-bold bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full">
-                    {role === "admin" ? `${totalAdminCount} Action Items` : `${totalUserCount} New Alerts`}
-                  </span>
-                </div>
+                <span className="text-[10px] font-semibold bg-[#EFF6FF] text-[#2563EB] px-2 py-0.5 rounded-full">
+                  {totalAdminCount} Items
+                </span>
               </div>
 
-              {/* ADMIN NOTIFICATION DROPDOWN VIEW */}
-              {role === "admin" ? (
-                <div className="max-h-72 overflow-y-auto space-y-3 pr-1 text-xs">
-                  {/* Pending Complaints */}
-                  <div className="space-y-1.5">
-                    <div className="flex items-center justify-between font-bold text-rose-700 text-[11px] bg-rose-50 px-2.5 py-1 rounded-lg border border-rose-200">
-                      <span className="flex items-center gap-1">
-                        <FaExclamationTriangle className="text-rose-600" />
-                        <span>Pending Complaints ({activeComplaints.length})</span>
-                      </span>
-                      <Link href="/dashboard/complaints" onClick={() => setShowNotifications(false)} className="underline text-[10px]">View All</Link>
+              <div className="max-h-72 overflow-y-auto space-y-2 pr-1 text-xs">
+                {activeComplaints.map((c) => (
+                  <div key={c.id} className="p-3 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-1">
+                    <div className="flex items-center justify-between font-semibold text-[#0F172A] text-[11px]">
+                      <span>{c.submitted_by}</span>
+                      <span className="text-[9px] bg-[#EFF6FF] text-[#2563EB] px-1.5 py-0.5 rounded font-bold">{c.category}</span>
                     </div>
-
-                    {activeComplaints.length === 0 ? (
-                      <p className="text-[11px] text-slate-400 italic px-2">No pending complaints!</p>
-                    ) : (
-                      activeComplaints.map((c) => (
-                        <div key={c.id} className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 space-y-1">
-                          <div className="flex items-center justify-between font-bold text-slate-900 text-[11px]">
-                            <span>{c.submitted_by}</span>
-                            <span className="text-[9px] bg-rose-100 text-rose-800 px-1.5 py-0.5 rounded font-extrabold">{c.category}</span>
-                          </div>
-                          <p className="text-[11px] text-slate-700 font-semibold line-clamp-1">"{c.title}"</p>
-                          <div className="flex items-center justify-between pt-1">
-                            <span className="text-[9px] text-slate-400">{c.created_at}</span>
-                            <div className="flex items-center gap-2">
-                              <button
-                                onClick={() => handleResolveComplaint(c.id)}
-                                className="text-[10px] font-bold bg-rose-600 text-white px-2 py-0.5 rounded hover:bg-rose-700 cursor-pointer"
-                              >
-                                Resolve Ticket →
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      ))
-                    )}
+                    <p className="text-[11px] text-[#64748B] leading-snug">"{c.title}"</p>
                   </div>
+                ))}
 
-                  {/* Pending Leaves */}
-                  <div className="space-y-1.5 pt-2 border-t border-slate-100">
-                    <div className="flex items-center justify-between font-bold text-blue-700 text-[11px] bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-200">
-                      <span className="flex items-center gap-1">
-                        <FaCalendarPlus className="text-blue-600" />
-                        <span>Pending Leaves ({activeLeaves.length})</span>
-                      </span>
-                      <Link href="/dashboard/leaves" onClick={() => setShowNotifications(false)} className="underline text-[10px]">View All</Link>
-                    </div>
-
-                    {activeLeaves.length === 0 ? (
-                      <p className="text-[11px] text-slate-400 italic px-2">No pending leave applications!</p>
-                    ) : (
-                      activeLeaves.map((l) => (
-                        <div key={l.id} className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 space-y-1.5">
-                          <div className="flex items-center justify-between font-bold text-slate-900 text-[11px]">
-                            <span>{l.employee_name}</span>
-                            <span className="text-[9px] bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded font-extrabold">{l.type}</span>
-                          </div>
-                          <p className="text-[10px] text-slate-600 italic">"{l.reason}"</p>
-                          
-                          <div className="flex gap-2 pt-1">
-                            <button
-                              onClick={() => handleApprove(l.id)}
-                              className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-1 rounded-lg text-[10px] flex items-center justify-center gap-1 cursor-pointer"
-                            >
-                              <FaCheck /> Approve
-                            </button>
-                            <button
-                              onClick={() => handleReject(l.id)}
-                              className="flex-1 bg-rose-600 hover:bg-rose-700 text-white font-bold py-1 rounded-lg text-[10px] flex items-center justify-center gap-1 cursor-pointer"
-                            >
-                              <FaTimes /> Reject
-                            </button>
-                          </div>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </div>
-              ) : (
-                /* STUDENT / EMPLOYEE AUTOMATIC ALERTS DROPDOWN VIEW */
-                <div className="max-h-80 overflow-y-auto space-y-2.5 pr-1 text-xs">
-                  {activeUserAlerts.length === 0 ? (
-                    <p className="text-[11px] text-slate-400 italic px-2 py-4 text-center">🎉 All caught up! No new alerts.</p>
-                  ) : (
-                    activeUserAlerts.map((alert) => (
-                      <div key={alert.id} className={`p-3 rounded-xl border ${alert.color} space-y-1 transition-all relative`}>
-                        <button
-                          type="button"
-                          onClick={() => dismissNotifItem(alert.id)}
-                          className="absolute top-2 right-2 text-slate-400 hover:text-slate-700 text-xs cursor-pointer p-1"
-                          title="Dismiss / Clear Alert"
-                        >
-                          <FaTimes />
-                        </button>
-                        <div className="flex items-center justify-between font-bold">
-                          <span className="flex items-center gap-1.5 text-[11px]">
-                            {alert.icon}
-                            <span>{alert.title}</span>
-                          </span>
-                          <span className="text-[9px] uppercase tracking-wider font-extrabold opacity-75">{alert.type}</span>
-                        </div>
-                        <p className="text-[11px] leading-relaxed text-slate-700">{alert.message}</p>
-                        <div className="pt-1.5 flex items-center justify-between">
-                          {alert.type === "Meeting Reminder" ? (
-                            <a
-                              href="https://meet.google.com/xyz-abc-mno"
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              onClick={() => setShowNotifications(false)}
-                              className="bg-purple-600 hover:bg-purple-700 text-white font-extrabold text-[10px] px-2.5 py-1 rounded-lg flex items-center gap-1 transition-all shadow-xs"
-                            >
-                              <FaVideo /> <span>📹 Click & Join Meeting</span>
-                            </a>
-                          ) : (
-                            <span className="text-[10px] text-slate-400">Notification Alert</span>
-                          )}
-
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setShowNotifications(false);
-                              setSelectedTaskDetail(alert.fullTaskObj || {
-                                title: alert.title,
-                                description: alert.message,
-                                priority: alert.priority || "High",
-                                dueDate: alert.dueDate || "Today",
-                                assignedBy: "Admin",
-                              });
-                            }}
-                            className="text-[10px] font-extrabold text-blue-600 hover:underline bg-blue-50 px-2 py-0.5 rounded border border-blue-200 cursor-pointer"
-                          >
-                            View Full Details →
-                          </button>
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-              )}
+                {activeComplaints.length === 0 && (
+                  <p className="text-center py-6 text-[#64748B] italic text-[11px]">No new notifications.</p>
+                )}
+              </div>
             </div>
           )}
         </div>
 
-        {/* Logged-in User Live Profile Badge Dropdown */}
-        <div className="flex items-center gap-2 pl-3 border-l border-slate-200">
-          <div
-            className={`flex h-9 w-9 items-center justify-center rounded-full text-xs font-bold shadow-2xs ${
-              role === "admin"
-                ? "bg-amber-100 text-amber-800 border border-amber-300"
-                : role === "client"
-                ? "bg-sky-100 text-sky-800 border border-sky-300"
-                : "bg-emerald-100 text-emerald-800 border border-emerald-300"
-            }`}
-          >
-            {role === "admin" ? <FaUserTie className="text-sm" /> : <FaUser className="text-sm" />}
+        {/* Profile Avatar Badge */}
+        <div className="flex items-center gap-2 pl-2 border-l border-[#E2E8F0]">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#EFF6FF] text-[#2563EB] text-xs font-bold border border-[#2563EB]/20">
+            {getUserInitials(userEmail)}
           </div>
-          <div className="text-left hidden sm:block">
-            <div className="flex items-center gap-1.5">
-              <p className="text-xs font-bold text-slate-900 leading-tight">
-                {role === "admin"
-                  ? "Muhammad Rahim (Admin)"
-                  : userEmail
-                  ? userEmail.split("@")[0]
-                  : "User Portal"}
-              </p>
-              <span className="rounded-full px-2 py-0.5 text-[10px] font-bold uppercase bg-emerald-100 text-emerald-800">
-                {role}
-              </span>
-            </div>
-            <p className="text-[11px] text-slate-500 font-mono">{userEmail || "user@gmail.com"}</p>
+          <div className="text-left hidden xl:block">
+            <p className="text-xs font-bold text-[#0F172A] leading-tight">
+              {role === "admin" ? "Muhammad Rahim" : userEmail.split("@")[0]}
+            </p>
+            <p className="text-[10px] text-[#64748B] uppercase font-medium tracking-wider">{role}</p>
           </div>
         </div>
 
+        {/* Sign Out Button */}
         <button
           onClick={handleLogout}
-          className="flex items-center gap-2 rounded-lg bg-rose-600 hover:bg-rose-700 text-white px-3 py-1.5 text-xs font-bold transition-colors cursor-pointer shadow-2xs"
+          className="flex items-center gap-1.5 rounded-xl bg-white hover:bg-[#F8FAFC] text-[#64748B] hover:text-[#0F172A] border border-[#E2E8F0] px-3 py-2 text-xs font-semibold transition-colors cursor-pointer"
           title="Sign Out"
         >
-          <FaSignOutAlt />
+          <FaSignOutAlt className="text-xs text-[#64748B]" />
           <span className="hidden md:inline">Logout</span>
         </button>
       </div>
 
-      {/* FULL TASK DETAILS INSPECTOR POPUP MODAL */}
-      {selectedTaskDetail && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4 border border-blue-100 text-left animate-in fade-in zoom-in-95 duration-150">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-2 text-blue-600">
-                <FaTasks className="text-xl text-blue-600" />
-                <h3 className="font-extrabold text-slate-900 text-base">Assigned Task Details</h3>
-              </div>
-              <button
-                onClick={() => setSelectedTaskDetail(null)}
-                className="text-slate-400 hover:text-slate-700 font-bold text-lg cursor-pointer"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="space-y-3 text-xs">
-              <div className="bg-blue-50 p-3 rounded-2xl border border-blue-100 space-y-1">
-                <span className="text-[10px] font-bold uppercase text-blue-600 tracking-wider">Task Title</span>
-                <h4 className="text-sm font-black text-slate-900">{selectedTaskDetail.title}</h4>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
-                  <span className="text-[10px] font-bold uppercase text-slate-500">Priority Level</span>
-                  <p className="text-xs font-black text-blue-700 mt-0.5">{selectedTaskDetail.priority || "High"}</p>
-                </div>
-                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
-                  <span className="text-[10px] font-bold uppercase text-slate-500">Due Date</span>
-                  <p className="text-xs font-black text-rose-600 mt-0.5">{selectedTaskDetail.dueDate || "Today"}</p>
-                </div>
-              </div>
-
-              <div className="p-3.5 bg-slate-900 text-white rounded-2xl space-y-1.5 shadow-sm">
-                <span className="text-[10px] font-mono font-bold uppercase text-blue-400">Task Instructions & Deliverables</span>
-                <p className="text-xs leading-relaxed text-slate-200">{selectedTaskDetail.description || "No specific instructions provided."}</p>
-              </div>
-
-              <div className="pt-2 flex items-center justify-between text-[10px] text-slate-500 font-mono">
-                <span>Assigned By: <strong>{selectedTaskDetail.assignedBy || "Admin"}</strong></span>
-                <span>Assigned At: <strong>{selectedTaskDetail.assignedAt || "Recently"}</strong></span>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-3 pt-2 border-t border-slate-100">
+      {/* GLOBAL SEARCH MODAL (Ctrl + K) */}
+      {isSearchOpen && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center bg-slate-900/40 backdrop-blur-xs pt-20 p-4">
+          <div className="bg-white rounded-2xl max-w-xl w-full p-4 shadow-xl border border-[#E2E8F0] space-y-3 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center gap-3 border-b border-[#E2E8F0] pb-3 px-2">
+              <FaSearch className="text-[#2563EB] text-base" />
+              <input
+                ref={searchInputRef}
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search employees, students, projects, tasks..."
+                className="w-full text-sm font-semibold text-[#0F172A] outline-none placeholder:text-[#94A3B8] bg-transparent"
+              />
               <button
                 type="button"
-                onClick={() => setSelectedTaskDetail(null)}
-                className="w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs shadow-md transition-all cursor-pointer text-center"
+                onClick={() => setIsSearchOpen(false)}
+                className="text-[#64748B] text-xs font-mono font-semibold px-2 py-1 bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg cursor-pointer"
               >
-                Close Task Details
+                ESC
               </button>
+            </div>
+
+            <div className="max-h-80 overflow-y-auto space-y-1 text-xs">
+              {!searchQuery.trim() ? (
+                <div className="py-8 text-center text-[#64748B] font-medium space-y-1">
+                  <p className="text-xs">Type any keyword to search across the system.</p>
+                </div>
+              ) : searchResults.length === 0 ? (
+                <div className="py-8 text-center text-[#64748B] italic">
+                  No matching records found for "{searchQuery}".
+                </div>
+              ) : (
+                searchResults.map((res) => {
+                  const Icon = res.icon || FaSearch;
+                  return (
+                    <Link
+                      key={res.id}
+                      href={res.link}
+                      onClick={() => setIsSearchOpen(false)}
+                      className="flex items-center justify-between p-3 rounded-xl hover:bg-[#EFF6FF] border border-transparent hover:border-[#2563EB]/20 transition-colors group cursor-pointer"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="p-2 rounded-lg bg-[#EFF6FF] text-[#2563EB]">
+                          <Icon className="text-sm" />
+                        </div>
+                        <div>
+                          <p className="font-bold text-[#0F172A] group-hover:text-[#2563EB] text-xs">{res.title}</p>
+                          <p className="text-[11px] text-[#64748B]">{res.subtitle}</p>
+                        </div>
+                      </div>
+                      <span className="text-[10px] font-bold text-[#2563EB] uppercase tracking-wider bg-[#EFF6FF] px-2 py-0.5 rounded-md">
+                        {res.category}
+                      </span>
+                    </Link>
+                  );
+                })
+              )}
             </div>
           </div>
         </div>

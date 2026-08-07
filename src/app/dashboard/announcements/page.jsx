@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { supabase } from "@/lib/supabase";
 import Modal from "@/components/Modal";
+import { showToast } from "@/components/Toast";
 import {
   FaBullhorn,
   FaPlusCircle,
@@ -13,7 +15,9 @@ import {
   FaClock,
   FaUserShield,
   FaCheckCircle,
-  FaInfoCircle
+  FaInfoCircle,
+  FaEllipsisV,
+  FaExclamationTriangle
 } from "react-icons/fa";
 
 import { dbFetch, dbSaveList } from "@/lib/dbPersistence";
@@ -25,7 +29,7 @@ export default function AnnouncementsPage() {
     {
       id: "ann-101",
       title: "Tomorrow Official Office Holiday (Independence Day)",
-      category: "Tomorrow Holiday", // "Tomorrow Holiday" | "Office Meeting" | "New Policy" | "General Announcement"
+      category: "Tomorrow Holiday",
       postedBy: "Muhammad Rahim (Admin)",
       date: "2026-08-02",
       time: "09:00 AM",
@@ -55,10 +59,17 @@ export default function AnnouncementsPage() {
   ];
   const [announcements, setAnnouncements] = useState(initialAnnouncements);
 
+  // Kebab Context Menu State
+  const [activeKebabId, setActiveKebabId] = useState(null);
+
+  // Delete Safeguard Modal State
+  const [deleteModal, setDeleteModal] = useState({ isOpen: false, item: null, loading: false });
+
   // Create Announcement Modal State (Admin Only)
   const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [validationErrors, setValidationErrors] = useState({ title: "", content: "" });
 
-  // Alert Modal
+  // Custom Modal
   const [modal, setModal] = useState({ isOpen: false, title: "", message: "", type: "info" });
 
   const showAlert = (title, message, type = "info") => {
@@ -96,18 +107,46 @@ export default function AnnouncementsPage() {
   const [form, setForm] = useState({
     title: "",
     category: "Tomorrow Holiday",
-    priority: "Urgent", // "Normal" | "Important" | "Urgent"
-    target_audience: "All Users", // "All Users" | "Employees Only" | "Students Only" | "HR Department"
+    priority: "Urgent",
+    target_audience: "All Users",
     start_date: new Date().toISOString().split("T")[0],
     expiry_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
     content: "",
     broadcastNotification: true,
   });
 
+  // Strict Validation Rules (Requirement #2)
+  const validateForm = () => {
+    const errors = { title: "", content: "" };
+    let isValid = true;
+
+    const trimmedTitle = form.title.trim();
+    const trimmedContent = form.content.trim();
+
+    if (!trimmedTitle || trimmedTitle.length < 10) {
+      errors.title = "Announcement title must contain at least 10 meaningful characters.";
+      isValid = false;
+    } else if (trimmedTitle.length > 150) {
+      errors.title = "Announcement title must not exceed 150 characters.";
+      isValid = false;
+    }
+
+    if (!trimmedContent || trimmedContent.length < 20) {
+      errors.content = "Announcement description must contain at least 20 meaningful characters.";
+      isValid = false;
+    } else if (trimmedContent.length > 2000) {
+      errors.content = "Announcement description must not exceed 2000 characters.";
+      isValid = false;
+    }
+
+    setValidationErrors(errors);
+    return isValid;
+  };
+
   const handleCreateAnnouncement = async (e) => {
     e.preventDefault();
-    if (!form.title.trim() || !form.content.trim()) {
-      showAlert("Missing Fields ⚠️", "Please enter Announcement Title and Description.", "warning");
+    if (!validateForm()) {
+      showToast("Validation Failed ⚠️", "Please resolve title and description length errors.", "warning");
       return;
     }
 
@@ -116,7 +155,7 @@ export default function AnnouncementsPage() {
 
     const newObj = {
       id: "ann-" + Date.now(),
-      title: form.title,
+      title: form.title.trim(),
       category: form.category,
       priority: form.priority,
       target_audience: form.target_audience,
@@ -126,22 +165,21 @@ export default function AnnouncementsPage() {
       date: now.toISOString().split("T")[0],
       time: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       createdTimestampMs: now.getTime(),
-      content: form.content,
+      content: form.content.trim(),
       broadcastNotification: form.broadcastNotification,
     };
 
     const updated = [newObj, ...announcements];
     saveAnnouncementsState(updated);
 
-    // Save to Supabase Database
     try {
       await supabase.from("announcements").insert([
         {
-          title: form.title,
+          title: form.title.trim(),
           category: form.category,
           priority: form.priority,
           target_audience: form.target_audience,
-          content: form.content,
+          content: form.content.trim(),
           start_date: form.start_date,
           expiry_date: form.expiry_date,
           created_at: nowIso
@@ -160,48 +198,55 @@ export default function AnnouncementsPage() {
       content: "",
       broadcastNotification: true,
     });
+    setValidationErrors({ title: "", content: "" });
 
-    showAlert(
-      `Announcement Published (${form.priority}) 📢`,
-      `Title: '${newObj.title}'\nTarget Audience: ${form.target_audience}\nExpiry Date: ${form.expiry_date}\n\nReal-time toast notification & dashboard banner dispatched to targeted users!`,
-      "success"
-    );
+    showToast("Announcement Published 📢", `Published broadcast to ${form.target_audience}.`, "success");
   };
 
-  const handleDeleteAnnouncement = (id) => {
-    if (!confirm("Are you sure you want to delete this announcement broadcast?")) return;
-    const updated = announcements.filter((a) => a.id !== id);
-    saveAnnouncementsState(updated);
+  const executeDeleteAnnouncement = async () => {
+    if (!deleteModal.item) return;
+    setDeleteModal(prev => ({ ...prev, loading: true }));
+    const id = deleteModal.item.id;
+
+    try {
+      const updated = announcements.filter((a) => a.id !== id);
+      saveAnnouncementsState(updated);
+      showToast("Announcement Deleted 🗑️", "Broadcast record removed successfully.", "info");
+    } catch(e) {
+      showToast("Error", "Failed to delete announcement.", "error");
+    } finally {
+      setDeleteModal({ isOpen: false, item: null, loading: false });
+    }
   };
 
   const getCategoryBadge = (cat) => {
     switch (cat) {
       case "Tomorrow Holiday":
         return (
-          <span className="bg-rose-100 text-rose-800 border border-rose-300 font-extrabold px-3 py-1 rounded-xl text-xs flex items-center gap-1.5">
-            <FaCalendarTimes className="text-rose-600" />
-            <span>🎉 Tomorrow Holiday</span>
+          <span className="bg-[#EFF6FF] text-[#2563EB] border border-[#2563EB]/20 font-semibold px-2.5 py-1 rounded-full text-xs flex items-center gap-1.5 whitespace-nowrap">
+            <FaCalendarTimes className="text-[#2563EB]" />
+            <span>Tomorrow Holiday</span>
           </span>
         );
       case "Office Meeting":
         return (
-          <span className="bg-purple-100 text-purple-800 border border-purple-300 font-extrabold px-3 py-1 rounded-xl text-xs flex items-center gap-1.5">
-            <FaVideo className="text-purple-600" />
-            <span>📹 Office Meeting</span>
+          <span className="bg-[#EFF6FF] text-[#2563EB] border border-[#2563EB]/20 font-semibold px-2.5 py-1 rounded-full text-xs flex items-center gap-1.5 whitespace-nowrap">
+            <FaVideo className="text-[#2563EB]" />
+            <span>Office Meeting</span>
           </span>
         );
       case "New Policy":
         return (
-          <span className="bg-amber-100 text-amber-900 border border-amber-300 font-extrabold px-3 py-1 rounded-xl text-xs flex items-center gap-1.5">
-            <FaShieldAlt className="text-amber-700" />
-            <span>📜 New Policy</span>
+          <span className="bg-[#EFF6FF] text-[#2563EB] border border-[#2563EB]/20 font-semibold px-2.5 py-1 rounded-full text-xs flex items-center gap-1.5 whitespace-nowrap">
+            <FaShieldAlt className="text-[#2563EB]" />
+            <span>New Policy</span>
           </span>
         );
       default:
         return (
-          <span className="bg-blue-100 text-blue-800 border border-blue-300 font-extrabold px-3 py-1 rounded-xl text-xs flex items-center gap-1.5">
-            <FaBullhorn className="text-blue-600" />
-            <span>📢 Announcement</span>
+          <span className="bg-[#EFF6FF] text-[#2563EB] border border-[#2563EB]/20 font-semibold px-2.5 py-1 rounded-full text-xs flex items-center gap-1.5 whitespace-nowrap">
+            <FaBullhorn className="text-[#2563EB]" />
+            <span>Announcement</span>
           </span>
         );
     }
@@ -209,111 +254,137 @@ export default function AnnouncementsPage() {
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
-      {/* Alert Modal */}
+      {/* Modal */}
       <Modal isOpen={modal.isOpen} title={modal.title} message={modal.message} type={modal.type} onClose={closeModal} />
 
-      {/* Top Banner */}
-      <div className="bg-gradient-to-r from-slate-900 via-rose-950 to-slate-900 text-white rounded-2xl p-6 shadow-xl border border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4">
+      {/* 1. STANDARDIZED BLUE & WHITE HEADER BANNER (Requirement #1) */}
+      <div className="bg-white rounded-2xl p-6 border border-[#E2E8F0] shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <span className="text-[10px] font-extrabold uppercase tracking-widest text-rose-400 bg-rose-950/90 px-3 py-1 rounded-full border border-rose-800">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-[#2563EB] bg-[#EFF6FF] px-2.5 py-1 rounded-full border border-[#2563EB]/20">
               Official Company Broadcast
             </span>
-            <span className="text-[10px] font-bold text-slate-400 bg-slate-800 px-2.5 py-1 rounded-full flex items-center gap-1">
-              <FaBell className="text-rose-400" /> Automatic Multi-User Alerts Active
-            </span>
           </div>
-          <h1 className="text-2xl md:text-3xl font-black mt-2 text-white flex items-center gap-2.5">
-            <FaBullhorn className="text-rose-400" />
+          <h1 className="text-xl md:text-2xl font-bold text-[#0F172A] mt-1.5 flex items-center gap-2.5">
+            <FaBullhorn className="text-[#2563EB]" />
             <span>Announcement Board</span>
           </h1>
-          <p className="text-xs text-slate-300 mt-1">
-            Official Broadcasts: Tomorrow Holiday Alerts • Office Meeting Notices • New Company Policies • Broadcast Notifications
+          <p className="text-xs text-[#64748B] mt-0.5">
+            Official Broadcasts: Tomorrow Holiday Alerts • Office Meeting Notices • New Company Policies
           </p>
         </div>
 
         {(role === "admin" || role === "hr" || role === "manager") && (
           <button
             onClick={() => setCreateModalOpen(true)}
-            className="bg-rose-600 hover:bg-rose-700 text-white font-black px-5 py-2.5 rounded-xl text-xs transition-all shadow-lg flex items-center justify-center gap-2 border border-rose-500/40 cursor-pointer shrink-0"
+            className="bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold px-4 py-2 rounded-xl text-xs transition-colors shadow-xs flex items-center justify-center gap-2 cursor-pointer shrink-0"
           >
-            <FaPlusCircle className="text-base" />
+            <FaPlusCircle className="text-sm" />
             <span>+ Post Official Announcement</span>
           </button>
         )}
       </div>
 
-      {/* Announcements Feed */}
+      {/* ANNOUNCEMENTS FEED (Requirement #4 - Modern Spacing & Hierarchy) */}
       <div className="space-y-4">
-        {announcements.map((a) => (
-          <div key={a.id} className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-3 text-xs">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 border-b border-slate-100 pb-3">
-              <div className="flex flex-wrap items-center gap-2">
-                {getCategoryBadge(a.category)}
-                <span className={`px-2 py-0.5 rounded text-[10px] font-extrabold uppercase border ${
-                  a.priority === "Urgent"
-                    ? "bg-rose-100 text-rose-800 border-rose-300"
-                    : a.priority === "Important"
-                    ? "bg-amber-100 text-amber-900 border-amber-300"
-                    : "bg-emerald-100 text-emerald-800 border-emerald-300"
-                }`}>
-                  {a.priority || "Normal"} Priority
-                </span>
-                <h3 className="font-bold text-slate-900 text-base">{a.title}</h3>
-              </div>
-
-              <div className="flex items-center gap-3">
-                <span className="text-[11px] text-slate-400 font-semibold flex items-center gap-1">
-                  <FaClock /> {a.date} at {a.time} {a.expiry_date ? `(Expires: ${a.expiry_date})` : ""}
-                </span>
-
-                {(role === "admin" || role === "hr" || role === "manager") && (
-                  <button
-                    onClick={() => handleDeleteAnnouncement(a.id)}
-                    className="text-rose-600 hover:text-rose-800 p-1.5 rounded-lg hover:bg-rose-50 transition-all text-xs cursor-pointer"
-                    title="Delete Announcement"
-                  >
-                    <FaTrash />
-                  </button>
-                )}
-              </div>
-            </div>
-
-            <p className="text-xs text-slate-700 leading-relaxed bg-slate-50 p-4 rounded-xl border border-slate-100">
-              {a.content}
-            </p>
-
-            <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-400 pt-1">
-              <span><strong>Posted By:</strong> {a.postedBy}</span>
-              <span className="text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 flex items-center gap-1">
-                <FaCheckCircle className="text-emerald-600" /> Target Audience: {a.target_audience || "All Users"}
-              </span>
-            </div>
+        {announcements.length === 0 ? (
+          <div className="bg-white p-12 text-center rounded-2xl border border-[#E2E8F0] text-[#64748B] italic text-xs">
+            No active announcements found.
           </div>
-        ))}
+        ) : (
+          announcements.map((a) => (
+            <div key={a.id} className="bg-white rounded-2xl border border-[#E2E8F0] p-6 shadow-sm space-y-3 text-xs">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 border-b border-[#E2E8F0] pb-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  {getCategoryBadge(a.category)}
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase bg-[#EFF6FF] text-[#2563EB] border border-[#2563EB]/20">
+                    {a.priority || "Normal"} Priority
+                  </span>
+                  <h3 className="font-bold text-[#0F172A] text-base">{a.title}</h3>
+                </div>
+
+                <div className="flex items-center gap-3 shrink-0">
+                  <span className="text-[11px] text-[#64748B] font-semibold flex items-center gap-1">
+                    <FaClock className="text-[#64748B]" /> {a.date} at {a.time}
+                  </span>
+
+                  {/* Kebab Context Menu for Delete (Requirement #3) */}
+                  {(role === "admin" || role === "hr" || role === "manager") && (
+                    <div className="relative">
+                      <button
+                        type="button"
+                        onClick={() => setActiveKebabId(activeKebabId === a.id ? null : a.id)}
+                        className="p-1.5 rounded-lg text-[#64748B] hover:text-[#0F172A] hover:bg-[#F8FAFC] transition-colors cursor-pointer"
+                      >
+                        <FaEllipsisV className="text-xs" />
+                      </button>
+
+                      {activeKebabId === a.id && (
+                        <div className="absolute right-0 mt-1 w-44 rounded-xl bg-white p-1.5 shadow-lg border border-[#E2E8F0] z-30 space-y-0.5 text-xs text-left animate-in fade-in zoom-in-95 duration-100">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              showToast("Announcement Details 📢", `Target Audience: ${a.target_audience || "All Users"}. Posted by: ${a.postedBy}.`, "info");
+                              setActiveKebabId(null);
+                            }}
+                            className="w-full text-left px-3 py-1.5 rounded-lg hover:bg-[#EFF6FF] text-[#0F172A] hover:text-[#2563EB] font-semibold transition-colors"
+                          >
+                            View Details
+                          </button>
+                          <div className="border-t border-[#E2E8F0] my-1" />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setDeleteModal({ isOpen: true, item: a, loading: false });
+                              setActiveKebabId(null);
+                            }}
+                            className="w-full text-left px-3 py-1.5 rounded-lg hover:bg-rose-50 text-rose-600 font-semibold transition-colors"
+                          >
+                            Delete Announcement
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <p className="text-xs text-[#0F172A] leading-relaxed bg-[#F8FAFC] p-4 rounded-xl border border-[#E2E8F0]">
+                {a.content}
+              </p>
+
+              <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-[#64748B] pt-1">
+                <span><strong>Posted By:</strong> {a.postedBy}</span>
+                <span className="text-[#2563EB] font-semibold bg-[#EFF6FF] px-2.5 py-0.5 rounded-full border border-[#2563EB]/20 flex items-center gap-1">
+                  <FaCheckCircle className="text-[#2563EB]" /> Target: {a.target_audience || "All Users"}
+                </span>
+              </div>
+            </div>
+          ))
+        )}
       </div>
 
-      {/* CREATE ANNOUNCEMENT MODAL (ADMIN ONLY) */}
+      {/* CREATE ANNOUNCEMENT MODAL WITH STRICT VALIDATION (Requirement #2) */}
       {createModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4 border border-slate-200 text-left">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
-                <FaBullhorn className="text-rose-600" />
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl space-y-4 border border-[#E2E8F0] text-left animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between border-b border-[#E2E8F0] pb-3">
+              <h3 className="font-bold text-[#0F172A] text-base flex items-center gap-2">
+                <FaBullhorn className="text-[#2563EB]" />
                 <span>Post Official Announcement</span>
               </h3>
-              <button onClick={() => setCreateModalOpen(false)} className="text-slate-400 hover:text-slate-700 text-lg font-bold">✕</button>
+              <button onClick={() => setIsModalOpen ? setIsModalOpen(false) : setCreateModalOpen(false)} className="text-[#64748B] hover:text-[#0F172A] text-lg font-bold">✕</button>
             </div>
 
-            <form onSubmit={handleCreateAnnouncement} className="space-y-4 text-xs">
+            <form onSubmit={handleCreateAnnouncement} className="space-y-3.5 text-xs">
               <div>
-                <label className="block text-xs font-semibold uppercase text-slate-600 mb-1">
-                  Announcement Type / Category *
+                <label className="block text-xs font-semibold uppercase text-[#0F172A] mb-1">
+                  Category *
                 </label>
                 <select
                   value={form.category}
                   onChange={(e) => setForm({ ...form, category: e.target.value })}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-xs text-slate-900 outline-none focus:border-rose-600 font-bold"
+                  className="w-full rounded-xl border border-[#E2E8F0] px-3.5 py-2.5 text-xs text-[#0F172A] outline-none focus:border-[#2563EB] bg-white font-medium"
                 >
                   <option value="Tomorrow Holiday">🎉 Tomorrow Holiday Alert</option>
                   <option value="Office Meeting">📹 Office Meeting Notice</option>
@@ -324,30 +395,30 @@ export default function AnnouncementsPage() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold uppercase text-slate-600 mb-1">
-                    Priority Level *
+                  <label className="block text-xs font-semibold uppercase text-[#0F172A] mb-1">
+                    Priority *
                   </label>
                   <select
                     value={form.priority}
                     onChange={(e) => setForm({ ...form, priority: e.target.value })}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-xs text-slate-900 outline-none focus:border-rose-600 font-bold bg-white"
+                    className="w-full rounded-xl border border-[#E2E8F0] px-3 py-2 text-xs text-[#0F172A] outline-none focus:border-[#2563EB] bg-white"
                   >
-                    <option value="Normal">🟢 Normal Priority</option>
-                    <option value="Important">🟠 Important</option>
-                    <option value="Urgent">🚨 Urgent Broadcast</option>
+                    <option value="Normal">Normal</option>
+                    <option value="Important">Important</option>
+                    <option value="Urgent">Urgent</option>
                   </select>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold uppercase text-slate-600 mb-1">
+                  <label className="block text-xs font-semibold uppercase text-[#0F172A] mb-1">
                     Target Audience *
                   </label>
                   <select
                     value={form.target_audience}
                     onChange={(e) => setForm({ ...form, target_audience: e.target.value })}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-xs text-slate-900 outline-none focus:border-rose-600 font-bold bg-white"
+                    className="w-full rounded-xl border border-[#E2E8F0] px-3 py-2 text-xs text-[#0F172A] outline-none focus:border-[#2563EB] bg-white"
                   >
-                    <option value="All Users">👥 All Users (Entire House)</option>
+                    <option value="All Users">👥 All Users</option>
                     <option value="Employees Only">👔 Employees Only</option>
                     <option value="Students Only">🎓 Students Only</option>
                     <option value="HR Department">🧑‍💼 HR & Management</option>
@@ -355,80 +426,94 @@ export default function AnnouncementsPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold uppercase text-slate-600 mb-1">
-                    Start Date *
-                  </label>
-                  <input
-                    type="date"
-                    required
-                    value={form.start_date}
-                    onChange={(e) => setForm({ ...form, start_date: e.target.value })}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-xs text-slate-900 outline-none focus:border-rose-600"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold uppercase text-slate-600 mb-1">
-                    Expiry Date (Auto-Remove)
-                  </label>
-                  <input
-                    type="date"
-                    value={form.expiry_date}
-                    onChange={(e) => setForm({ ...form, expiry_date: e.target.value })}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-xs text-slate-900 outline-none focus:border-rose-600"
-                  />
-                </div>
-              </div>
-
               <div>
-                <label className="block text-xs font-semibold uppercase text-slate-600 mb-1">
-                  Announcement Title *
+                <label className="block text-xs font-semibold uppercase text-[#0F172A] mb-1">
+                  Announcement Title * (Min 10 chars)
                 </label>
                 <input
                   type="text"
                   required
                   value={form.title}
-                  onChange={(e) => setForm({ ...form, title: e.target.value })}
-                  placeholder="e.g. Tomorrow Official Office Holiday"
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-xs text-slate-900 outline-none focus:border-rose-600"
+                  onChange={(e) => {
+                    setForm({ ...form, title: e.target.value });
+                    if (validationErrors.title) setValidationErrors(prev => ({ ...prev, title: "" }));
+                  }}
+                  placeholder="e.g. Tomorrow Official Office Holiday Notice"
+                  className={`w-full rounded-xl border px-3.5 py-2.5 text-xs text-[#0F172A] outline-none font-medium bg-white ${
+                    validationErrors.title ? "border-rose-500" : "border-[#E2E8F0] focus:border-[#2563EB]"
+                  }`}
                 />
+                {validationErrors.title && (
+                  <p className="text-[11px] text-rose-600 font-semibold mt-1">{validationErrors.title}</p>
+                )}
               </div>
 
               <div>
-                <label className="block text-xs font-semibold uppercase text-slate-600 mb-1">
-                  Full Announcement Description *
+                <label className="block text-xs font-semibold uppercase text-[#0F172A] mb-1">
+                  Announcement Description * (Min 20 chars)
                 </label>
                 <textarea
-                  rows="3"
+                  rows={3}
                   required
                   value={form.content}
-                  onChange={(e) => setForm({ ...form, content: e.target.value })}
-                  placeholder="Type full announcement details for targeted users..."
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-xs text-slate-900 outline-none focus:border-rose-600"
+                  onChange={(e) => {
+                    setForm({ ...form, content: e.target.value });
+                    if (validationErrors.content) setValidationErrors(prev => ({ ...prev, content: "" }));
+                  }}
+                  placeholder="Type complete details for targeted users..."
+                  className={`w-full rounded-xl border px-3.5 py-2.5 text-xs text-[#0F172A] outline-none font-medium bg-white min-h-[90px] resize-y ${
+                    validationErrors.content ? "border-rose-500" : "border-[#E2E8F0] focus:border-[#2563EB]"
+                  }`}
                 />
+                {validationErrors.content && (
+                  <p className="text-[11px] text-rose-600 font-semibold mt-1">{validationErrors.content}</p>
+                )}
               </div>
 
-              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl flex items-center justify-between">
-                <span className="font-bold text-rose-950 flex items-center gap-1.5">
-                  <FaBell className="text-rose-600" /> Send Instant Notification to All Users
-                </span>
-                <input
-                  type="checkbox"
-                  checked={form.broadcastNotification}
-                  onChange={(e) => setForm({ ...form, broadcastNotification: e.target.checked })}
-                  className="w-4 h-4 text-rose-600 rounded cursor-pointer"
-                />
+              <div className="pt-2">
+                <button
+                  type="submit"
+                  className="w-full bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold py-3 rounded-xl transition-colors shadow-xs cursor-pointer flex items-center justify-center gap-2 text-xs"
+                >
+                  <FaBullhorn />
+                  <span>Publish Announcement & Broadcast Alert</span>
+                </button>
               </div>
-
-              <button
-                type="submit"
-                className="w-full bg-rose-600 hover:bg-rose-700 text-white font-bold py-2.5 rounded-xl transition-all shadow-md cursor-pointer"
-              >
-                Publish Announcement & Broadcast Alert
-              </button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* CONFIRMATION DESTRUCTIVE MODAL FOR DELETE (Requirement #3) */}
+      {deleteModal.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-[#E2E8F0] space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center gap-3 border-b border-[#E2E8F0] pb-3 text-[#0F172A]">
+              <FaExclamationTriangle className="text-xl text-[#2563EB]" />
+              <h3 className="font-bold text-[#0F172A] text-base">Delete Announcement?</h3>
+            </div>
+
+            <p className="text-xs text-[#64748B] leading-relaxed">
+              Are you sure you want to permanently delete this announcement? This action cannot be undone.
+            </p>
+
+            <div className="flex gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setDeleteModal({ isOpen: false, item: null, loading: false })}
+                className="flex-1 py-2.5 rounded-xl bg-white hover:bg-[#F8FAFC] text-[#2563EB] border border-[#E2E8F0] font-semibold text-xs cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={executeDeleteAnnouncement}
+                disabled={deleteModal.loading}
+                className="flex-1 py-2.5 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold text-xs cursor-pointer flex items-center justify-center"
+              >
+                {deleteModal.loading ? "Deleting..." : "Confirm & Delete 🗑️"}
+              </button>
+            </div>
           </div>
         </div>
       )}

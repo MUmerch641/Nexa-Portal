@@ -1,26 +1,56 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import { dbFetch, dbSaveRecord } from "@/lib/dbPersistence";
 import { logActivity } from "@/lib/activityUtils";
 import Modal from "@/components/Modal";
-import { FaCheck, FaTimes, FaCalendarPlus, FaUserClock, FaShieldAlt, FaInfoCircle } from "react-icons/fa";
+import { showToast } from "@/components/Toast";
+import {
+  FaCheck,
+  FaTimes,
+  FaCalendarPlus,
+  FaUserClock,
+  FaShieldAlt,
+  FaInfoCircle,
+  FaCalendarCheck,
+  FaCheckCircle,
+  FaTimesCircle,
+  FaClock,
+  FaArrowRight,
+  FaEllipsisV,
+  FaTrashAlt,
+  FaFileAlt
+} from "react-icons/fa";
 
 const StatusBadge = ({ status }) => {
   if (status === "approved") {
-    return <span className="inline-flex items-center gap-1 bg-emerald-100 text-emerald-800 border border-emerald-300 px-3 py-1 rounded-full text-xs font-bold">🟢 Approved (Salary NOT Cut)</span>;
+    return (
+      <span className="inline-flex items-center gap-1.5 bg-[#EFF6FF] text-[#2563EB] border border-[#2563EB]/20 px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap">
+        <FaCheckCircle className="text-xs text-[#2563EB]" /> Approved (Salary Exempt)
+      </span>
+    );
   }
   if (status === "rejected") {
-    return <span className="inline-flex items-center gap-1 bg-rose-100 text-rose-800 border border-rose-300 px-3 py-1 rounded-full text-xs font-bold">🔴 Rejected (Salary Cut Applied)</span>;
+    return (
+      <span className="inline-flex items-center gap-1.5 bg-[#FEE2E2] text-[#991B1B] border border-[#EF4444]/20 px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap">
+        <FaTimesCircle className="text-xs text-[#991B1B]" /> Rejected (Salary Cut)
+      </span>
+    );
   }
-  return <span className="inline-flex items-center gap-1 bg-amber-100 text-amber-800 border border-amber-300 px-3 py-1 rounded-full text-xs font-bold">⏳ Pending Admin Review</span>;
+  return (
+    <span className="inline-flex items-center gap-1.5 bg-[#FEF3C7] text-[#92400E] border border-[#F59E0B]/20 px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap">
+      <FaClock className="text-xs text-[#92400E]" /> Pending HR Review
+    </span>
+  );
 };
 
 export default function LeavesPage() {
   const [role, setRole] = useState("employee");
   const [user, setUser] = useState(null);
   const [leaves, setLeaves] = useState([]);
+  const formFirstInputRef = useRef(null);
+
   const [form, setForm] = useState({
     applicantName: "",
     type: "Emergency Leave",
@@ -30,8 +60,8 @@ export default function LeavesPage() {
   });
   const [modal, setModal] = useState({ isOpen: false, title: "", message: "", type: "info" });
   const [loading, setLoading] = useState(true);
+  const [activeKebabId, setActiveKebabId] = useState(null);
 
-  // Initial demo data fallback
   const initialDemoLeaves = [
     {
       id: "1",
@@ -65,7 +95,6 @@ export default function LeavesPage() {
     }
   ];
 
-  // Load role and user
   useEffect(() => {
     const storedRole = localStorage.getItem("user_role") || "admin";
     setRole(storedRole);
@@ -81,7 +110,6 @@ export default function LeavesPage() {
     fetchSession();
   }, []);
 
-  // Fetch leaves from Supabase or LocalStorage demo
   const fetchLeaves = async () => {
     try {
       const mergedLeaves = await dbFetch("leaves", initialDemoLeaves);
@@ -105,13 +133,13 @@ export default function LeavesPage() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!form.reason || !form.startDate || !form.endDate) {
-      setModal({ isOpen: true, title: "Missing Information", message: "Please enter start date, end date, and reason for leave.", type: "warning" });
+      showToast("Missing Info ⚠️", "Please select start date, end date, and reason for leave.", "warning");
       return;
     }
 
     const currentEmail = localStorage.getItem("current_user_email") || "user@gmail.com";
     const newLeave = {
-      id: Date.now().toString(),
+      id: `leave-${Date.now()}`,
       employee_id: user?.id || "local-user",
       employee_name: form.applicantName || (role === "student" ? "Student Applicant" : "Employee Applicant"),
       applicant_email: currentEmail.toLowerCase().trim(),
@@ -132,12 +160,7 @@ export default function LeavesPage() {
     setLeaves(updated);
     localStorage.setItem("software_house_leaves", JSON.stringify(updated));
 
-    setModal({
-      isOpen: true,
-      title: "Leave Application Submitted ⏳",
-      message: "Your leave request has been submitted to Admin/HR. Status is currently Pending Review.",
-      type: "success"
-    });
+    showToast("Application Submitted ⏳", "Your leave request has been submitted for HR review.", "success");
     setForm(prev => ({ ...prev, reason: "" }));
   };
 
@@ -152,16 +175,7 @@ export default function LeavesPage() {
     setLeaves(updated);
     localStorage.setItem("software_house_leaves", JSON.stringify(updated));
 
-    try {
-      await logActivity(
-        "Admin / HR",
-        "Leave Approved",
-        `Approved leave request for ${targetLeave?.employee_name || "Employee Staff"}`,
-        "leave"
-      );
-    } catch(e) {}
-
-    setModal({ isOpen: true, title: "Leave Approved 🟢", message: "Leave approved by Admin. Salary WILL NOT be cut (Exempt).", type: "success" });
+    showToast("Leave Approved 🟢", "Approved by Admin. Salary exempt.", "success");
   };
 
   const handleReject = async (id) => {
@@ -175,88 +189,142 @@ export default function LeavesPage() {
     setLeaves(updated);
     localStorage.setItem("software_house_leaves", JSON.stringify(updated));
 
-    try {
-      await logActivity(
-        "Admin / HR",
-        "Leave Rejected",
-        `Rejected leave request for ${targetLeave?.employee_name || "Employee Staff"}`,
-        "leave"
-      );
-    } catch(e) {}
-
-    setModal({ isOpen: true, title: "Leave Rejected 🔴", message: "Leave rejected by Admin. Salary cut policy applied.", type: "error" });
+    showToast("Leave Rejected 🔴", "Leave request rejected. Salary cut policy applied.", "info");
   };
 
-  if (loading) return <div className="p-8 text-center text-slate-500 font-bold">Loading Leave Management Portal...</div>;
+  const focusForm = () => {
+    if (formFirstInputRef.current) {
+      formFirstInputRef.current.focus();
+      formFirstInputRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  };
+
+  const visibleLeaves = leaves.filter(l => {
+    if (role === "admin" || role === "hr" || role === "manager") return true;
+    const currentEmail = (localStorage.getItem("current_user_email") || "").toLowerCase().trim();
+    return l.applicant_email ? l.applicant_email.toLowerCase() === currentEmail : true;
+  });
+
+  if (loading) {
+    return (
+      <div className="min-h-[400px] flex flex-col items-center justify-center space-y-3 text-[#0F172A]">
+        <div className="w-8 h-8 border-3 border-[#2563EB] border-t-transparent rounded-full animate-spin"></div>
+        <p className="text-xs font-bold text-[#64748B]">Loading Leave Management Desk...</p>
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto">
-      {/* Header */}
-      <div className="border-b border-slate-200 pb-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <div className="space-y-6 max-w-7xl mx-auto">
+      
+      {/* HEADER BANNER */}
+      <div className="bg-white rounded-2xl p-6 border border-[#E2E8F0] shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2.5">
-            <FaUserClock className="text-blue-600" />
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-[#2563EB] bg-[#EFF6FF] px-2.5 py-1 rounded-full border border-[#2563EB]/20">
+              Leave & HR Approvals
+            </span>
+          </div>
+          <h1 className="text-xl md:text-2xl font-bold text-[#0F172A] mt-1.5 flex items-center gap-2.5">
+            <FaUserClock className="text-[#2563EB]" />
             <span>Leave Management & Approvals</span>
           </h1>
-          <p className="text-sm text-slate-500 mt-1">
-            Apply for leave with reason. Admin approves (No Salary Cut) or rejects (Salary Cut Applied).
+          <p className="text-xs text-[#64748B] mt-0.5">
+            Submit leave requests with detailed reasons. HR approves (Salary Exempt) or rejects (Salary Cut Policy).
           </p>
         </div>
-        <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 text-blue-800 px-3.5 py-1.5 rounded-xl text-xs font-bold self-start md:self-auto">
-          <FaShieldAlt className="text-blue-600 text-sm" />
-          <span>Viewing as: <strong className="capitalize">{role} Portal View Mode</strong></span>
+
+        <div className="flex items-center gap-2 bg-[#EFF6FF] border border-[#2563EB]/20 text-[#2563EB] px-3.5 py-2 rounded-xl text-xs font-semibold shrink-0">
+          <FaShieldAlt className="text-sm" />
+          <span>Viewing Mode: <strong>{role.toUpperCase()}</strong></span>
         </div>
       </div>
 
-      {/* Rules Notice */}
+      {/* 1. TOP SUMMARY STATUS CARDS (Requirement #1 - Improved Vertical Padding & Flex Alignment) */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-emerald-900">
-          <p className="text-xs font-bold uppercase tracking-wider text-emerald-700">Approved Leave Status</p>
-          <p className="text-base font-bold mt-1">🟢 Salary NOT Cut (Exempt)</p>
-          <p className="text-xs text-emerald-700/80 mt-0.5">Admin approved requests incur 0 salary deduction.</p>
+        {/* Card 1: Approved */}
+        <div className="bg-white rounded-2xl p-5 border border-[#E2E8F0] shadow-sm space-y-2">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-[#EFF6FF] text-[#2563EB] border border-[#2563EB]/20 flex items-center justify-center text-xs shrink-0">
+              <FaCheckCircle />
+            </div>
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-[#2563EB]">Approved Leave Status</p>
+              <h3 className="text-sm font-bold text-[#0F172A]">Salary Exempt (No Cut)</h3>
+            </div>
+          </div>
+          <p className="text-xs text-[#64748B] leading-relaxed pt-1">
+            Approved leaves incur 0 salary deduction according to software house HR policy.
+          </p>
         </div>
-        <div className="bg-rose-50 border border-rose-200 rounded-xl p-4 text-rose-900">
-          <p className="text-xs font-bold uppercase tracking-wider text-rose-700">Rejected Leave Status</p>
-          <p className="text-base font-bold mt-1">🔴 Salary WILL Be Cut</p>
-          <p className="text-xs text-rose-700/80 mt-0.5">Unapproved absences incur policy salary cut.</p>
+
+        {/* Card 2: Rejected */}
+        <div className="bg-white rounded-2xl p-5 border border-[#E2E8F0] shadow-sm space-y-2">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-[#FEE2E2] text-[#991B1B] border border-[#EF4444]/20 flex items-center justify-center text-xs shrink-0">
+              <FaTimesCircle />
+            </div>
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-[#991B1B]">Rejected Leave Status</p>
+              <h3 className="text-sm font-bold text-[#0F172A]">Salary Cut Applied</h3>
+            </div>
+          </div>
+          <p className="text-xs text-[#64748B] leading-relaxed pt-1">
+            Unapproved or rejected absences incur standard daily salary deduction.
+          </p>
         </div>
-        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-amber-900">
-          <p className="text-xs font-bold uppercase tracking-wider text-amber-700">Pending Review</p>
-          <p className="text-base font-bold mt-1">⏳ Awaiting HR Decision</p>
-          <p className="text-xs text-amber-700/80 mt-0.5">Awaiting review from Admin/HR portal.</p>
+
+        {/* Card 3: Pending */}
+        <div className="bg-white rounded-2xl p-5 border border-[#E2E8F0] shadow-sm space-y-2">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-[#FEF3C7] text-[#92400E] border border-[#F59E0B]/20 flex items-center justify-center text-xs shrink-0">
+              <FaClock />
+            </div>
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-[#92400E]">Pending Review</p>
+              <h3 className="text-sm font-bold text-[#0F172A]">Awaiting HR Decision</h3>
+            </div>
+          </div>
+          <p className="text-xs text-[#64748B] leading-relaxed pt-1">
+            Requests currently under evaluation by the Admin/HR approval committee.
+          </p>
         </div>
       </div>
 
-      {/* Apply for Leave Form (Available to all users) */}
-      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs">
-        <h2 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
-          <FaCalendarPlus className="text-blue-600" />
-          <span>Apply for Leave</span>
-        </h2>
-        
+      {/* 2. APPLY FOR LEAVE FORM (Requirement #2 - Fixed Textarea Min-Height & Right-Aligned Prominent CTA) */}
+      <div className="bg-white rounded-2xl p-6 border border-[#E2E8F0] shadow-sm space-y-5">
+        <div className="border-b border-[#E2E8F0] pb-3">
+          <h2 className="text-base font-bold text-[#0F172A] flex items-center gap-2">
+            <FaCalendarPlus className="text-[#2563EB]" />
+            <span>Apply for Leave Request</span>
+          </h2>
+          <p className="text-xs text-[#64748B]">Fill in the leave application details for approval.</p>
+        </div>
+
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Applicant Name *</label>
+              <label className="block text-xs font-semibold text-[#0F172A] uppercase mb-1">Applicant Name *</label>
               <input
+                ref={formFirstInputRef}
                 type="text"
                 name="applicantName"
                 value={form.applicantName}
                 onChange={handleInputChange}
                 required
                 placeholder="Enter your full name"
-                className="w-full rounded-lg border border-slate-300 px-3.5 py-2 text-sm text-slate-900 outline-none focus:border-blue-600"
+                className="w-full rounded-xl border border-[#E2E8F0] px-3.5 py-2.5 text-xs text-[#0F172A] outline-none focus:border-[#2563EB] font-medium bg-white"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Leave Type *</label>
+              <label className="block text-xs font-semibold text-[#0F172A] uppercase mb-1">Leave Type *</label>
               <select
                 name="type"
                 value={form.type}
                 onChange={handleInputChange}
                 required
-                className="w-full rounded-lg border border-slate-300 px-3.5 py-2 text-sm text-slate-900 outline-none focus:border-blue-600 bg-white"
+                className="w-full rounded-xl border border-[#E2E8F0] px-3.5 py-2.5 text-xs text-[#0F172A] outline-none focus:border-[#2563EB] font-medium bg-white"
               >
                 <option value="Emergency Leave">Emergency Leave</option>
                 <option value="Sick Leave">Sick Leave</option>
@@ -268,125 +336,149 @@ export default function LeavesPage() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Start Date *</label>
+              <label className="block text-xs font-semibold text-[#0F172A] uppercase mb-1">Start Date *</label>
               <input
                 type="date"
                 name="startDate"
                 value={form.startDate}
                 onChange={handleInputChange}
                 required
-                className="w-full rounded-lg border border-slate-300 px-3.5 py-2 text-sm text-slate-900 outline-none focus:border-blue-600"
+                className="w-full rounded-xl border border-[#E2E8F0] px-3.5 py-2.5 text-xs text-[#0F172A] outline-none focus:border-[#2563EB] font-medium bg-white"
               />
             </div>
             <div>
-              <label className="block text-xs font-bold text-slate-700 uppercase mb-1">End Date *</label>
+              <label className="block text-xs font-semibold text-[#0F172A] uppercase mb-1">End Date *</label>
               <input
                 type="date"
                 name="endDate"
                 value={form.endDate}
                 onChange={handleInputChange}
                 required
-                className="w-full rounded-lg border border-slate-300 px-3.5 py-2 text-sm text-slate-900 outline-none focus:border-blue-600"
+                className="w-full rounded-xl border border-[#E2E8F0] px-3.5 py-2.5 text-xs text-[#0F172A] outline-none focus:border-[#2563EB] font-medium bg-white"
               />
             </div>
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Reason / Details *</label>
+            <label className="block text-xs font-semibold text-[#0F172A] uppercase mb-1">Reason & Details *</label>
             <textarea
               name="reason"
               value={form.reason}
               onChange={handleInputChange}
               required
-              rows="3"
+              rows={3}
               placeholder="State the detailed reason for your leave request..."
-              className="w-full rounded-lg border border-slate-300 px-3.5 py-2 text-sm text-slate-900 outline-none focus:border-blue-600"
+              className="w-full rounded-xl border border-[#E2E8F0] px-3.5 py-2.5 text-xs text-[#0F172A] outline-none focus:border-[#2563EB] font-medium bg-white min-h-[100px] resize-y"
             />
           </div>
 
-          <button
-            type="submit"
-            className="w-full md:w-auto bg-blue-600 hover:bg-blue-700 text-white font-bold px-6 py-2.5 rounded-xl text-sm transition-all shadow-md flex items-center justify-center gap-2"
-          >
-            <FaCalendarPlus />
-            <span>Submit Leave Request</span>
-          </button>
+          {/* Right-Aligned Prominent Primary CTA Button */}
+          <div className="flex justify-end pt-2 border-t border-[#E2E8F0]">
+            <button
+              type="submit"
+              className="w-full sm:w-auto bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold px-6 py-3 rounded-xl text-xs transition-colors shadow-xs flex items-center justify-center gap-2 cursor-pointer"
+            >
+              <span>Submit Leave Request</span>
+              <FaArrowRight className="text-xs" />
+            </button>
+          </div>
         </form>
       </div>
 
-      {/* Leave Applications & Approval Status Table */}
-      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs">
-        <div className="flex items-center justify-between border-b border-slate-200 pb-3 mb-4">
-          <h2 className="text-lg font-bold text-slate-900">Leave Applications & Approval Status</h2>
-          <span className="text-xs font-bold bg-slate-100 px-3 py-1 rounded-lg text-slate-700">
-            Total Requests: {leaves.length}
+      {/* 3. LEAVE APPLICATIONS TABLE & MODERN EMPTY STATE (Requirement #3) */}
+      <div className="bg-white rounded-2xl p-6 border border-[#E2E8F0] shadow-sm space-y-4">
+        <div className="flex items-center justify-between border-b border-[#E2E8F0] pb-3">
+          <h2 className="text-base font-bold text-[#0F172A] flex items-center gap-2">
+            <FaFileAlt className="text-[#2563EB]" />
+            <span>Leave Applications & Approval Status</span>
+          </h2>
+          <span className="text-xs font-semibold bg-[#EFF6FF] text-[#2563EB] px-3 py-1 rounded-full border border-[#2563EB]/20">
+            Total Requests: {visibleLeaves.length}
           </span>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm border-collapse">
-            <thead>
-              <tr className="border-b border-slate-200 bg-slate-50 text-xs font-bold uppercase text-slate-500">
-                <th className="p-3">Applicant Name</th>
-                <th className="p-3">Type & Dates</th>
-                <th className="p-3">Reason / Details</th>
-                <th className="p-3">Status</th>
-                <th className="p-3 text-right">Admin Action</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {leaves.filter(l => {
-                if (role === "admin" || role === "hr" || role === "manager") return true;
-                const currentEmail = (localStorage.getItem("current_user_email") || "").toLowerCase().trim();
-                return l.applicant_email ? l.applicant_email.toLowerCase() === currentEmail : true;
-              }).length === 0 ? (
+        {visibleLeaves.length === 0 ? (
+          /* MODERN CENTERED EMPTY STATE CARD (Requirement #3) */
+          <div className="py-12 px-4 text-center flex flex-col items-center justify-center space-y-3 bg-[#F8FAFC] rounded-xl border border-dashed border-[#E2E8F0]">
+            <div className="w-12 h-12 rounded-full bg-[#EFF6FF] text-[#2563EB] flex items-center justify-center text-xl border border-[#2563EB]/20">
+              <FaCalendarCheck />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-[#0F172A]">No Pending Leave Requests</h3>
+              <p className="text-xs text-[#64748B] mt-0.5 max-w-sm">
+                You're all caught up! Submitted leave requests will appear here once they are created.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={focusForm}
+              className="mt-2 bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold text-xs px-4 py-2 rounded-xl transition-colors cursor-pointer flex items-center gap-1.5 shadow-xs"
+            >
+              <FaCalendarPlus className="text-xs" />
+              <span>Apply for Leave</span>
+            </button>
+          </div>
+        ) : (
+          <div className="overflow-x-auto rounded-xl border border-[#E2E8F0]">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead className="bg-[#F8FAFC] text-[#64748B] font-semibold uppercase text-[10px] tracking-wider border-b border-[#E2E8F0]">
                 <tr>
-                  <td colSpan="5" className="p-6 text-center text-slate-400 text-xs">
-                    No leave requests found for your account. Submit a request using the form above.
-                  </td>
+                  <th className="py-3 px-4 whitespace-nowrap">Applicant Name</th>
+                  <th className="py-3 px-4 whitespace-nowrap">Type & Dates</th>
+                  <th className="py-3 px-4 min-w-[200px]">Reason & Details</th>
+                  <th className="py-3 px-4 whitespace-nowrap">Approval Status</th>
+                  {(role === "admin" || role === "hr" || role === "manager") && (
+                    <th className="py-3 px-4 text-right whitespace-nowrap">Admin Action</th>
+                  )}
                 </tr>
-              ) : (
-                leaves.filter(l => {
-                  if (role === "admin" || role === "hr" || role === "manager") return true;
-                  const currentEmail = (localStorage.getItem("current_user_email") || "").toLowerCase().trim();
-                  return l.applicant_email ? l.applicant_email.toLowerCase() === currentEmail : true;
-                }).map((l) => (
-                  <tr key={l.id} className="hover:bg-slate-50/70 transition-colors">
-                    <td className="p-3 font-semibold text-slate-900">
+              </thead>
+              <tbody className="divide-y divide-[#E2E8F0]">
+                {visibleLeaves.map((l, idx) => (
+                  <tr key={`leave-row-${l.id || 'rec'}-${idx}`} className="hover:bg-[#F8FAFC] transition-colors align-middle">
+                    <td className="py-3.5 px-4 font-semibold text-[#0F172A] whitespace-nowrap">
                       {l.employee_name || "Staff / Student"}
                     </td>
-                    <td className="p-3">
-                      <p className="font-semibold text-slate-800">{l.type}</p>
-                      <p className="text-xs text-slate-500">{l.start_date} to {l.end_date}</p>
+
+                    <td className="py-3.5 px-4 whitespace-nowrap">
+                      <p className="font-bold text-[#0F172A]">{l.type}</p>
+                      <p className="text-[11px] text-[#64748B] font-mono">{l.start_date} to {l.end_date}</p>
                     </td>
-                    <td className="p-3 text-slate-600 text-xs max-w-xs">
+
+                    <td className="py-3.5 px-4 text-[#64748B] text-xs">
                       {l.reason}
                     </td>
-                    <td className="p-3">
+
+                    <td className="py-3.5 px-4 whitespace-nowrap">
                       <StatusBadge status={l.status} />
                     </td>
-                    <td className="p-3 text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <button
-                          onClick={() => handleApprove(l.id)}
-                          className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-1.5 rounded-lg text-xs transition-all flex items-center gap-1 shadow-2xs cursor-pointer"
-                        >
-                          <FaCheck /> Approve (No Cut)
-                        </button>
-                        <button
-                          onClick={() => handleReject(l.id)}
-                          className="bg-rose-600 hover:bg-rose-700 text-white font-bold px-3 py-1.5 rounded-lg text-xs transition-all flex items-center gap-1 shadow-2xs cursor-pointer"
-                        >
-                          <FaTimes /> Reject (Salary Cut)
-                        </button>
-                      </div>
-                    </td>
+
+                    {(role === "admin" || role === "hr" || role === "manager") && (
+                      <td className="py-3.5 px-4 text-right whitespace-nowrap">
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleApprove(l.id)}
+                            className="bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold px-3 py-1.5 rounded-lg text-xs transition-colors flex items-center gap-1 cursor-pointer shadow-xs"
+                          >
+                            <FaCheck /> Approve (No Cut)
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleReject(l.id)}
+                            className="bg-white hover:bg-rose-50 text-rose-600 border border-[#E2E8F0] hover:border-rose-200 font-semibold px-3 py-1.5 rounded-lg text-xs transition-colors flex items-center gap-1 cursor-pointer"
+                          >
+                            <FaTimes /> Reject (Salary Cut)
+                          </button>
+                        </div>
+                      </td>
+                    )}
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       <Modal

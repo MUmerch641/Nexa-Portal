@@ -63,11 +63,12 @@ export function cleanPayloadForDb(record, table = "") {
  */
 function getDedupeKey(item) {
   if (!item) return "";
-  const email = String(item.email || "").toLowerCase().trim();
-  if (email) return email;
   const id = String(item.id || "").toLowerCase().trim();
   if (id) return id;
-  const title = String(item.title || item.full_name || item.name || item.client_name || "").toLowerCase().trim();
+  const email = String(item.email || "").toLowerCase().trim();
+  const title = String(item.title || item.task || item.task_name || item.full_name || item.name || item.client_name || "").toLowerCase().trim();
+  if (email && title) return `${email}_${title}`;
+  if (email) return email;
   return title;
 }
 
@@ -100,7 +101,7 @@ export async function dbFetch(table, defaultData = []) {
     return deletedIds.some(d => {
       const del = String(d).toLowerCase().trim();
       if (!del) return false;
-      return (itemId && itemId === del) || (itemEmail && itemEmail === del) || (itemName && itemName === del) || (itemName && del && itemName.includes(del));
+      return (itemId && itemId === del) || (itemEmail && itemEmail === del) || (itemName && itemName === del);
     });
   };
 
@@ -142,14 +143,12 @@ export async function dbFetch(table, defaultData = []) {
       }
     });
 
-    // Only keep local items if not blacklisted and not deleted from DB
+    // Keep all local items not present in DB (matching by unique dedupe key)
     localData.forEach(item => {
       if (item && !isDeleted(item)) {
         const k = getDedupeKey(item);
         if (k && !map.has(k)) {
-          if (String(item.id || "").startsWith("i-") || String(item.id || "").startsWith("emp-")) {
-            map.set(k, item);
-          }
+          map.set(k, item);
         }
       }
     });

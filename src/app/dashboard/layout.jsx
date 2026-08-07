@@ -9,26 +9,26 @@ import ToastContainer from "@/components/Toast";
 export default function DashboardLayout({ children }) {
   const router = useRouter();
   const pathname = usePathname();
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  // Default true so desktop loads with sidebar open immediately (no flash)
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const [role, setRole] = useState("admin");
   const [authorized, setAuthorized] = useState(false);
 
-  // Set initial desktop vs mobile responsive sidebar state
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      setSidebarOpen(window.innerWidth >= 768);
+    // On mobile, close sidebar on first load
+    if (typeof window !== "undefined" && window.innerWidth < 768) {
+      setSidebarOpen(false);
     }
   }, []);
 
-  // Auto-close mobile sidebar when navigating to a new route
   useEffect(() => {
+    // Auto-close sidebar on mobile when navigating to a new page
     if (typeof window !== "undefined" && window.innerWidth < 768) {
       setSidebarOpen(false);
     }
   }, [pathname]);
 
   useEffect(() => {
-    // 1. Check Authentication Guard
     const checkAuth = () => {
       const isLoggedIn = localStorage.getItem("isLoggedIn") === "true";
       const userRole = localStorage.getItem("user_role");
@@ -45,7 +45,6 @@ export default function DashboardLayout({ children }) {
 
     checkAuth();
 
-    // Listen to browser Back/Forward navigation buttons (popstate event)
     window.addEventListener("popstate", checkAuth);
     const handleRoleChange = () => setRole(localStorage.getItem("user_role") || "admin");
     window.addEventListener("roleChanged", handleRoleChange);
@@ -56,12 +55,11 @@ export default function DashboardLayout({ children }) {
     };
   }, [pathname, router]);
 
-  // Prevent flash of protected content before auth clearance completes
   if (!authorized) {
     return (
-      <div className="min-h-screen bg-slate-900 flex items-center justify-center text-white p-6 text-center">
-        <div className="flex items-center gap-3 text-xs font-black tracking-wider uppercase bg-slate-800 px-5 py-3 rounded-2xl border border-slate-700 shadow-xl">
-          <span className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></span>
+      <div className="min-h-screen bg-[#F8FAFC] flex items-center justify-center text-[#0F172A] p-6 text-center">
+        <div className="flex items-center gap-3 text-xs font-bold uppercase bg-white px-5 py-3 rounded-2xl border border-[#E2E8F0] shadow-sm">
+          <span className="w-4 h-4 border-2 border-[#2563EB] border-t-transparent rounded-full animate-spin"></span>
           <span>Authentication Guard Active • Redirecting to Login...</span>
         </div>
       </div>
@@ -71,12 +69,12 @@ export default function DashboardLayout({ children }) {
   const isAdminRole = role === "admin" || role === "hr" || role === "manager" || role === "accounts";
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800 flex">
-      {/* Sidebar (Rendered for Admin roles with toggle state) */}
+    <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] flex">
+      {/* Sidebar */}
       <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
-      {/* Main Content Area (Dynamic padding when sidebar toggled) */}
-      <div className={`flex-1 flex flex-col min-w-0 transition-all duration-300 ${
+      {/* Main Content Area */}
+      <div className={`flex-1 flex flex-col min-w-0 transition-all duration-200 ${
         isAdminRole 
           ? (sidebarOpen ? "md:pl-64" : "md:pl-0") 
           : "pl-0"
@@ -93,4 +91,3 @@ export default function DashboardLayout({ children }) {
     </div>
   );
 }
-

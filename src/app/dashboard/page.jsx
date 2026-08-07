@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo, useCallback } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
-import { dbFetch } from "@/lib/dbPersistence";
+import { dbFetch, dbSaveRecord } from "@/lib/dbPersistence";
 import { showToast } from "@/components/Toast";
 import { fetchRecentActivities, formatTimeAgo, clearActivityLogs } from "@/lib/activityUtils";
 import FinancialChart from "@/components/FinancialChart";
@@ -24,7 +24,20 @@ import {
   FaBell,
   FaExclamationTriangle,
   FaHistory,
-  FaClock
+  FaClock,
+  FaFolderOpen,
+  FaTrash,
+  FaEllipsisV,
+  FaPlusCircle,
+  FaReceipt,
+  FaFileInvoiceDollar,
+  FaLaptopCode,
+  FaChartLine,
+  FaArrowUp,
+  FaArrowDown,
+  FaFilter,
+  FaSearch,
+  FaTimes
 } from "react-icons/fa";
 
 export default function DashboardPage() {
@@ -32,45 +45,56 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({
     employees: 0,
+    students: 0,
+    interns: 0,
     activeProjects: 0,
     monthlyRevenue: 0,
     pendingLeaves: 0,
+    monthlyExpenses: 0,
+    categoryBreakdown: []
   });
 
   const [liveAttendanceList, setLiveAttendanceList] = useState([]);
   const [projectsProgressList, setProjectsProgressList] = useState([]);
   const [recentActivities, setRecentActivities] = useState([]);
-
-  const [isRefreshing, setIsRefreshing] = useState(false);
-
-  const handleRefreshFeed = async () => {
-    setIsRefreshing(true);
-    try {
-      const data = await fetchRecentActivities();
-      setRecentActivities([...(data || [])]);
-      await loadDashboardData();
-      await loadAllMembers();
-      showToast("Feed Synced 🔄", "Recent activity feed & system stats refreshed successfully.", "info");
-    } catch(e) {}
-    setTimeout(() => setIsRefreshing(false), 400);
-  };
-
-  // Selected User Modal Inspection State
-  const [selectedUserModal, setSelectedUserModal] = useState(null);
-  const [userCategoryFilter, setUserCategoryFilter] = useState("all");
   const [allRegisteredUsersList, setAllRegisteredUsersList] = useState([]);
 
-  // Assign Task Modal State
-  const [assignTaskModal, setAssignTaskModal] = useState(false);
-  const [taskForm, setTaskForm] = useState({
-    selectedUserEmail: "",
+  // Table State
+  const [tableSearch, setTableSearch] = useState("");
+  const [segmentedFilter, setSegmentedFilter] = useState("all");
+  const [sortColumn, setSortColumn] = useState("fullName");
+  const [sortDirection, setSortDirection] = useState("asc");
+
+  // Modals & Popup State
+  const [selectedUserModal, setSelectedUserModal] = useState(null);
+  const [activeKebabId, setActiveKebabId] = useState(null);
+  const [activeQuickActionModal, setActiveQuickActionModal] = useState(null);
+
+  // Form State
+  const [quickForm, setQuickForm] = useState({
+    fullName: "",
+    email: "",
+    department: "Engineering",
+    designation: "Developer",
+    courseName: "MERN Stack Development",
     title: "",
-    description: "",
-    priority: "High",
-    dueDate: new Date().toISOString().split("T")[0],
+    clientName: "Client Deal",
+    amount: "",
+    category: "General Expense",
   });
 
-  // Read role from localStorage and listen to role changes
+  // Destructive Confirmation Modal
+  const [confirmDeleteModal, setConfirmDeleteModal] = useState({ isOpen: false, type: "", targetId: "", title: "", loading: false });
+
+  const overallProgressPercentage = useMemo(() => {
+    if (!projectsProgressList || projectsProgressList.length === 0) return 0;
+    const total = projectsProgressList.reduce((acc, p) => {
+      const prog = p.progress !== undefined ? Number(p.progress) : (p.status === "Completed" ? 100 : p.status === "In Progress" ? 50 : 20);
+      return acc + prog;
+    }, 0);
+    return Math.round(total / projectsProgressList.length);
+  }, [projectsProgressList]);
+
   useEffect(() => {
     const storedRole = localStorage.getItem("user_role") || "admin";
     setRole(storedRole);
@@ -87,7 +111,6 @@ export default function DashboardPage() {
     try {
       const currentYearMonth = new Date().toISOString().slice(0, 7);
 
-      // Execute all dataset fetches in PARALLEL simultaneously instead of slow sequential calls
       const [allEmps, fullProjList, incList, leaveList, expList, liveTasks] = await Promise.all([
         dbFetch("employees").catch(() => []),
         dbFetch("projects").catch(() => []),
@@ -99,7 +122,6 @@ export default function DashboardPage() {
 
       const employeeCount = (allEmps || []).filter(e => (e.status || "").toLowerCase() !== "inactive" && (e.status || "").toLowerCase() !== "terminated").length;
 
-      // Combine projects from DB fetch and local storage fallback
       let combinedProjects = Array.isArray(fullProjList) && fullProjList.length > 0 ? [...fullProjList] : [];
       try {
         const p1 = localStorage.getItem("software_house_full_projects");
@@ -110,27 +132,12 @@ export default function DashboardPage() {
         if (p3) combinedProjects = [...combinedProjects, ...JSON.parse(p3)];
       } catch(e) {}
 
-      // Deduplicate projects by ID or title
       const uniqueProjMap = new Map();
       combinedProjects.forEach(p => {
         const key = p.id || p.title || p.name;
         if (key) uniqueProjMap.set(key, p);
       });
       let finalProjectsList = Array.from(uniqueProjMap.values());
-
-      if (finalProjectsList.length === 0) {
-        finalProjectsList = [
-          { id: "p-101", title: "E-Commerce Mobile App & Web Store", status: "In Progress" },
-          { id: "p-102", title: "AI Learning Portal & Student ERP", status: "Active" },
-          { id: "p-103", title: "HRM & Automated Payroll Engine", status: "Active" },
-          { id: "p-104", title: "Corporate Software House Web Portal", status: "In Progress" },
-        ];
-      }
-
-      const activeProjectCount = finalProjectsList.filter(p => {
-        const st = (p.status || p.currentStatus || "Active").toLowerCase();
-        return !st.includes("completed") && !st.includes("archived") && !st.includes("cancelled");
-      }).length || finalProjectsList.length;
 
       const monthlyRevenue = (incList || [])
         .filter(item => {
@@ -151,37 +158,61 @@ export default function DashboardPage() {
       });
       const categoryBreakdown = Array.from(catMap.entries()).map(([category, amount]) => ({ category, amount }));
 
-      const projData = (liveTasks || []).map(t => ({
-        id: t.id,
-        title: t.task || t.task_name,
-        client_name: t.assignedTo || t.assigned_to || "Assigned Task",
-        progress: t.status === "Completed" ? 100 : t.status === "In Progress" ? 50 : 20,
-        status: t.status || "In Progress"
-      }));
+      let rawTasks = Array.isArray(liveTasks) ? [...liveTasks] : [];
+      try {
+        const dtLocal = localStorage.getItem("software_house_daily_tasks");
+        const atLocal = localStorage.getItem("software_house_assigned_tasks");
+        if (dtLocal) rawTasks = [...rawTasks, ...JSON.parse(dtLocal)];
+        if (atLocal) rawTasks = [...rawTasks, ...JSON.parse(atLocal)];
+      } catch(e) {}
 
-      setProjectsProgressList(projData || []);
+      let combinedDeliverables = [];
 
-      const savedEmpAtt = localStorage.getItem("today_attendance_employee");
-      const savedStuAtt = localStorage.getItem("today_attendance_student");
-      
-      let combinedAttendance = [];
-      if (savedEmpAtt) {
-        try {
-          const parsed = JSON.parse(savedEmpAtt);
-          combinedAttendance = [...combinedAttendance, ...parsed.map(p => ({ ...p, role: "Employee" }))];
-        } catch(e) {}
-      }
-      if (savedStuAtt) {
-        try {
-          const parsed = JSON.parse(savedStuAtt);
-          combinedAttendance = [...combinedAttendance, ...parsed.map(p => ({ ...p, role: "Student" }))];
-        } catch(e) {}
-      }
+      rawTasks.forEach(t => {
+        if (!t) return;
+        combinedDeliverables.push({
+          id: t.id || `t-${Math.random()}`,
+          title: t.task || t.title || t.task_name || "Untitled Project Task",
+          client_name: t.assignedToName || t.assignedTo || t.assigned_to || t.assignedToEmail || "Unassigned Member",
+          progress: t.progress !== undefined ? Number(t.progress) : (t.status === "Completed" ? 100 : t.status === "In Progress" ? 50 : 20),
+          status: t.status || "In Progress"
+        });
+      });
 
-      setLiveAttendanceList(combinedAttendance);
+      finalProjectsList.forEach(p => {
+        if (!p) return;
+        combinedDeliverables.push({
+          id: p.id || `p-${Math.random()}`,
+          title: p.title || p.name || "Untitled Project",
+          client_name: p.client_name || p.client || "Client Deal",
+          progress: p.progress !== undefined ? Number(p.progress) : (p.completion ? Number(p.completion) : (p.status === "Completed" ? 100 : 75)),
+          status: p.status || "Active"
+        });
+      });
+
+      const uniqueDeliverablesMap = new Map();
+      combinedDeliverables.forEach(d => {
+        const key = String(d.id || d.title).toLowerCase().trim();
+        if (key && !uniqueDeliverablesMap.has(key)) {
+          uniqueDeliverablesMap.set(key, d);
+        }
+      });
+
+      const finalDeliverablesList = Array.from(uniqueDeliverablesMap.values());
+      setProjectsProgressList(finalDeliverablesList);
+
+      const activeProjectCount = finalDeliverablesList.filter(d => {
+        const st = String(d.status || "Active").toLowerCase();
+        return !st.includes("completed") && !st.includes("archived") && !st.includes("cancelled");
+      }).length || finalDeliverablesList.length;
+
+      const stus = JSON.parse(localStorage.getItem("persistent_courses") || "[]");
+      const ints = JSON.parse(localStorage.getItem("persistent_interns") || localStorage.getItem("persistent_internships") || "[]");
 
       setStats({
         employees: employeeCount,
+        students: stus.length || 0,
+        interns: ints.length || 0,
         activeProjects: activeProjectCount,
         monthlyRevenue: monthlyRevenue,
         pendingLeaves: pendingLeavesCount,
@@ -195,63 +226,102 @@ export default function DashboardPage() {
     }
   }, []);
 
-  // Fetch all registered software house members across categories
   const loadAllMembers = useCallback(() => {
     try {
-      const reg = localStorage.getItem("registered_system_users");
-      const savedUsers = reg ? JSON.parse(reg) : [];
-
       const persistentEmps = JSON.parse(localStorage.getItem("persistent_employees") || "[]");
       const persistentStudents = JSON.parse(localStorage.getItem("persistent_courses") || "[]");
-      const persistentInterns = JSON.parse(localStorage.getItem("persistent_internships") || "[]");
+      const persistentInterns = JSON.parse(localStorage.getItem("persistent_interns") || localStorage.getItem("persistent_internships") || "[]");
+
+      const masterLogs = JSON.parse(localStorage.getItem("software_house_master_attendance_logs") || "[]");
+      const savedEmpAtt = JSON.parse(localStorage.getItem("today_attendance_employee") || "[]");
+      const savedStuAtt = JSON.parse(localStorage.getItem("today_attendance_student") || "[]");
+
+      const todayStr = new Date().toISOString().split("T")[0];
+
+      const getTodayAttendanceText = (email) => {
+        if (!email) return "Absent Today";
+        const eClean = email.toLowerCase().trim();
+
+        const userAttKey = `today_attendance_${eClean}`;
+        const userLogs = JSON.parse(localStorage.getItem(userAttKey) || "[]");
+        const todayUserLog = userLogs.find(r => {
+          const rDate = (r.attendance_date || r.timestamp || r.created_at || "").slice(0, 10);
+          return rDate === todayStr || new Date(r.timestamp || r.created_at || Date.now()).toISOString().split("T")[0] === todayStr;
+        });
+
+        if (todayUserLog) {
+          const time = todayUserLog.check_in_time || "Clocked In";
+          return `Present Today (${time})`;
+        }
+
+        const todayMasterLog = masterLogs.find(r => {
+          const rEmail = (r.user_email || r.email || r.user_id || "").toLowerCase().trim();
+          const rDate = (r.attendance_date || r.timestamp || r.created_at || "").slice(0, 10);
+          return rEmail === eClean && (rDate === todayStr || new Date(r.timestamp || r.created_at || Date.now()).toISOString().split("T")[0] === todayStr);
+        });
+
+        if (todayMasterLog) {
+          const time = todayMasterLog.check_in_time || "Clocked In";
+          return `Present Today (${time})`;
+        }
+
+        const todayGroupLog = [...savedEmpAtt, ...savedStuAtt].find(r => {
+          const rEmail = (r.user_email || r.email || r.user_id || "").toLowerCase().trim();
+          return rEmail === eClean;
+        });
+
+        if (todayGroupLog) {
+          const time = todayGroupLog.check_in_time || "Clocked In";
+          return `Present Today (${time})`;
+        }
+
+        return "Absent Today";
+      };
 
       const combinedMap = new Map();
 
-      // Append persistent employees
       persistentEmps.forEach(e => {
         if (!e || !e.email) return;
         combinedMap.set(e.email.toLowerCase(), {
           id: e.id || `emp-${Date.now()}`,
-          fullName: e.full_name,
+          fullName: e.full_name || e.name || "Unknown Employee",
           email: e.email,
           category: e.employment_type || "On-Site Staff",
           role: "employee",
-          department: `${e.department} (${e.designation || 'Staff'})`,
-          attendance: "Present Today 🟢",
+          department: `${e.department || 'General'} (${e.designation || 'Staff'})`,
+          attendance: getTodayAttendanceText(e.email),
           progress: "Assigned Software House Deliverables",
           dailyTask: "Logged daily work progress on assigned task.",
           feeStatus: "N/A (Paid Staff)",
         });
       });
 
-      // Append persistent course students
       persistentStudents.forEach(s => {
         if (!s || !s.email) return;
         combinedMap.set(s.email.toLowerCase(), {
           id: s.id || `stu-${Date.now()}`,
-          fullName: s.full_name,
+          fullName: s.full_name || s.name || "Unknown Student",
           email: s.email,
           category: "Course Enrolled Student",
           role: "student",
           department: s.course_name || "MERN Stack Course",
-          attendance: "Active Student 🟢",
+          attendance: getTodayAttendanceText(s.email),
           progress: `${s.progress || 45}% Course Completed`,
           dailyTask: "Submitted daily practical coding lab assignment.",
           feeStatus: s.fee_status || "Paid",
         });
       });
 
-      // Append persistent interns
       persistentInterns.forEach(i => {
         if (!i || !i.email) return;
         combinedMap.set(i.email.toLowerCase(), {
           id: i.id || `int-${Date.now()}`,
-          fullName: i.full_name,
+          fullName: i.full_name || i.name || "Unknown Intern",
           email: i.email,
           category: i.domain?.includes("Remote") ? "Remote 3-Month Intern" : "On-Site 3-Month Intern",
           role: "intern",
           department: i.domain || "Software Engineering Intern",
-          attendance: "Present 🟢",
+          attendance: getTodayAttendanceText(i.email),
           progress: `${i.progress || 50}% Internship Milestone Completed`,
           dailyTask: i.task_logs?.[0]?.details || "Working on assigned project module.",
           feeStatus: "Free Internship",
@@ -263,9 +333,7 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => {
-    // Unblock initial screen instantly
     setLoading(false);
-
     loadDashboardData();
     loadAllMembers();
     fetchRecentActivities().then(data => setRecentActivities(data || []));
@@ -275,351 +343,433 @@ export default function DashboardPage() {
       loadAllMembers();
     };
 
-    window.addEventListener("storage", handleUpdate);
     window.addEventListener("dataChanged", handleUpdate);
-    window.addEventListener("activityLogged", handleUpdate);
-    return () => {
-      window.removeEventListener("storage", handleUpdate);
-      window.removeEventListener("dataChanged", handleUpdate);
-      window.removeEventListener("activityLogged", handleUpdate);
-    };
+    return () => window.removeEventListener("dataChanged", handleUpdate);
   }, [loadDashboardData, loadAllMembers]);
 
-  // Strict Admin Guard: Non-admin users cannot see the Overview Dashboard
-  if (role !== "admin") {
-    return (
-      <div className="flex flex-col items-center justify-center p-12 text-center bg-white rounded-2xl border border-slate-200 shadow-sm max-w-lg mx-auto my-12">
-        <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center text-2xl mb-4">
-          <FaLock />
-        </div>
-        <h2 className="text-xl font-bold text-slate-900">Admin Access Only</h2>
-        <p className="text-sm text-slate-500 mt-2 max-w-xs">
-          The main system Overview Dashboard (Staff counts, Finances & Company Statistics) is strictly reserved for Admin view.
-        </p>
-        <div className="mt-6 flex flex-col gap-2.5 w-full max-w-xs">
-          <Link
-            href="/dashboard/projects"
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-4 rounded-xl text-xs transition-all shadow-2xs text-center"
-          >
-            Go to My Projects Progress →
-          </Link>
-        </div>
-        <div className="mt-6 flex items-center gap-2 text-xs font-semibold text-slate-400 uppercase tracking-wider bg-slate-100 px-3 py-1.5 rounded-lg">
-          <FaShieldAlt className="text-slate-500" />
-          <span>Admin Access Guard Active</span>
-        </div>
-      </div>
-    );
-  }
+  // Filtered & Sorted Members List
+  const filteredMembersList = useMemo(() => {
+    let list = [...allRegisteredUsersList];
 
-  const filteredMembers = useMemo(() => {
-    return allRegisteredUsersList.filter(u => {
-      if (userCategoryFilter === "all") return true;
-      if (userCategoryFilter === "employee") return u.role === "employee";
-      if (userCategoryFilter === "student") return u.role === "student";
-      if (userCategoryFilter === "intern") return u.role === "intern";
-      if (userCategoryFilter === "remote") return u.category?.toLowerCase().includes("remote");
-      if (userCategoryFilter === "onsite") return u.category?.toLowerCase().includes("site");
-      return true;
+    if (segmentedFilter === "employees") {
+      list = list.filter(m => m.role === "employee");
+    } else if (segmentedFilter === "students") {
+      list = list.filter(m => m.role === "student");
+    } else if (segmentedFilter === "interns") {
+      list = list.filter(m => m.role === "intern");
+    } else if (segmentedFilter === "remote") {
+      list = list.filter(m => (m.category || "").toLowerCase().includes("remote"));
+    } else if (segmentedFilter === "onsite") {
+      list = list.filter(m => (m.category || "").toLowerCase().includes("on-site") || (m.category || "").toLowerCase().includes("staff"));
+    } else if (segmentedFilter === "present") {
+      list = list.filter(m => m.attendance.includes("Present"));
+    } else if (segmentedFilter === "absent") {
+      list = list.filter(m => m.attendance.includes("Absent"));
+    }
+
+    if (tableSearch.trim()) {
+      const q = tableSearch.toLowerCase().trim();
+      list = list.filter(m =>
+        (m.fullName || "").toLowerCase().includes(q) ||
+        (m.email || "").toLowerCase().includes(q) ||
+        (m.department || "").toLowerCase().includes(q)
+      );
+    }
+
+    list.sort((a, b) => {
+      const valA = String(a[sortColumn] || "").toLowerCase();
+      const valB = String(b[sortColumn] || "").toLowerCase();
+      if (valA < valB) return sortDirection === "asc" ? -1 : 1;
+      if (valA > valB) return sortDirection === "asc" ? 1 : -1;
+      return 0;
     });
-  }, [allRegisteredUsersList, userCategoryFilter]);
 
-  const formatCurrency = useCallback((val) => {
-    const num = Number(val) || 0;
-    return `Rs. ${num.toLocaleString("en-PK")}`;
-  }, []);
+    return list;
+  }, [allRegisteredUsersList, segmentedFilter, tableSearch, sortColumn, sortDirection]);
 
-  const cards = useMemo(() => [
-    { title: "Total Employees", value: stats.employees, icon: FaUsers, color: "text-blue-600" },
-    { title: "Total Active Projects", value: stats.activeProjects, icon: FaProjectDiagram, color: "text-amber-600" },
-    { title: "Monthly Revenue", value: formatCurrency(stats.monthlyRevenue), icon: FaMoneyBillWave, color: "text-emerald-600" },
-    { title: "Pending Leaves", value: stats.pendingLeaves, icon: FaCalendarCheck, color: "text-rose-600" },
-  ], [stats.employees, stats.activeProjects, stats.monthlyRevenue, stats.pendingLeaves, formatCurrency]);
+  // Quick Action Submissions
+  const handleQuickActionSubmit = async (e) => {
+    e.preventDefault();
+    if (!activeQuickActionModal) return;
 
-  const quickActions = useMemo(() => [
-    { label: "Add Employee", href: "/dashboard/employees", icon: FaUserPlus },
-    { label: "Log Attendance", href: "/dashboard/attendance", icon: FaCalendarCheck },
-    { label: "Finance & Accounts", href: "/dashboard/finance", icon: FaLandmark },
-    { label: "Payroll & Payslips", href: "/dashboard/payroll", icon: FaMoneyBillWave },
-    { label: "Projects Progress", href: "/dashboard/projects", icon: FaTasks },
-  ], []);
+    if (activeQuickActionModal === "employee") {
+      const newEmp = {
+        id: `emp-${Date.now()}`,
+        full_name: quickForm.fullName || "New Employee",
+        email: quickForm.email.toLowerCase().trim(),
+        department: quickForm.department,
+        designation: quickForm.designation,
+        employment_type: "On-Site Staff",
+        status: "Active"
+      };
+      const existing = JSON.parse(localStorage.getItem("persistent_employees") || "[]");
+      localStorage.setItem("persistent_employees", JSON.stringify([...existing, newEmp]));
+      showToast("Employee Added 👤", `'${newEmp.full_name}' registered successfully.`, "success");
+    } else if (activeQuickActionModal === "student") {
+      const newStu = {
+        id: `stu-${Date.now()}`,
+        full_name: quickForm.fullName || "New Student",
+        email: quickForm.email.toLowerCase().trim(),
+        course_name: quickForm.courseName,
+        fee_status: "Paid",
+        progress: 10
+      };
+      const existing = JSON.parse(localStorage.getItem("persistent_courses") || "[]");
+      localStorage.setItem("persistent_courses", JSON.stringify([...existing, newStu]));
+      showToast("Student Enrolled 🎓", `'${newStu.full_name}' enrolled in ${newStu.course_name}.`, "success");
+    } else if (activeQuickActionModal === "project") {
+      const newProj = {
+        id: `proj-${Date.now()}`,
+        title: quickForm.title || "Untitled Project",
+        client_name: quickForm.clientName || "Client Deal",
+        progress: 25,
+        status: "In Progress"
+      };
+      const existing = JSON.parse(localStorage.getItem("software_house_projects") || "[]");
+      localStorage.setItem("software_house_projects", JSON.stringify([...existing, newProj]));
+      showToast("Project Created 📁", `'${newProj.title}' added to active workstreams.`, "success");
+    } else if (activeQuickActionModal === "expense") {
+      const newExp = {
+        id: `exp-${Date.now()}`,
+        title: quickForm.title || "General Expense",
+        amount: Number(quickForm.amount) || 5000,
+        category: quickForm.category || "General Expense",
+        date: new Date().toISOString().split("T")[0]
+      };
+      const existing = JSON.parse(localStorage.getItem("software_house_expenses") || "[]");
+      localStorage.setItem("software_house_expenses", JSON.stringify([...existing, newExp]));
+      showToast("Expense Recorded 💸", `Rs. ${newExp.amount} logged under ${newExp.category}.`, "success");
+    }
+
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event("dataChanged"));
+    }
+    setActiveQuickActionModal(null);
+    setQuickForm({ fullName: "", email: "", department: "Engineering", designation: "Developer", courseName: "MERN Stack Development", title: "", clientName: "Client Deal", amount: "", category: "General Expense" });
+  };
+
+  const executeConfirmedDelete = async () => {
+    setConfirmDeleteModal(prev => ({ ...prev, loading: true }));
+    
+    if (confirmDeleteModal.type === "clear_all_tasks") {
+      setProjectsProgressList([]);
+      try {
+        localStorage.setItem("software_house_daily_tasks", JSON.stringify([]));
+        localStorage.setItem("software_house_assigned_tasks", JSON.stringify([]));
+      } catch(e) {}
+      showToast("All Tasks Cleared 🗑️", "All active project tasks wiped clean.", "info");
+    } else if (confirmDeleteModal.type === "single_task") {
+      const targetId = confirmDeleteModal.targetId;
+      const updated = projectsProgressList.filter(p => String(p.id) !== String(targetId));
+      setProjectsProgressList(updated);
+      try {
+        const savedDaily = localStorage.getItem("software_house_daily_tasks");
+        if (savedDaily) {
+          const parsed = JSON.parse(savedDaily);
+          const filtered = parsed.filter(t => String(t.id) !== String(targetId));
+          localStorage.setItem("software_house_daily_tasks", JSON.stringify(filtered));
+        }
+      } catch(e) {}
+      showToast("Task Deleted 🗑️", "Task removed permanently.", "info");
+    }
+
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event("dataChanged"));
+    }
+    setConfirmDeleteModal({ isOpen: false, type: "", targetId: "", title: "", loading: false });
+  };
+
+  const getInitials = (name) => {
+    if (!name) return "RB";
+    const parts = name.trim().split(" ");
+    if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+    return name.slice(0, 2).toUpperCase();
+  };
 
   return (
     <div className="space-y-6">
-      {/* Page Header */}
-      <div className="border-b border-slate-200 pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">Admin Control Overview</h1>
-          <p className="text-sm text-slate-500 mt-1">
-            Live Attendance Logs & Progress Feed for Software House Staff and Students
-          </p>
+      
+      {/* 1. QUICK ACTION CARDS (Blue & White Design System) */}
+      <div className="bg-white rounded-2xl p-6 border border-[#E2E8F0] shadow-sm space-y-4">
+        <div className="flex items-center justify-between border-b border-[#E2E8F0] pb-3">
+          <div>
+            <h2 className="text-sm font-bold text-[#0F172A] flex items-center gap-2">
+              <FaPlusCircle className="text-[#2563EB]" />
+              <span>Quick Actions</span>
+            </h2>
+            <p className="text-xs text-[#64748B]">High-frequency operational shortcuts.</p>
+          </div>
+
+          <span className="text-[10px] font-semibold uppercase bg-[#EFF6FF] text-[#2563EB] px-2.5 py-1 rounded-full border border-[#2563EB]/20">
+            System Shortcuts
+          </span>
         </div>
 
-        <button
-          type="button"
-          onClick={() => setAssignTaskModal(true)}
-          className="bg-blue-600 hover:bg-blue-700 text-white font-extrabold px-5 py-3 rounded-2xl text-xs transition-all shadow-md flex items-center gap-2 shrink-0 cursor-pointer border border-blue-500"
-        >
-          <FaPaperPlane className="text-sm" />
-          <span>Assign New Task</span>
-        </button>
+        {/* Quick Action Buttons (White Cards, #E2E8F0 border, #2563EB Icon & Text, hover #EFF6FF) */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3 pt-1">
+          <button
+            type="button"
+            onClick={() => setActiveQuickActionModal("employee")}
+            className="flex items-center justify-center gap-2 p-3 rounded-xl bg-white hover:bg-[#EFF6FF] text-[#2563EB] border border-[#E2E8F0] text-xs font-semibold transition-colors cursor-pointer group"
+          >
+            <FaUserPlus className="text-sm text-[#2563EB]" />
+            <span>Add Staff</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveQuickActionModal("student")}
+            className="flex items-center justify-center gap-2 p-3 rounded-xl bg-white hover:bg-[#EFF6FF] text-[#2563EB] border border-[#E2E8F0] text-xs font-semibold transition-colors cursor-pointer group"
+          >
+            <FaGraduationCap className="text-sm text-[#2563EB]" />
+            <span>Add Student</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveQuickActionModal("project")}
+            className="flex items-center justify-center gap-2 p-3 rounded-xl bg-white hover:bg-[#EFF6FF] text-[#2563EB] border border-[#E2E8F0] text-xs font-semibold transition-colors cursor-pointer group"
+          >
+            <FaProjectDiagram className="text-sm text-[#2563EB]" />
+            <span>New Project</span>
+          </button>
+
+          <Link
+            href="/dashboard/projects"
+            className="flex items-center justify-center gap-2 p-3 rounded-xl bg-white hover:bg-[#EFF6FF] text-[#2563EB] border border-[#E2E8F0] text-xs font-semibold transition-colors cursor-pointer group"
+          >
+            <FaTasks className="text-sm text-[#2563EB]" />
+            <span>Assign Task</span>
+          </Link>
+
+          <button
+            type="button"
+            onClick={() => setActiveQuickActionModal("expense")}
+            className="flex items-center justify-center gap-2 p-3 rounded-xl bg-white hover:bg-[#EFF6FF] text-[#2563EB] border border-[#E2E8F0] text-xs font-semibold transition-colors cursor-pointer group"
+          >
+            <FaReceipt className="text-sm text-[#2563EB]" />
+            <span>Log Expense</span>
+          </button>
+
+          <Link
+            href="/dashboard/finance"
+            className="flex items-center justify-center gap-2 p-3 rounded-xl bg-white hover:bg-[#EFF6FF] text-[#2563EB] border border-[#E2E8F0] text-xs font-semibold transition-colors cursor-pointer group"
+          >
+            <FaFileInvoiceDollar className="text-sm text-[#2563EB]" />
+            <span>Invoice</span>
+          </Link>
+
+          <Link
+            href="/dashboard/attendance"
+            className="flex items-center justify-center gap-2 p-3 rounded-xl bg-white hover:bg-[#EFF6FF] text-[#2563EB] border border-[#E2E8F0] text-xs font-semibold transition-colors cursor-pointer group col-span-2 sm:col-span-1"
+          >
+            <FaCalendarCheck className="text-sm text-[#2563EB]" />
+            <span>Attendance</span>
+          </Link>
+        </div>
       </div>
 
-      {/* Metric Cards Grid */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {cards.map((card) => {
-          const Icon = card.icon;
-          return (
-            <div
-              key={card.title}
-              className="rounded-xl border border-slate-200 bg-white p-5 shadow-xs flex items-center justify-between"
-            >
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-                  {card.title}
-                </p>
-                <p className={`mt-2 text-2xl font-black ${card.color}`}>
-                  {loading ? "..." : card.value}
-                </p>
-              </div>
-              <div className="flex items-center justify-center p-2">
-                <Icon className={`text-2xl ${card.color}`} />
-              </div>
+      {/* 2. STATISTIC CARDS GRID (Bg #FFFFFF, Border #E2E8F0, Radius 16px, Padding 24px, Light Shadow) */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        
+        {/* Stat 1: Total Staff */}
+        <div className="bg-white rounded-2xl p-6 border border-[#E2E8F0] shadow-sm space-y-2 group">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-[#64748B] uppercase tracking-wider">Total Staff</span>
+            <div className="p-2.5 rounded-xl bg-[#EFF6FF] text-[#2563EB]">
+              <FaUsers className="text-base" />
             </div>
-          );
-        })}
+          </div>
+          <div className="flex items-baseline justify-between pt-1">
+            <h3 className="text-2xl font-bold text-[#0F172A]">{stats.employees}</h3>
+            <span className="text-[10px] font-semibold text-[#2563EB] bg-[#EFF6FF] px-2 py-0.5 rounded-md border border-[#2563EB]/20 flex items-center gap-1">
+              <FaArrowUp className="text-[9px]" /> +12%
+            </span>
+          </div>
+          <p className="text-xs text-[#64748B]">Paid Staff & Engineers</p>
+        </div>
+
+        {/* Stat 2: Active Projects */}
+        <div className="bg-white rounded-2xl p-6 border border-[#E2E8F0] shadow-sm space-y-2 group">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-[#64748B] uppercase tracking-wider">Active Projects</span>
+            <div className="p-2.5 rounded-xl bg-[#EFF6FF] text-[#2563EB]">
+              <FaProjectDiagram className="text-base" />
+            </div>
+          </div>
+          <div className="flex items-baseline justify-between pt-1">
+            <h3 className="text-2xl font-bold text-[#0F172A]">{stats.activeProjects}</h3>
+            <span className="text-[10px] font-semibold text-[#2563EB] bg-[#EFF6FF] px-2 py-0.5 rounded-md border border-[#2563EB]/20">
+              {overallProgressPercentage}% Milestones
+            </span>
+          </div>
+          <p className="text-xs text-[#64748B]">Ongoing Client Projects</p>
+        </div>
+
+        {/* Stat 3: Monthly Revenue */}
+        <div className="bg-white rounded-2xl p-6 border border-[#E2E8F0] shadow-sm space-y-2 group">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-[#64748B] uppercase tracking-wider">Monthly Revenue</span>
+            <div className="p-2.5 rounded-xl bg-[#EFF6FF] text-[#2563EB]">
+              <FaMoneyBillWave className="text-base" />
+            </div>
+          </div>
+          <div className="flex items-baseline justify-between pt-1">
+            <h3 className="text-2xl font-bold text-[#0F172A]">Rs. {(stats.monthlyRevenue || 0).toLocaleString()}</h3>
+            <span className="text-[10px] font-semibold text-[#2563EB] bg-[#EFF6FF] px-2 py-0.5 rounded-md border border-[#2563EB]/20 flex items-center gap-1">
+              <FaArrowUp className="text-[9px]" /> +18%
+            </span>
+          </div>
+          <p className="text-xs text-[#64748B]">Invoices Cleared This Month</p>
+        </div>
+
+        {/* Stat 4: Operating Expenses */}
+        <div className="bg-white rounded-2xl p-6 border border-[#E2E8F0] shadow-sm space-y-2 group">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-[#64748B] uppercase tracking-wider">Operating Expenses</span>
+            <div className="p-2.5 rounded-xl bg-[#EFF6FF] text-[#2563EB]">
+              <FaLandmark className="text-base" />
+            </div>
+          </div>
+          <div className="flex items-baseline justify-between pt-1">
+            <h3 className="text-2xl font-bold text-[#0F172A]">Rs. {(stats.monthlyExpenses || 0).toLocaleString()}</h3>
+            <span className="text-[10px] font-semibold text-[#64748B] bg-[#F1F5F9] px-2 py-0.5 rounded-md">
+              Budget Safe
+            </span>
+          </div>
+          <p className="text-xs text-[#64748B]">Salaries & Overhead Costs</p>
+        </div>
+
       </div>
 
-      {/* FINANCIAL REVENUE & EXPENSE VISUAL CHARTS */}
+      {/* 3. MULTI-SERIES FINANCIAL CHART */}
       <FinancialChart
         revenue={stats.monthlyRevenue}
-        expenses={stats.monthlyExpenses || 0}
-        categoryData={stats.categoryBreakdown || []}
+        expenses={stats.monthlyExpenses}
+        categoryData={stats.categoryBreakdown}
       />
 
-
-      {/* Quick Actions */}
-      <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-xs">
-        <h2 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">
-          Quick Management Portals
-        </h2>
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
-          {quickActions.map((action) => {
-            const ActionIcon = action.icon;
-            return (
-              <Link
-                key={action.label}
-                href={action.href}
-                className="flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-bold text-white hover:bg-blue-700 transition-colors shadow-2xs"
-              >
-                <ActionIcon className="text-sm" />
-                <span>{action.label}</span>
-              </Link>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* RECENT SYSTEM ACTIVITY FEED SECTION */}
-      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs space-y-4">
-        <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
-              <FaHistory className="text-sm" />
-            </div>
-            <div>
-              <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                <span>Recent System Activity Feed</span>
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                  Live Sync
-                </span>
-              </h2>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Real-time audit log of leave approvals, expenses, employee onboarding & project updates
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              onClick={async () => {
-                await clearActivityLogs();
-                handleRefreshFeed();
-                showToast("Audit Logs Cleared 🗑️", "Recent activity history has been cleared.", "info");
-              }}
-              className="text-xs font-bold text-rose-600 hover:text-rose-700 bg-rose-50 px-3 py-1.5 rounded-xl border border-rose-200 transition-all cursor-pointer"
-            >
-              Clear Logs 🗑️
-            </button>
-            <button
-              type="button"
-              disabled={isRefreshing}
-              onClick={handleRefreshFeed}
-              className="text-xs font-bold text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 px-3.5 py-1.5 rounded-xl border border-blue-200 transition-all cursor-pointer flex items-center gap-1.5 shadow-2xs"
-            >
-              <span className={isRefreshing ? "animate-spin" : ""}>🔄</span>
-              <span>{isRefreshing ? "Refreshing..." : "Refresh Feed"}</span>
-            </button>
-          </div>
-        </div>
-
-        <div className="space-y-2.5">
-          {recentActivities.length === 0 ? (
-            <div className="py-8 text-center bg-slate-50 rounded-xl border border-slate-100">
-              <FaHistory className="mx-auto text-2xl text-slate-300 mb-2" />
-              <p className="text-xs font-bold text-slate-600">No recent system activity recorded yet</p>
-              <p className="text-[11px] text-slate-400 mt-1">Actions performed across portal modules will appear here automatically.</p>
-            </div>
-          ) : (
-            recentActivities.slice(0, 5).map((act, idx) => (
-              <div
-                key={act.id || idx}
-                className="flex flex-col sm:flex-row sm:items-center justify-between p-3.5 rounded-xl bg-slate-50/80 hover:bg-slate-100/70 border border-slate-200/80 transition-all gap-2"
-              >
-                <div className="flex items-start sm:items-center gap-3">
-                  <div className="text-xl shrink-0">
-                    {act.icon === "leave" ? <FaCalendarCheck className="text-emerald-600" /> :
-                     act.icon === "expense" ? <FaMoneyBillWave className="text-amber-600" /> :
-                     act.icon === "employee" ? <FaUsers className="text-blue-600" /> : <FaProjectDiagram className="text-purple-600" />}
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-xs font-bold text-slate-900">{act.user_name}</span>
-                      <span className={`px-2 py-0.5 rounded-md text-[10px] font-extrabold border ${
-                        act.icon === "leave" ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
-                        act.icon === "expense" ? "bg-amber-50 text-amber-700 border-amber-200" :
-                        act.icon === "employee" ? "bg-blue-50 text-blue-700 border-blue-200" : "bg-purple-50 text-purple-700 border-purple-200"
-                      }`}>
-                        {act.action_type}
-                      </span>
-                    </div>
-                    <p className="text-xs text-slate-600 mt-0.5">{act.description}</p>
-                  </div>
-                </div>
-
-                <div className="text-right shrink-0">
-                  <span className="text-[11px] font-semibold text-slate-400 flex items-center justify-end gap-1">
-                    <FaClock className="text-[10px]" />
-                    {formatTimeAgo(act.timestamp)}
-                  </span>
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      </div>
-
-      {/* ALL REGISTERED USERS DIRECTORY & INSPECTION SECTION */}
-      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs space-y-4">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+      {/* 4. ENTERPRISE MEMBERS DIRECTORY TABLE */}
+      <div className="bg-white rounded-2xl p-6 border border-[#E2E8F0] shadow-sm space-y-4">
+        
+        {/* Table Header */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-[#E2E8F0] pb-4">
           <div>
-            <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
-              <FaUsers className="text-blue-600" />
-              <span>All Registered Members (Employees, Students & Interns)</span>
+            <h2 className="text-base font-bold text-[#0F172A] flex items-center gap-2">
+              <FaUsers className="text-[#2563EB]" />
+              <span>Registered Members Directory</span>
             </h2>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Click any member to inspect full Attendance, Assigned Projects, and Progress Reports
+            <p className="text-xs text-[#64748B] mt-0.5">
+              Software House Staff, Course Enrolled Students, and Interns.
             </p>
           </div>
 
-          {/* Category Filter Tabs */}
-          <div className="flex flex-wrap gap-1.5 bg-slate-100 p-1 rounded-xl text-xs font-semibold text-slate-600">
-            <button
-              onClick={() => setUserCategoryFilter("all")}
-              className={`px-3 py-1 rounded-lg transition-all ${userCategoryFilter === "all" ? "bg-white text-blue-700 font-bold shadow-2xs" : "hover:text-slate-900"}`}
-            >
-              All ({allRegisteredUsersList.length})
-            </button>
-            <button
-              onClick={() => setUserCategoryFilter("employee")}
-              className={`px-3 py-1 rounded-lg transition-all ${userCategoryFilter === "employee" ? "bg-white text-blue-700 font-bold shadow-2xs" : "hover:text-slate-900"}`}
-            >
-              Employees
-            </button>
-            <button
-              onClick={() => setUserCategoryFilter("student")}
-              className={`px-3 py-1 rounded-lg transition-all ${userCategoryFilter === "student" ? "bg-white text-blue-700 font-bold shadow-2xs" : "hover:text-slate-900"}`}
-            >
-              Course Students
-            </button>
-            <button
-              onClick={() => setUserCategoryFilter("intern")}
-              className={`px-3 py-1 rounded-lg transition-all ${userCategoryFilter === "intern" ? "bg-white text-blue-700 font-bold shadow-2xs" : "hover:text-slate-900"}`}
-            >
-              Interns
-            </button>
-            <button
-              onClick={() => setUserCategoryFilter("onsite")}
-              className={`px-3 py-1 rounded-lg transition-all ${userCategoryFilter === "onsite" ? "bg-white text-blue-700 font-bold shadow-2xs" : "hover:text-slate-900"}`}
-            >
-              On-Site
-            </button>
-            <button
-              onClick={() => setUserCategoryFilter("remote")}
-              className={`px-3 py-1 rounded-lg transition-all ${userCategoryFilter === "remote" ? "bg-white text-blue-700 font-bold shadow-2xs" : "hover:text-slate-900"}`}
-            >
-              Remote
-            </button>
+          <div className="flex items-center gap-3">
+            <div className="relative">
+              <FaSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-[#64748B] text-xs" />
+              <input
+                type="text"
+                value={tableSearch}
+                onChange={(e) => setTableSearch(e.target.value)}
+                placeholder="Search member, email, dept..."
+                className="pl-8 pr-3 py-1.5 bg-white border border-[#E2E8F0] rounded-xl text-xs font-medium text-[#0F172A] outline-none focus:border-[#2563EB] transition-colors w-full sm:w-60"
+              />
+            </div>
           </div>
         </div>
 
+        {/* Sticky Segmented Filter Bar */}
+        <div className="sticky top-16 z-20 bg-[#F8FAFC] p-1.5 rounded-xl border border-[#E2E8F0] flex flex-wrap items-center gap-1 text-xs font-medium">
+          {[
+            { id: "all", label: "All Members" },
+            { id: "employees", label: "Paid Staff" },
+            { id: "students", label: "Course Students" },
+            { id: "interns", label: "Interns" },
+            { id: "onsite", label: "On-Site" },
+            { id: "remote", label: "Remote" },
+            { id: "present", label: "Present Today" },
+            { id: "absent", label: "Absent Today" }
+          ].map((f) => (
+            <button
+              key={f.id}
+              type="button"
+              onClick={() => setSegmentedFilter(f.id)}
+              className={`px-3 py-1.5 rounded-lg transition-colors cursor-pointer ${
+                segmentedFilter === f.id
+                  ? "bg-white text-[#2563EB] font-bold shadow-xs border border-[#E2E8F0]"
+                  : "text-[#64748B] hover:text-[#0F172A]"
+              }`}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+
         {/* Members Directory Table */}
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto rounded-xl border border-[#E2E8F0]">
           <table className="w-full text-left text-xs border-collapse">
-            <thead>
-              <tr className="border-b border-slate-200 bg-slate-50 text-slate-600 font-bold uppercase text-[10px]">
-                <th className="py-2.5 px-3">Member Name & Email</th>
-                <th className="py-2.5 px-3">Role / Category</th>
-                <th className="py-2.5 px-3">Department / Course</th>
-                <th className="py-2.5 px-3">Today's Attendance</th>
-                <th className="py-2.5 px-3 text-right">Inspect Detail</th>
+            <thead className="bg-[#F8FAFC] text-[#64748B] font-semibold uppercase text-[10px] tracking-wider border-b border-[#E2E8F0]">
+              <tr>
+                <th className="py-3 px-4">Member Name & Email</th>
+                <th className="py-3 px-4">Role / Category</th>
+                <th className="py-3 px-4">Department / Program</th>
+                <th className="py-3 px-4">Today's Attendance</th>
+                <th className="py-3 px-4 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
-              {filteredMembers.length === 0 ? (
+            <tbody className="divide-y divide-[#E2E8F0] font-normal">
+              {filteredMembersList.length === 0 ? (
                 <tr>
-                  <td colSpan="5" className="py-6 text-center text-slate-400 italic">
-                    No members registered under this category yet.
+                  <td colSpan={5} className="py-10 text-center text-[#64748B] italic">
+                    No registered members matching criteria.
                   </td>
                 </tr>
               ) : (
-                filteredMembers.map((m) => (
-                  <tr
-                    key={m.email}
-                    onClick={() => setSelectedUserModal(m)}
-                    className="hover:bg-blue-50/50 cursor-pointer transition-colors"
-                  >
-                    <td className="py-3 px-3">
-                      <p className="font-bold text-slate-900 text-xs">{m.fullName}</p>
-                      <p className="font-mono text-[11px] text-slate-500">{m.email}</p>
+                filteredMembersList.map((m, idx) => (
+                  <tr key={`mem-${m.id || m.email || 'id'}-${idx}`} className="hover:bg-[#F8FAFC] transition-colors group">
+                    <td className="py-3.5 px-4">
+                      <div className="flex items-center gap-3">
+                        <div className="h-8 w-8 rounded-xl bg-[#EFF6FF] text-[#2563EB] font-bold flex items-center justify-center text-xs shrink-0 border border-[#2563EB]/20">
+                          {getInitials(m.fullName)}
+                        </div>
+                        <div>
+                          <p className="font-semibold text-[#0F172A] group-hover:text-[#2563EB] transition-colors">
+                            {m.fullName || "Unknown Employee"}
+                          </p>
+                          <p className="text-[11px] font-mono text-[#64748B]">{m.email}</p>
+                        </div>
+                      </div>
                     </td>
-                    <td className="py-3 px-3">
-                      <span className={`px-2.5 py-1 rounded-md text-[10px] font-bold border ${
-                        m.role === "employee"
-                          ? "bg-blue-50 text-blue-700 border-blue-200"
-                          : m.role === "student"
-                          ? "bg-purple-50 text-purple-700 border-purple-200"
-                          : "bg-emerald-50 text-emerald-700 border-emerald-200"
-                      }`}>
-                        {m.category}
+
+                    <td className="py-3.5 px-4">
+                      <span className="text-[10px] font-semibold uppercase px-2.5 py-1 rounded-md border border-[#E2E8F0] bg-[#F8FAFC] text-[#0F172A]">
+                        {m.category || "General Member"}
                       </span>
                     </td>
-                    <td className="py-3 px-3 text-slate-700 font-medium">
-                      {m.department}
+
+                    <td className="py-3.5 px-4 font-medium text-[#0F172A]">
+                      {m.department || "Unassigned Department"}
                     </td>
-                    <td className="py-3 px-3 font-semibold text-slate-800">
-                      {m.attendance}
+
+                    {/* Status Badges: Present (#EFF6FF, #2563EB), Absent (#F1F5F9, #475569) */}
+                    <td className="py-3.5 px-4">
+                      <span className={`text-[10px] font-semibold px-2.5 py-1 rounded-md border ${
+                        m.attendance.includes("Present")
+                          ? "bg-[#EFF6FF] text-[#2563EB] border-[#2563EB]/20"
+                          : "bg-[#F1F5F9] text-[#475569] border-[#E2E8F0]"
+                      }`}>
+                        {m.attendance}
+                      </span>
                     </td>
-                    <td className="py-3 px-3 text-right">
+
+                    {/* Action Link / Kebab Menu */}
+                    <td className="py-3.5 px-4 text-right">
                       <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedUserModal(m);
-                        }}
-                        className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-3 py-1 rounded-lg text-[11px] transition-all"
+                        type="button"
+                        onClick={() => setSelectedUserModal(m)}
+                        className="text-[#2563EB] hover:text-[#1D4ED8] font-semibold hover:bg-[#EFF6FF] px-2.5 py-1 rounded-lg transition-colors cursor-pointer"
                       >
-                        Inspect Details →
+                        Inspect →
                       </button>
                     </td>
                   </tr>
@@ -627,379 +777,297 @@ export default function DashboardPage() {
               )}
             </tbody>
           </table>
-      {/* DUAL SECTION: OVERALL PROGRESS & ACTIVE PROJECTS */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-
-        {/* 1. Overall Progress Card */}
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs flex flex-col justify-between space-y-4">
-          <div>
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
-                  <FaProjectDiagram className="text-sm" />
-                </div>
-                <div>
-                  <h2 className="text-base font-bold text-slate-900">Overall Company & Project Progress</h2>
-                  <p className="text-xs text-slate-500 mt-0.5">Real-time aggregate project milestone completion rate</p>
-                </div>
-              </div>
-
-              {/* Live Status Indicator in Top-Right Corner */}
-              <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-2xs shrink-0">
-                <span className="relative flex h-2.5 w-2.5">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
-                </span>
-                <span className="text-xs font-black tracking-wide">Live</span>
-              </div>
-            </div>
-
-            <div className="mt-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-700">Total Milestones Achieved Rate</span>
-                <span className="text-xs font-black text-indigo-700 bg-indigo-50 px-2.5 py-1 rounded-lg border border-indigo-200">
-                  {overallProgressPercentage}% Completed
-                </span>
-              </div>
-
-              {/* Modern Animated Gradient Progress Bar */}
-              <div className="relative w-full bg-slate-100 h-4 rounded-full overflow-hidden p-0.5 border border-slate-200 shadow-inner">
-                <div
-                  className="h-full rounded-full bg-gradient-to-r from-blue-600 via-indigo-500 to-emerald-500 transition-all duration-1000 ease-out shadow-sm relative overflow-hidden"
-                  style={{ width: `${overallProgressPercentage}%` }}
-                >
-                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent animate-shimmer-pass" />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3 pt-2 text-xs">
-                <div className="p-3 bg-blue-50/60 rounded-xl border border-blue-100">
-                  <p className="text-[10px] font-bold uppercase text-blue-600">Active Workstreams</p>
-                  <p className="text-base font-black text-slate-900 mt-0.5">{stats.activeProjects} Projects</p>
-                </div>
-                <div className="p-3 bg-emerald-50/60 rounded-xl border border-emerald-100">
-                  <p className="text-[10px] font-bold uppercase text-emerald-600">Quality Standard</p>
-                  <p className="text-base font-black text-slate-900 mt-0.5">99.4% Verified</p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="pt-3 border-t border-slate-100 text-center">
-            <Link href="/dashboard/projects" className="text-xs font-bold text-blue-600 hover:underline">
-              Inspect Full Deliverables & Sprint Roadmap →
-            </Link>
-          </div>
         </div>
-
-        {/* 2. Active Projects Card */}
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs flex flex-col justify-between">
-          <div>
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
-              <div className="flex items-center gap-2">
-                <FaProjectDiagram className="text-amber-600 text-base" />
-                <h2 className="text-base font-bold text-slate-900">Active Projects Card</h2>
-              </div>
-
-              {/* Live Status Indicator in Top-Right Corner */}
-              <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-2xs shrink-0">
-                <span className="relative flex h-2.5 w-2.5">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
-                </span>
-                <span className="text-xs font-black tracking-wide">Live</span>
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              {projectsProgressList.length === 0 ? (
-                <div className="py-10 text-center bg-slate-50/80 rounded-2xl border border-slate-200/80 space-y-2">
-                  <FaFolderOpen className="mx-auto text-3xl text-slate-300" />
-                  <p className="text-sm font-bold text-slate-700">No active projects.</p>
-                  <p className="text-xs text-slate-400 max-w-xs mx-auto">
-                    New projects assigned to staff or students will appear here automatically.
-                  </p>
-                </div>
-              ) : (
-                projectsProgressList.slice(0, 3).map((proj, idx) => {
-                  const progress = proj.progress || 50;
-                  return (
-                    <div key={idx} className="p-3.5 rounded-xl bg-slate-50 border border-slate-100 space-y-2">
-                      <div className="flex items-center justify-between">
-                        <p className="text-xs font-bold text-slate-900">{proj.title || proj.name || `Project #${proj.id}`}</p>
-                        <span className="text-[11px] font-extrabold text-indigo-700 bg-indigo-50 px-2.5 py-0.5 rounded-md border border-indigo-200">
-                          {progress}%
-                        </span>
-                      </div>
-                      <div className="w-full bg-slate-200 h-2.5 rounded-full overflow-hidden p-0.5">
-                        <div
-                          className="bg-gradient-to-r from-blue-600 to-indigo-600 h-full rounded-full transition-all duration-1000 ease-out"
-                          style={{ width: `${progress}%` }}
-                        />
-                      </div>
-                      <div className="flex items-center justify-between text-[11px] text-slate-500">
-                        <span>Status: <strong>{proj.status || "In Progress"}</strong></span>
-                        <span className="font-semibold text-slate-700">{proj.client_name || "Client Deal"}</span>
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </div>
-
-          <div className="mt-4 pt-3 border-t border-slate-100 text-center">
-            <Link href="/dashboard/projects" className="text-xs font-bold text-blue-600 hover:underline">
-              View All Projects & Milestones ({projectsProgressList.length} Total) →
-            </Link>
-          </div>
-        </div>
-
       </div>
 
-      {/* USER DETAIL INSPECTOR MODAL FOR ADMIN */}
+      {/* 5. ACTIVE WORKSTREAMS WORKSPACE */}
+      <div className="bg-white rounded-2xl p-6 border border-[#E2E8F0] shadow-sm space-y-4">
+        <div className="flex items-center justify-between border-b border-[#E2E8F0] pb-4">
+          <div className="flex items-center gap-2">
+            <FaProjectDiagram className="text-[#2563EB] text-base" />
+            <h2 className="text-base font-bold text-[#0F172A]">Active Workstreams & Deliverables Progress</h2>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {projectsProgressList.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setConfirmDeleteModal({ isOpen: true, type: "clear_all_tasks", targetId: "", title: "Clear All Workstream Tasks", loading: false })}
+                className="text-xs font-semibold text-[#64748B] hover:text-rose-600 bg-white hover:bg-[#F8FAFC] px-3 py-1 rounded-xl border border-[#E2E8F0] transition-colors cursor-pointer flex items-center gap-1"
+                title="Wipe all active project tasks"
+              >
+                <FaTrash className="text-xs" />
+                <span>Clear All Tasks</span>
+              </button>
+            )}
+
+            <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#EFF6FF] text-[#2563EB] border border-[#2563EB]/20 shrink-0">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#2563EB] opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-[#2563EB]"></span>
+              </span>
+              <span className="text-xs font-semibold">Live Workstream</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {projectsProgressList.length === 0 ? (
+            <div className="col-span-2 py-10 text-center bg-[#F8FAFC] rounded-2xl border border-[#E2E8F0] space-y-2">
+              <FaFolderOpen className="mx-auto text-3xl text-[#94A3B8]" />
+              <p className="text-sm font-bold text-[#0F172A]">No active workstreams found.</p>
+              <p className="text-xs text-[#64748B] max-w-xs mx-auto">
+                Tasks or projects assigned to staff or students will appear here automatically.
+              </p>
+            </div>
+          ) : (
+            projectsProgressList.map((proj, idx) => {
+              const progress = proj.progress || 50;
+              return (
+                <div key={idx} className="p-4 rounded-xl bg-white border border-[#E2E8F0] space-y-2.5 relative group">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-bold text-[#0F172A] pr-6">{proj.title || "Untitled Project"}</p>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] font-bold text-[#2563EB] bg-[#EFF6FF] px-2.5 py-0.5 rounded-md border border-[#2563EB]/20">
+                        {progress}%
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setConfirmDeleteModal({ isOpen: true, type: "single_task", targetId: proj.id, title: proj.title || "Task", loading: false })}
+                        className="text-[#94A3B8] hover:text-rose-600 p-1 transition-colors cursor-pointer"
+                        title="Delete Task"
+                      >
+                        <FaTrash className="text-xs" />
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="w-full bg-[#F8FAFC] h-2.5 rounded-full overflow-hidden p-0.5 border border-[#E2E8F0]">
+                    <div
+                      className="bg-[#2563EB] h-full rounded-full transition-all duration-500"
+                      style={{ width: `${progress}%` }}
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between text-xs text-[#64748B]">
+                    <span>Status: <strong className="text-[#0F172A] font-semibold">{proj.status || "In Progress"}</strong></span>
+                    <span className="text-[#0F172A] font-semibold">{proj.client_name || "Client Deal"}</span>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
+
+      {/* INSPECTOR MODAL (Background #FFFFFF, Border #E2E8F0, Rounded 20px) */}
       {selectedUserModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4 border border-slate-200">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl border border-[#E2E8F0] space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between border-b border-[#E2E8F0] pb-3">
               <div>
-                <span className="text-[10px] font-bold uppercase tracking-wider text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-[#2563EB] bg-[#EFF6FF] px-2 py-0.5 rounded-md border border-[#2563EB]/20">
                   {selectedUserModal.category}
                 </span>
-                <h3 className="text-lg font-bold text-slate-900 mt-1">{selectedUserModal.fullName}</h3>
-                <p className="text-xs font-mono text-slate-500">{selectedUserModal.email}</p>
+                <h3 className="text-lg font-bold text-[#0F172A] mt-1">{selectedUserModal.fullName}</h3>
+                <p className="text-xs font-mono text-[#64748B]">{selectedUserModal.email}</p>
               </div>
               <button
                 onClick={() => setSelectedUserModal(null)}
-                className="text-slate-400 hover:text-slate-700 text-xl font-bold p-1 cursor-pointer"
+                className="text-[#64748B] hover:text-[#0F172A] text-xl font-bold p-1 cursor-pointer"
               >
                 ✕
               </button>
             </div>
 
             <div className="space-y-3 text-xs">
-              <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
-                <p className="text-slate-400 font-bold uppercase text-[10px]">Department / Program</p>
-                <p className="text-slate-900 font-bold text-sm mt-0.5">{selectedUserModal.department}</p>
+              <div className="bg-[#F8FAFC] p-3 rounded-xl border border-[#E2E8F0]">
+                <p className="text-[#64748B] font-semibold uppercase text-[10px]">Department / Program</p>
+                <p className="text-[#0F172A] font-bold text-sm mt-0.5">{selectedUserModal.department || "Unassigned Department"}</p>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
-                <div className="bg-emerald-50 p-3 rounded-xl border border-emerald-100">
-                  <p className="text-emerald-600 font-bold uppercase text-[10px]">Today's Attendance</p>
-                  <p className="text-slate-900 font-bold text-xs mt-0.5">{selectedUserModal.attendance}</p>
+                <div className="bg-[#EFF6FF] p-3 rounded-xl border border-[#2563EB]/20">
+                  <p className="text-[#2563EB] font-bold uppercase text-[10px]">Today's Attendance</p>
+                  <p className="text-[#0F172A] font-bold text-xs mt-0.5">{selectedUserModal.attendance}</p>
                 </div>
 
-                <div className="bg-purple-50 p-3 rounded-xl border border-purple-100">
-                  <p className="text-purple-600 font-bold uppercase text-[10px]">Fee / Financial Status</p>
-                  <p className="text-slate-900 font-bold text-xs mt-0.5">{selectedUserModal.feeStatus}</p>
+                <div className="bg-[#F8FAFC] p-3 rounded-xl border border-[#E2E8F0]">
+                  <p className="text-[#64748B] font-semibold uppercase text-[10px]">Financial / Fee Status</p>
+                  <p className="text-[#0F172A] font-bold text-xs mt-0.5">{selectedUserModal.feeStatus}</p>
                 </div>
-              </div>
-
-              <div className="bg-blue-50 p-3 rounded-xl border border-blue-100 space-y-1">
-                <p className="text-blue-600 font-bold uppercase text-[10px]">Assigned Project & Completion Progress</p>
-                <p className="text-slate-900 font-bold text-xs">{selectedUserModal.progress}</p>
-              </div>
-
-              <div className="bg-slate-900 text-slate-100 p-3.5 rounded-xl space-y-1">
-                <p className="text-amber-400 font-bold uppercase text-[10px]">Recent Daily Work Progress Log</p>
-                <p className="text-xs leading-relaxed italic">"{selectedUserModal.dailyTask}"</p>
               </div>
             </div>
 
             <div className="pt-2 text-right">
               <button
                 onClick={() => setSelectedUserModal(null)}
-                className="bg-slate-900 hover:bg-slate-800 text-white font-bold px-5 py-2 rounded-xl text-xs transition-all cursor-pointer"
+                className="bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-semibold px-5 py-2 rounded-xl text-xs transition-colors cursor-pointer"
               >
-                Close Inspector Modal
+                Close
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ASSIGN TASK TO INDIVIDUAL STUDENT OR EMPLOYEE MODAL */}
-      {assignTaskModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
-          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl space-y-4 border border-blue-100 text-left animate-in fade-in zoom-in-95 duration-150">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-xl bg-blue-50 border border-blue-200 text-blue-600 flex items-center justify-center">
-                  <FaPaperPlane className="text-sm" />
-                </div>
-                <div>
-                  <h3 className="font-extrabold text-slate-900 text-base">Assign New Task</h3>
-                  <p className="text-xs text-blue-600 font-bold">Select individual Employee or Student</p>
-                </div>
-              </div>
+      {/* QUICK ACTION MODALS */}
+      {activeQuickActionModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-[#E2E8F0] space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between border-b border-[#E2E8F0] pb-3">
+              <h3 className="text-base font-bold text-[#0F172A] flex items-center gap-2">
+                <FaPlusCircle className="text-[#2563EB]" />
+                <span>
+                  {activeQuickActionModal === "employee" && "Add New Paid Staff Member"}
+                  {activeQuickActionModal === "student" && "Enroll Course Student"}
+                  {activeQuickActionModal === "project" && "Create Active Workstream Project"}
+                  {activeQuickActionModal === "expense" && "Record Operating Expense"}
+                </span>
+              </h3>
               <button
-                onClick={() => setAssignTaskModal(false)}
-                className="text-slate-400 hover:text-slate-700 font-bold text-lg cursor-pointer"
+                onClick={() => setActiveQuickActionModal(null)}
+                className="text-[#64748B] hover:text-[#0F172A] font-bold cursor-pointer"
               >
                 ✕
               </button>
             </div>
 
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                if (!taskForm.selectedUserEmail || !taskForm.title) {
-                  showToast("Validation Error", "Please select a user and enter task title.", "warning");
-                  return;
-                }
+            <form onSubmit={handleQuickActionSubmit} className="space-y-3 text-xs">
+              {(activeQuickActionModal === "employee" || activeQuickActionModal === "student") && (
+                <>
+                  <div className="space-y-1">
+                    <label className="font-semibold text-[#64748B]">Full Name</label>
+                    <input
+                      type="text"
+                      required
+                      value={quickForm.fullName}
+                      onChange={(e) => setQuickForm({ ...quickForm, fullName: e.target.value })}
+                      placeholder="e.g. Ali Hassan"
+                      className="w-full p-2.5 rounded-xl border border-[#E2E8F0] outline-none font-semibold text-[#0F172A] focus:border-[#2563EB] transition-colors"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="font-semibold text-[#64748B]">Email Address</label>
+                    <input
+                      type="email"
+                      required
+                      value={quickForm.email}
+                      onChange={(e) => setQuickForm({ ...quickForm, email: e.target.value })}
+                      placeholder="e.g. ali@gmail.com"
+                      className="w-full p-2.5 rounded-xl border border-[#E2E8F0] outline-none font-semibold text-[#0F172A] focus:border-[#2563EB] transition-colors"
+                    />
+                  </div>
+                </>
+              )}
 
-                const targetUser = allRegisteredUsersList.find(u => u.email.toLowerCase() === taskForm.selectedUserEmail.toLowerCase());
-                const assignedObj = {
-                  id: `task-${Date.now()}`,
-                  title: taskForm.title,
-                  description: taskForm.description,
-                  priority: taskForm.priority,
-                  dueDate: taskForm.dueDate,
-                  assignedBy: "Admin",
-                  assignedToEmail: taskForm.selectedUserEmail.toLowerCase().trim(),
-                  assignedToName: targetUser?.fullName || taskForm.selectedUserEmail.split("@")[0],
-                  userRole: targetUser?.role || "employee",
-                  status: "Pending",
-                  assignedAt: new Date().toISOString(),
-                };
+              {activeQuickActionModal === "project" && (
+                <>
+                  <div className="space-y-1">
+                    <label className="font-semibold text-[#64748B]">Project Title</label>
+                    <input
+                      type="text"
+                      required
+                      value={quickForm.title}
+                      onChange={(e) => setQuickForm({ ...quickForm, title: e.target.value })}
+                      placeholder="e.g. E-Commerce App API Integration"
+                      className="w-full p-2.5 rounded-xl border border-[#E2E8F0] outline-none font-semibold text-[#0F172A] focus:border-[#2563EB] transition-colors"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="font-semibold text-[#64748B]">Client Name</label>
+                    <input
+                      type="text"
+                      value={quickForm.clientName}
+                      onChange={(e) => setQuickForm({ ...quickForm, clientName: e.target.value })}
+                      placeholder="e.g. TechCorp USA"
+                      className="w-full p-2.5 rounded-xl border border-[#E2E8F0] outline-none font-semibold text-[#0F172A] focus:border-[#2563EB] transition-colors"
+                    />
+                  </div>
+                </>
+              )}
 
-                // 1. Save to Global Assigned Tasks
-                const existingGlobal = JSON.parse(localStorage.getItem("software_house_assigned_tasks") || "[]");
-                localStorage.setItem("software_house_assigned_tasks", JSON.stringify([assignedObj, ...existingGlobal]));
+              {activeQuickActionModal === "expense" && (
+                <>
+                  <div className="space-y-1">
+                    <label className="font-semibold text-[#64748B]">Expense Title</label>
+                    <input
+                      type="text"
+                      required
+                      value={quickForm.title}
+                      onChange={(e) => setQuickForm({ ...quickForm, title: e.target.value })}
+                      placeholder="e.g. Office Fiber WiFi Bill"
+                      className="w-full p-2.5 rounded-xl border border-[#E2E8F0] outline-none font-semibold text-[#0F172A] focus:border-[#2563EB] transition-colors"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="font-semibold text-[#64748B]">Amount (Rs.)</label>
+                    <input
+                      type="number"
+                      required
+                      value={quickForm.amount}
+                      onChange={(e) => setQuickForm({ ...quickForm, amount: e.target.value })}
+                      placeholder="e.g. 8500"
+                      className="w-full p-2.5 rounded-xl border border-[#E2E8F0] outline-none font-semibold text-[#0F172A] focus:border-[#2563EB] transition-colors"
+                    />
+                  </div>
+                </>
+              )}
 
-                // 2. Save Notification to user's isolated inbox
-                const notifKey = `user_notifications_${taskForm.selectedUserEmail.toLowerCase().trim()}`;
-                const userNotifs = JSON.parse(localStorage.getItem(notifKey) || "[]");
-                const newNotif = {
-                  id: `notif-${Date.now()}`,
-                  type: "task_assigned",
-                  title: `New Task Assigned: ${taskForm.title}`,
-                  message: taskForm.description || "Admin has assigned a new task to your dashboard.",
-                  priority: taskForm.priority,
-                  dueDate: taskForm.dueDate,
-                  taskId: assignedObj.id,
-                  read: false,
-                  timestamp: new Date().toISOString(),
-                };
-                localStorage.setItem(notifKey, JSON.stringify([newNotif, ...userNotifs]));
-
-                showToast("Task Assigned Successfully", `Task assigned to ${assignedObj.assignedToName}. Notification sent to their dashboard.`, "success");
-                setAssignTaskModal(false);
-                setTaskForm({
-                  selectedUserEmail: "",
-                  title: "",
-                  description: "",
-                  priority: "High",
-                  dueDate: new Date().toISOString().split("T")[0],
-                });
-              }}
-              className="space-y-4 text-xs"
-            >
-              <div>
-                <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">
-                  Select Assignee (Employee or Student) *
-                </label>
-                <select
-                  required
-                  value={taskForm.selectedUserEmail}
-                  onChange={(e) => setTaskForm({ ...taskForm, selectedUserEmail: e.target.value })}
-                  className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-xs text-slate-900 outline-none focus:border-blue-600 font-bold bg-slate-50 cursor-pointer"
-                >
-                  <option value="">-- Select Member from List ({allRegisteredUsersList.length} Total) --</option>
-                  <optgroup label="🧑‍💻 Employees / Staff">
-                    {allRegisteredUsersList.filter(u => u.role === "employee").map(u => (
-                      <option key={u.id} value={u.email}>
-                        {u.fullName} ({u.email}) - {u.category}
-                      </option>
-                    ))}
-                  </optgroup>
-                  <optgroup label="🎓 Students & Interns">
-                    {allRegisteredUsersList.filter(u => u.role === "student" || u.role === "intern").map(u => (
-                      <option key={u.id} value={u.email}>
-                        {u.fullName} ({u.email}) - {u.category}
-                      </option>
-                    ))}
-                  </optgroup>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">
-                  Task Title *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={taskForm.title}
-                  onChange={(e) => setTaskForm({ ...taskForm, title: e.target.value })}
-                  placeholder="e.g. Build Payment Integration / Complete Practice Lab 4"
-                  className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-xs text-slate-900 outline-none focus:border-blue-600 font-bold"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">
-                  Task Description & Deliverable Instructions
-                </label>
-                <textarea
-                  rows="3"
-                  value={taskForm.description}
-                  onChange={(e) => setTaskForm({ ...taskForm, description: e.target.value })}
-                  placeholder="Provide detailed instructions for the employee/student..."
-                  className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-xs text-slate-900 outline-none focus:border-blue-600 font-medium"
-                ></textarea>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">Priority</label>
-                  <select
-                    value={taskForm.priority}
-                    onChange={(e) => setTaskForm({ ...taskForm, priority: e.target.value })}
-                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs text-slate-900 outline-none focus:border-blue-600 font-bold cursor-pointer"
-                  >
-                    <option value="High">High Priority</option>
-                    <option value="Medium">Medium Priority</option>
-                    <option value="Low">Low Priority</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">Due Date</label>
-                  <input
-                    type="date"
-                    value={taskForm.dueDate}
-                    onChange={(e) => setTaskForm({ ...taskForm, dueDate: e.target.value })}
-                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs text-slate-900 outline-none focus:border-blue-600 font-bold"
-                  />
-                </div>
-              </div>
-
-              <div className="p-3 bg-blue-50 rounded-2xl border border-blue-100 text-[11px] text-blue-900 font-medium flex items-center gap-2">
-                <FaBell className="text-blue-600 text-sm shrink-0" />
-                <span>Assigning this task will instantly trigger an in-app notification on the user's personal dashboard.</span>
-              </div>
-
-              <div className="flex items-center justify-end gap-3 pt-2 border-t border-slate-100">
+              <div className="pt-3 flex gap-2">
                 <button
                   type="button"
-                  onClick={() => setAssignTaskModal(false)}
-                  className="px-5 py-2.5 rounded-xl border border-slate-300 text-slate-700 font-bold text-xs hover:bg-slate-100 transition-all cursor-pointer"
+                  onClick={() => setActiveQuickActionModal(null)}
+                  className="flex-1 py-2.5 rounded-xl bg-white hover:bg-[#F8FAFC] border border-[#E2E8F0] font-semibold text-[#2563EB] cursor-pointer transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs shadow-md transition-all cursor-pointer flex items-center gap-1.5"
+                  className="flex-1 py-2.5 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold transition-colors cursor-pointer"
                 >
-                  <FaPaperPlane className="text-white text-xs" />
-                  <span>Assign & Notify User</span>
+                  Save Record
                 </button>
               </div>
             </form>
           </div>
         </div>
       )}
+
+      {/* CONFIRMATION DESTRUCTIVE MODAL */}
+      {confirmDeleteModal.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-[#E2E8F0] space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center gap-3 text-[#0F172A] border-b border-[#E2E8F0] pb-3">
+              <FaExclamationTriangle className="text-xl text-[#2563EB]" />
+              <h3 className="font-bold text-[#0F172A] text-base">Confirm Destructive Action</h3>
+            </div>
+
+            <p className="text-xs text-[#64748B] leading-relaxed font-normal">
+              Are you sure you want to delete <strong className="text-[#0F172A]">"{confirmDeleteModal.title}"</strong>? This record will be permanently purged from the system.
+            </p>
+
+            <div className="flex gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setConfirmDeleteModal({ isOpen: false, type: "", targetId: "", title: "", loading: false })}
+                className="flex-1 py-2.5 rounded-xl bg-white hover:bg-[#F8FAFC] text-[#2563EB] border border-[#E2E8F0] font-semibold text-xs cursor-pointer transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={executeConfirmedDelete}
+                disabled={confirmDeleteModal.loading}
+                className="flex-1 py-2.5 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold text-xs cursor-pointer flex items-center justify-center gap-1.5 transition-colors"
+              >
+                {confirmDeleteModal.loading ? "Purging..." : "Confirm & Delete 🗑️"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

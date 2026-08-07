@@ -417,9 +417,9 @@ export default function LoginPage() {
         {/* Header Subtitle */}
         <div className="text-center flex flex-col items-center">
           <img
-            src="/logo.jpeg"
+            src="/logo.svg"
             alt="Software House Logo"
-            className="h-16 w-16 rounded-2xl object-cover border border-blue-200 shadow-md mb-3 hover:scale-105 transition-transform duration-300"
+            className="h-16 w-16 object-contain mb-3 hover:scale-105 transition-transform duration-300 drop-shadow-xs"
           />
 
           <h1 className="text-2xl font-black text-slate-900 tracking-tight">
