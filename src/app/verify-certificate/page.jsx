@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import {
@@ -20,6 +20,24 @@ import {
 import { verifyCertificateById, INITIAL_CERTIFICATES } from "@/lib/studentTaskUtils";
 
 export default function VerifyCertificatePage() {
+  return (
+    <Suspense fallback={<CertificateVerificationFallback />}>
+      <CertificateVerification />
+    </Suspense>
+  );
+}
+
+function CertificateVerificationFallback() {
+  return (
+    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+      <div className="inline-block animate-spin text-blue-600">
+        <FaQrcode className="h-8 w-8" />
+      </div>
+    </div>
+  );
+}
+
+function CertificateVerification() {
   const searchParams = useSearchParams();
   const certId = searchParams.get("id") || "CERT-NEXA-2026-9901";
 
