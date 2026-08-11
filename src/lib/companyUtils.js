@@ -2,7 +2,7 @@ import { supabase } from "@/lib/supabase";
 
 export const DEFAULT_COMPANY_INFO = {
   company_name: "Antigravity Software House (Pvt) Ltd",
-  company_logo: "/logo.svg",
+  company_logo: "/logo.jpeg",
   currency_symbol: "Rs.",
   company_address: "Corporate Tech Campus, Innovation Parkway, Phase 6",
   contact_number: "+92 300 1234567",
@@ -10,13 +10,19 @@ export const DEFAULT_COMPANY_INFO = {
   website_url: "https://softwarehouse.com",
   tax_registration_no: "TRN-99887766-PAK",
   updated_at: new Date().toISOString(),
-  updated_by: "Muhammad Rahim Bugti (Super Admin)"
+  updated_by: ""
 };
 
 export function getCompanyInfo() {
   try {
     const saved = localStorage.getItem("software_house_company_info");
-    if (saved) return JSON.parse(saved);
+    if (saved) {
+      const companyInfo = JSON.parse(saved);
+      if (companyInfo.company_logo === "/logo.svg" || companyInfo.company_logo === "/logo.png") {
+        companyInfo.company_logo = "/logo.jpeg";
+      }
+      return companyInfo;
+    }
   } catch (e) {}
   return DEFAULT_COMPANY_INFO;
 }

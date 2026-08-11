@@ -30,7 +30,7 @@ export default function AnnouncementsPage() {
       id: "ann-101",
       title: "Tomorrow Official Office Holiday (Independence Day)",
       category: "Tomorrow Holiday",
-      postedBy: "Muhammad Rahim (Admin)",
+      postedBy: "System",
       date: "2026-08-02",
       time: "09:00 AM",
       content: "All physical campus labs and remote operations will remain closed tomorrow in observance of national holiday. Enjoy your day!",
@@ -82,7 +82,7 @@ export default function AnnouncementsPage() {
 
   useEffect(() => {
     const savedRole = localStorage.getItem("user_role") || "admin";
-    const savedEmail = localStorage.getItem("current_user_email") || "admin@gmail.com";
+    const savedEmail = localStorage.getItem("current_user_email") || "";
     setRole(savedRole);
     setUserEmail(savedEmail);
 

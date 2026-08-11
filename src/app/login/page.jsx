@@ -4,22 +4,18 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { login } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
-import { dbSaveRecord } from "@/lib/dbPersistence";
 import Modal from "@/components/Modal";
 import ToastContainer, { showToast } from "@/components/Toast";
-import { FaUserTie, FaBuilding, FaLock, FaEnvelope, FaKey, FaGraduationCap, FaShieldAlt, FaUserCheck } from "react-icons/fa";
+import { FaLock, FaEnvelope } from "react-icons/fa";
 
 export default function LoginPage() {
   const router = useRouter();
-  const [selectedRole, setSelectedRole] = useState("admin"); // 'admin', 'employee', 'client'
-  const [isRegisterMode, setIsRegisterMode] = useState(false);
+  const selectedRole = "admin";
 
   // Form Fields
-  const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [department, setDepartment] = useState("Software Engineering");
-  const [workMode, setWorkMode] = useState("remote"); // 'remote' (Ipify OFF) or 'onsite'
+  const workMode = "remote"; // 'remote' (Ipify OFF) or 'onsite'
   const [loading, setLoading] = useState(false);
 
   // Form Validation Errors State
@@ -45,14 +41,6 @@ export default function LoginPage() {
       setErrors((prev) => ({ ...prev, password: "" }));
     }
   };
-
-  // OTP Verification Modal State
-  const [otpModal, setOtpModal] = useState({
-    isOpen: false,
-    generatedOtp: "",
-    userEnteredOtp: "",
-    userCredentials: null,
-  });
 
   // Notification Modal State
   const [modal, setModal] = useState({
@@ -95,15 +83,7 @@ export default function LoginPage() {
     }
   };
 
-  // Helper to save registered users
-  const saveRegisteredUser = (userObj) => {
-    const existing = getRegisteredUsers();
-    // Check if user already exists
-    const updated = [...existing.filter(u => u.email.toLowerCase() !== userObj.email.toLowerCase()), userObj];
-    localStorage.setItem("registered_system_users", JSON.stringify(updated));
-  };
-
-  // Step 1: Handle Login or Register Submission
+  // Handle login submission. New accounts are created by an administrator.
   const handleSubmit = async (e) => {
     e.preventDefault();
 
@@ -130,57 +110,6 @@ export default function LoginPage() {
 
     setErrors({ email: "", password: "" });
     setLoading(true);
-
-    // Registration Flow: Create Account -> Send OTP -> Verify -> Save Credentials
-    if (isRegisterMode) {
-      const existingUsers = getRegisteredUsers();
-      const userExists = existingUsers.some(u => u.email.toLowerCase() === email.toLowerCase());
-
-      if (userExists) {
-        showToast("Account Exists", "An account with this email is already registered. Please switch to Sign In.", "warning");
-        setLoading(false);
-        return;
-      }
-
-      // Try Supabase Auth Sign Up
-      try {
-        await supabase.auth.signUp({
-          email,
-          password,
-          options: {
-            data: { full_name: fullName, role: selectedRole, department }
-          }
-        });
-      } catch(e) {}
-
-      // Generate 6-digit OTP for email verification
-      const newOtp = Math.floor(100000 + Math.random() * 900000).toString();
-      setLoading(false);
-
-      // Trigger OTP Modal for Registration
-      setOtpModal({
-        isOpen: true,
-        generatedOtp: newOtp,
-        userEnteredOtp: "",
-        userCredentials: {
-          fullName: fullName || (selectedRole === "admin" ? "Admin User" : "Member"),
-          email,
-          password,
-          role: selectedRole,
-          department,
-          work_mode: workMode,
-          employment_type: workMode === "remote" ? "Remote Staff / Student" : "On-Site Staff / Student",
-          is_remote: workMode === "remote"
-        }
-      });
-
-      showToast(
-        "Verification Code Sent 📧",
-        `OTP Code: ${newOtp}\nCheck OTP verification dialog to complete registration.`,
-        "info"
-      );
-      return;
-    }
 
     // Check if account has been deactivated by Admin
     let persistentEmps = [];
@@ -245,6 +174,7 @@ export default function LoginPage() {
       localStorage.setItem("isLoggedIn", "true");
       localStorage.setItem("user_role", activeRole);
       localStorage.setItem("current_user_email", email);
+      localStorage.setItem("current_user_name", matchedUser.fullName || matchedUser.full_name || "");
       window.dispatchEvent(new Event("roleChanged"));
 
       setLoading(false);
@@ -279,6 +209,7 @@ export default function LoginPage() {
       localStorage.setItem("isLoggedIn", "true");
       localStorage.setItem("user_role", selectedRole);
       localStorage.setItem("current_user_email", email);
+      localStorage.setItem("current_user_name", "");
       window.dispatchEvent(new Event("roleChanged"));
 
       setLoading(false);
@@ -302,49 +233,6 @@ export default function LoginPage() {
     }
   };
 
-  // Step 2: Verify 6-Digit Email OTP Code & Save Registered User
-  const handleVerifyOtp = (e) => {
-    e.preventDefault();
-
-    if (otpModal.userEnteredOtp !== otpModal.generatedOtp) {
-      showAlert("Invalid OTP", "The 6-digit verification code is incorrect. Please try again.", "error");
-      return;
-    }
-
-    // OTP Verified! Save registered user credentials locally and to DB
-    if (otpModal.userCredentials) {
-      saveRegisteredUser(otpModal.userCredentials);
-      dbSaveRecord("registered_users", otpModal.userCredentials).catch(() => {});
-
-      const emailLower = (otpModal.userCredentials.email || email).trim().toLowerCase();
-      if (otpModal.userCredentials.is_remote || otpModal.userCredentials.work_mode === "remote") {
-        localStorage.setItem(`is_remote_user_${emailLower}`, "true");
-        localStorage.setItem(`remote_attendance_override_${emailLower}`, "true");
-      }
-    }
-
-    const assignedRole = otpModal.userCredentials?.role || selectedRole;
-    localStorage.setItem("isLoggedIn", "true");
-    localStorage.setItem("user_role", assignedRole);
-    localStorage.setItem("current_user_email", email);
-    window.dispatchEvent(new Event("roleChanged"));
-
-    setOtpModal({ isOpen: false, generatedOtp: "", userEnteredOtp: "", userCredentials: null });
-    setIsRegisterMode(false);
-
-    showAlert("Account Verified & Saved! 🟢", `Email verified successfully. Your account is now saved. Logging into ${assignedRole.toUpperCase()} Portal...`, "success");
-
-    if (assignedRole === "client") {
-      setTimeout(() => router.push("/dashboard/client-portal"), 1000);
-    } else if (assignedRole === "student" || assignedRole === "course_student") {
-      setTimeout(() => router.push("/dashboard/student"), 1000);
-    } else if (assignedRole === "employee" || assignedRole === "staff") {
-      setTimeout(() => router.push("/dashboard/employees"), 1000);
-    } else {
-      setTimeout(() => router.push("/dashboard"), 1000);
-    }
-  };
-
   return (
     <div className="min-h-screen flex items-center justify-center bg-white bg-dot-matrix px-4 py-12 relative overflow-hidden">
       {/* Ultra-Subtle Soft Ambient Pulse Dots (Minimal & Elegant) */}
@@ -363,63 +251,14 @@ export default function LoginPage() {
         onClose={closeModal}
       />
 
-      {/* 2-Step Email OTP Verification Modal */}
-      {otpModal.isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-          <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl border border-blue-200 space-y-5">
-            <div className="text-center space-y-2">
-              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-blue-50 text-blue-600 mx-auto text-xl font-bold">
-                <FaShieldAlt />
-              </div>
-              <h3 className="text-lg font-bold text-slate-900">Email OTP Verification</h3>
-              <p className="text-xs text-slate-500">
-                Enter the 6-digit verification code dispatched to <span className="font-bold text-slate-800">{email}</span>
-              </p>
-            </div>
-
-            {/* OTP Hint Box */}
-            <div className="rounded-lg bg-amber-50 border border-amber-200 p-2.5 text-center text-xs text-amber-800 font-mono font-bold">
-              Your Verification OTP: <span className="text-amber-900 text-sm">{otpModal.generatedOtp}</span>
-            </div>
-
-            <form onSubmit={handleVerifyOtp} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold uppercase text-slate-600 mb-1 text-center">
-                  6-Digit Verification Code
-                </label>
-                <div className="relative">
-                  <FaKey className="absolute left-3.5 top-3.5 text-slate-400 text-sm" />
-                  <input
-                    type="text"
-                    maxLength={6}
-                    placeholder="849201"
-                    value={otpModal.userEnteredOtp}
-                    onChange={(e) => setOtpModal({ ...otpModal, userEnteredOtp: e.target.value })}
-                    className="w-full text-center tracking-widest font-mono text-lg font-bold rounded-lg border border-slate-300 pl-10 pr-4 py-2 text-slate-900 outline-none focus:border-blue-600"
-                    required
-                  />
-                </div>
-              </div>
-
-              <button
-                type="submit"
-                className="w-full rounded-lg bg-blue-600 py-2.5 text-xs font-bold text-white hover:bg-blue-700 transition-colors shadow-xs"
-              >
-                Verify OTP & Save Credentials
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Main Login / Register Card */}
+      {/* Main Login Card */}
       <div className="w-full max-w-md rounded-2xl border border-blue-100 bg-white p-8 login-card-shadow space-y-6 relative z-10 animate-slide-up-fade">
         {/* Header Subtitle */}
         <div className="text-center flex flex-col items-center">
           <img
-            src="/logo.svg"
+            src="/logo.jpeg"
             alt="Software House Logo"
-            className="h-16 w-16 object-contain mb-3 hover:scale-105 transition-transform duration-300 drop-shadow-xs"
+            className="h-16 w-16 object-contain mb-3"
           />
 
           <h1 className="text-2xl font-black text-slate-900 tracking-tight">
@@ -434,60 +273,12 @@ export default function LoginPage() {
         {/* Mode Title Sub-Header */}
         <div className="border-b border-slate-100 pb-3 text-center">
           <span className="font-bold text-xs text-slate-700 uppercase tracking-wider">
-            {isRegisterMode ? "Create New Verified Account" : "Sign In to System Portal"}
+            Sign In to System Portal
           </span>
         </div>
 
         {/* Login / Register Form */}
         <form className="space-y-4" onSubmit={handleSubmit}>
-          {isRegisterMode && (
-            <>
-              <div>
-                <label className="mb-1 block text-xs font-semibold uppercase text-slate-600">
-                  Full Name *
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. Muhammad Ali"
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm text-slate-900 outline-none focus:border-blue-600"
-                  required={isRegisterMode}
-                />
-              </div>
-
-              <div>
-                <label className="mb-1 block text-xs font-semibold uppercase text-slate-600">
-                  Select Account Role *
-                </label>
-                <select
-                  value={selectedRole}
-                  onChange={(e) => setSelectedRole(e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-blue-600 font-medium"
-                >
-                  <option value="student">🎓 Student Account</option>
-                  <option value="employee">🧑‍💻 Paid Staff / Employee</option>
-                  <option value="client">🏢 Client Account</option>
-                  <option value="admin">👑 Admin Account</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="mb-1 block text-xs font-semibold uppercase text-slate-600">
-                  Attendance & Work Mode *
-                </label>
-                <select
-                  value={workMode}
-                  onChange={(e) => setWorkMode(e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-blue-600 font-medium bg-blue-50/50"
-                >
-                  <option value="remote">🌐 Remote Work / Online Student (Ipify API OFF - Attendance Anywhere)</option>
-                  <option value="onsite">🏢 On-Site (Office Wi-Fi Attendance Required)</option>
-                </select>
-              </div>
-            </>
-          )}
-
           <div>
             <label className="mb-1 block text-xs font-semibold uppercase text-slate-600">
               Email Address *
@@ -540,28 +331,14 @@ export default function LoginPage() {
             {/* Shimmer sweep animation effect */}
             <span className="absolute inset-0 w-1/2 h-full bg-white/20 transform -skew-x-12 -translate-x-full group-hover:animate-shimmer-pass"></span>
             <span className="relative z-10">
-              {loading
-                ? "Authenticating Database..."
-                : isRegisterMode
-                ? "Register Account & Verify OTP"
-                : "Sign In to System Portal"}
+              {loading ? "Authenticating Database..." : "Sign In to System Portal"}
             </span>
           </button>
         </form>
 
-        {/* Toggle Register / Sign In Option Below Submit Button */}
-        <div className="pt-2 text-center border-t border-slate-100">
-          <p className="text-xs text-slate-500 font-medium">
-            {isRegisterMode ? "Already have an account?" : "Don't have an account yet?"}{" "}
-            <button
-              type="button"
-              onClick={() => setIsRegisterMode(!isRegisterMode)}
-              className="font-bold text-blue-600 hover:underline cursor-pointer ml-1"
-            >
-              {isRegisterMode ? "Sign In Here" : "Register New Account"}
-            </button>
-          </p>
-        </div>
+        <p className="border-t border-slate-100 pt-4 text-center text-xs font-medium text-slate-500">
+          Accounts are created by an administrator.
+        </p>
       </div>
       {/* Global Toast Notification Engine */}
       <ToastContainer />

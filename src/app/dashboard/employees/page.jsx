@@ -91,7 +91,7 @@ export default function EmployeesPage() {
 
   useEffect(() => {
     const savedRole = localStorage.getItem("user_role") || "admin";
-    const savedEmail = localStorage.getItem("current_user_email") || "sara.design@gmail.com";
+    const savedEmail = localStorage.getItem("current_user_email") || "";
     setRole(savedRole);
     setUserEmail(savedEmail);
     fetchEmployees();

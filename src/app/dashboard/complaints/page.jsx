@@ -91,7 +91,7 @@ export default function ComplaintsPage() {
 
   useEffect(() => {
     const savedRole = localStorage.getItem("user_role") || "student";
-    const savedEmail = localStorage.getItem("current_user_email") || "student@gmail.com";
+    const savedEmail = localStorage.getItem("current_user_email") || "";
     setRole(savedRole);
     setUserEmail(savedEmail);
 

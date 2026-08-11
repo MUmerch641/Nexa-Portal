@@ -12,6 +12,7 @@ export async function logout() {
     localStorage.removeItem("isLoggedIn");
     localStorage.removeItem("user_role");
     localStorage.removeItem("current_user_email");
+    localStorage.removeItem("current_user_name");
   }
   try {
     return await supabase.auth.signOut();

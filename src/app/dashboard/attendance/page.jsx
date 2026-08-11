@@ -207,7 +207,7 @@ export default function AttendancePage() {
   useEffect(() => {
     const fetchData = async () => {
       const storedRole = localStorage.getItem("user_role") || "employee";
-      const storedEmail = (localStorage.getItem("current_user_email") || "user@gmail.com").toLowerCase().trim();
+      const storedEmail = (localStorage.getItem("current_user_email") || "").toLowerCase().trim();
       const storedName = localStorage.getItem("current_user_name") || storedEmail.split("@")[0];
 
       setUserRole(storedRole);

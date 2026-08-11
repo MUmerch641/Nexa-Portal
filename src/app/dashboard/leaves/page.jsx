@@ -104,7 +104,7 @@ export default function LeavesPage() {
       setUser(session?.user ?? null);
       setForm(prev => ({
         ...prev,
-        applicantName: session?.user?.user_metadata?.full_name || (storedRole === "admin" ? "Admin User" : "Employee / Student")
+        applicantName: session?.user?.user_metadata?.full_name || localStorage.getItem("current_user_name") || ""
       }));
     };
     fetchSession();
@@ -137,7 +137,7 @@ export default function LeavesPage() {
       return;
     }
 
-    const currentEmail = localStorage.getItem("current_user_email") || "user@gmail.com";
+    const currentEmail = localStorage.getItem("current_user_email") || "";
     const newLeave = {
       id: `leave-${Date.now()}`,
       employee_id: user?.id || "local-user",

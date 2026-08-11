@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef } from "react";
 import { logout } from "@/lib/auth";
+import { supabase } from "@/lib/supabase";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import {
@@ -33,7 +34,8 @@ export default function Navbar({ onMenuClick, isSidebarOpen = true }) {
   const router = useRouter();
   const pathname = usePathname();
   const [role, setRole] = useState("admin");
-  const [userEmail, setUserEmail] = useState("admin@gmail.com");
+  const [userEmail, setUserEmail] = useState("");
+  const [userName, setUserName] = useState("");
   
   // Header Date
   const [currentDateStr, setCurrentDateStr] = useState("");
@@ -148,7 +150,7 @@ export default function Navbar({ onMenuClick, isSidebarOpen = true }) {
 
   useEffect(() => {
     try {
-      const email = localStorage.getItem("current_user_email") || "admin@gmail.com";
+      const email = localStorage.getItem("current_user_email") || "";
       const saved = localStorage.getItem(`dismissed_notifs_${email}`);
       if (saved) setDismissedNotifIds(JSON.parse(saved));
     } catch(e) {}
@@ -156,7 +158,7 @@ export default function Navbar({ onMenuClick, isSidebarOpen = true }) {
 
   const loadAllNotifications = () => {
     const currentRole = localStorage.getItem("user_role") || "admin";
-    const email = localStorage.getItem("current_user_email") || "admin@gmail.com";
+    const email = localStorage.getItem("current_user_email") || "";
 
     try {
       const savedLeaves = localStorage.getItem("software_house_leaves");
@@ -177,14 +179,14 @@ export default function Navbar({ onMenuClick, isSidebarOpen = true }) {
 
   useEffect(() => {
     const currentRole = localStorage.getItem("user_role") || "admin";
-    const email = localStorage.getItem("current_user_email") || "admin@gmail.com";
+    const email = localStorage.getItem("current_user_email") || "";
     setRole(currentRole);
     setUserEmail(email);
     loadAllNotifications();
 
     const handleRoleChange = () => {
       setRole(localStorage.getItem("user_role") || "admin");
-      setUserEmail(localStorage.getItem("current_user_email") || "admin@gmail.com");
+      setUserEmail(localStorage.getItem("current_user_email") || "");
       loadAllNotifications();
     };
 
@@ -193,6 +195,54 @@ export default function Navbar({ onMenuClick, isSidebarOpen = true }) {
     return () => {
       window.removeEventListener("roleChanged", handleRoleChange);
       window.removeEventListener("storage", loadAllNotifications);
+    };
+  }, []);
+
+  // Resolve the signed-in user's display name from Supabase/API data.
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadUserProfile = async () => {
+      const storedEmail = (localStorage.getItem("current_user_email") || "").trim().toLowerCase();
+      let resolvedEmail = storedEmail;
+      let resolvedName = "";
+
+      try {
+        const { data } = await supabase.auth.getUser();
+        const authUser = data?.user;
+        resolvedEmail = (authUser?.email || resolvedEmail).trim().toLowerCase();
+        resolvedName = authUser?.user_metadata?.full_name || authUser?.user_metadata?.name || "";
+      } catch (e) {}
+
+      if (!resolvedName && resolvedEmail) {
+        try {
+          const response = await fetch(`/api/persistence?table=employees`);
+          const payload = await response.json();
+          const employee = (payload?.data || []).find(
+            (item) => (item?.email || "").trim().toLowerCase() === resolvedEmail
+          );
+          resolvedName = employee?.full_name || employee?.name || "";
+        } catch (e) {}
+      }
+
+      if (!resolvedName && resolvedEmail) {
+        resolvedName = resolvedEmail.split("@")[0].replace(/[._-]+/g, " ");
+      }
+
+      if (isMounted) {
+        setUserEmail(resolvedEmail);
+        setUserName(resolvedName);
+      }
+    };
+
+    loadUserProfile();
+    window.addEventListener("roleChanged", loadUserProfile);
+    window.addEventListener("storage", loadUserProfile);
+
+    return () => {
+      isMounted = false;
+      window.removeEventListener("roleChanged", loadUserProfile);
+      window.removeEventListener("storage", loadUserProfile);
     };
   }, []);
 
@@ -217,12 +267,14 @@ export default function Navbar({ onMenuClick, isSidebarOpen = true }) {
     return segment.charAt(0).toUpperCase() + segment.slice(1).replace("-", " ");
   };
 
-  const getUserInitials = (email) => {
-    if (!email) return "RB";
-    const name = email.split("@")[0];
-    const parts = name.split(/[\._-]/);
+  const getUserInitials = (name, email) => {
+    const source = name || email.split("@")[0] || "User";
+    const nameParts = source.trim().split(/\s+/);
+    if (nameParts.length >= 2) return (nameParts[0][0] + nameParts[nameParts.length - 1][0]).toUpperCase();
+    const fallbackName = source;
+    const parts = fallbackName.split(/[\._-]/);
     if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
-    return name.slice(0, 2).toUpperCase();
+    return fallbackName.slice(0, 2).toUpperCase();
   };
 
   return (
@@ -334,11 +386,11 @@ export default function Navbar({ onMenuClick, isSidebarOpen = true }) {
         {/* Profile Avatar Badge */}
         <div className="flex items-center gap-2 pl-2 border-l border-[#E2E8F0]">
           <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#EFF6FF] text-[#2563EB] text-xs font-bold border border-[#2563EB]/20">
-            {getUserInitials(userEmail)}
+            {getUserInitials(userName, userEmail)}
           </div>
           <div className="text-left hidden xl:block">
             <p className="text-xs font-bold text-[#0F172A] leading-tight">
-              {role === "admin" ? "Muhammad Rahim" : userEmail.split("@")[0]}
+              {userName || userEmail.split("@")[0] || "User"}
             </p>
             <p className="text-[10px] text-[#64748B] uppercase font-medium tracking-wider">{role}</p>
           </div>

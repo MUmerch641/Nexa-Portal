@@ -105,8 +105,8 @@ export default function StudentDedicatedDashboardPage() {
 
   useEffect(() => {
     const savedRole = localStorage.getItem("user_role") || "student";
-    const savedEmail = localStorage.getItem("current_user_email") || "student@gmail.com";
-    const savedName = localStorage.getItem("current_user_name") || "Ali Hassan";
+    const savedEmail = localStorage.getItem("current_user_email") || "";
+    const savedName = localStorage.getItem("current_user_name") || "";
 
     setRole(savedRole);
     setStudentInfo((prev) => ({ ...prev, email: savedEmail, name: savedName }));

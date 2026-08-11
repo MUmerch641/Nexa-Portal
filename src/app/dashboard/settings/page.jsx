@@ -111,7 +111,7 @@ export default function SettingsPage() {
 
   useEffect(() => {
     const storedRole = localStorage.getItem("user_role") || "admin";
-    const storedEmail = localStorage.getItem("current_user_email") || "admin@gmail.com";
+    const storedEmail = localStorage.getItem("current_user_email") || "";
     setRole(storedRole);
     setUserEmail(storedEmail);
 

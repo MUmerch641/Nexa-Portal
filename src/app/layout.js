@@ -17,16 +17,12 @@ export const metadata = {
   icons: {
     icon: [
       {
-        url: '/logo.png',
-        type: 'image/png',
-      },
-      {
-        url: '/logo.svg',
-        type: 'image/svg+xml',
+        url: '/logo.jpeg',
+        type: 'image/jpeg',
       },
     ],
-    shortcut: '/logo.png',
-    apple: '/logo.png',
+    shortcut: '/logo.jpeg',
+    apple: '/logo.jpeg',
   },
 };
 

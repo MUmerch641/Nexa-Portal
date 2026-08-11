@@ -201,7 +201,7 @@ export default function Sidebar({ isOpen, onClose }) {
           <Link href="/dashboard" className="flex items-center gap-3">
             <div className="h-9 w-9 flex items-center justify-center">
               <img
-                src="/logo.svg"
+                src="/logo.jpeg"
                 alt="NEXA Logo"
                 className="h-full w-full object-contain"
               />

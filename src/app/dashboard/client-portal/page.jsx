@@ -166,7 +166,7 @@ export default function ClientPortalDashboardPage() {
 
   useEffect(() => {
     const savedRole = localStorage.getItem("user_role") || "client";
-    const email = (localStorage.getItem("current_user_email") || "client@acmetech.com").toLowerCase().trim();
+    const email = (localStorage.getItem("current_user_email") || "").toLowerCase().trim();
     
     setRole(savedRole);
     setClientEmail(email);

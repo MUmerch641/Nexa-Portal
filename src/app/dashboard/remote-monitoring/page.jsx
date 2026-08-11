@@ -55,7 +55,7 @@ export default function RemoteMonitoringPage() {
   const [role, setRole] = useState("admin"); // 'admin' or 'employee'
   const [activeTab, setActiveTab] = useState("overview"); // 'overview', 'screenshots', 'timeline', 'analytics', 'settings'
   const [userEmail, setUserEmail] = useState("");
-  const [employeeName, setEmployeeName] = useState("Sarah Jenkins");
+  const [employeeName, setEmployeeName] = useState("");
   const [employeeId, setEmployeeId] = useState("emp-101");
   const [department, setDepartment] = useState("Frontend Engineering");
 
@@ -106,8 +106,8 @@ export default function RemoteMonitoringPage() {
   // Load User Data & Saved Logs on Mount
   useEffect(() => {
     const savedRole = localStorage.getItem("user_role") || "admin";
-    const savedEmail = localStorage.getItem("current_user_email") || "sarah.jenkins@nexasoft.com";
-    const savedName = localStorage.getItem("current_user_name") || "Sarah Jenkins";
+    const savedEmail = localStorage.getItem("current_user_email") || "";
+    const savedName = localStorage.getItem("current_user_name") || "";
 
     setRole(savedRole);
     setUserEmail(savedEmail);
@@ -628,10 +628,9 @@ export default function RemoteMonitoringPage() {
                 className="px-3 py-1.5 rounded-xl border border-slate-200 bg-slate-50 text-slate-900 font-bold text-xs shadow-xs focus:ring-2 focus:ring-blue-500"
               >
                 {registeredUsers.length === 0 ? (
-                  <>
-                    <option value="Emaan">Emaan (Full Stack MERN Web Development)</option>
-                    <option value="Sarah Jenkins">Sarah Jenkins (Frontend)</option>
-                  </>
+                  <option value={employeeName || ""}>
+                    {employeeName || "No employee profiles available"}
+                  </option>
                 ) : (
                   registeredUsers.map(u => (
                     <option key={u.id} value={u.name}>{u.name} ({u.department})</option>

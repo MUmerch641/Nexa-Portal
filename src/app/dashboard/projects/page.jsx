@@ -85,7 +85,7 @@ export default function ProjectsPage() {
 
   useEffect(() => {
     const savedRole = localStorage.getItem("user_role") || "admin";
-    const savedEmail = localStorage.getItem("current_user_email") || "student@gmail.com";
+    const savedEmail = localStorage.getItem("current_user_email") || "";
     setRole(savedRole);
     setUserEmail(savedEmail);
 
