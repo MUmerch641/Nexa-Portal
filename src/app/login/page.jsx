@@ -138,12 +138,12 @@ export default function LoginPage() {
     
     // Default system seed accounts assigned by Admin
     const defaultAccounts = [
-      { email: "admin@gmail.com", password: "adminpassword", role: "admin" },
-      { email: "student@gmail.com", password: "studentpassword", role: "student" },
-      { email: "sara.design@gmail.com", password: "employeepassword", role: "employee" },
-      { email: "rahim.dev@gmail.com", password: "employeepassword", role: "employee" },
-      { email: "ali.staff@gmail.com", password: "employeepassword", role: "employee" },
-      { email: "client@acmetech.com", password: "clientpassword", role: "client" },
+      { email: "admin@gmail.com", password: "adminpassword", role: "admin", fullName: "Admin User" },
+      { email: "student@gmail.com", password: "studentpassword", role: "student", fullName: "Ali Hassan" },
+      { email: "sara.design@gmail.com", password: "employeepassword", role: "employee", fullName: "Sara Khan" },
+      { email: "rahim.dev@gmail.com", password: "employeepassword", role: "employee", fullName: "Muhammad Rahim Bugti" },
+      { email: "ali.staff@gmail.com", password: "employeepassword", role: "employee", fullName: "Muhammad Ali" },
+      { email: "client@acmetech.com", password: "clientpassword", role: "client", fullName: "Client User" },
     ];
 
     const allValidUsers = [...defaultAccounts, ...registeredUsers];
@@ -174,7 +174,24 @@ export default function LoginPage() {
       localStorage.setItem("isLoggedIn", "true");
       localStorage.setItem("user_role", activeRole);
       localStorage.setItem("current_user_email", email);
-      localStorage.setItem("current_user_name", matchedUser.fullName || matchedUser.full_name || "");
+
+      // Naam resolve karo: matched user → employees list → students list → email se
+      let resolvedName = matchedUser.fullName || matchedUser.full_name || "";
+      if (!resolvedName) {
+        try {
+          const emps = JSON.parse(localStorage.getItem("persistent_employees") || "[]");
+          const emp = emps.find(e => (e.email || "").toLowerCase() === emailLower);
+          if (emp) resolvedName = emp.full_name || emp.name || "";
+        } catch(e) {}
+      }
+      if (!resolvedName) {
+        try {
+          const stus = JSON.parse(localStorage.getItem("persistent_courses") || "[]");
+          const stu = stus.find(s => (s.email || "").toLowerCase() === emailLower);
+          if (stu) resolvedName = stu.full_name || stu.name || "";
+        } catch(e) {}
+      }
+      localStorage.setItem("current_user_name", resolvedName);
       window.dispatchEvent(new Event("roleChanged"));
 
       setLoading(false);

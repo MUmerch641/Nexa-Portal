@@ -33,8 +33,6 @@ import {
   FaFileInvoiceDollar,
   FaLaptopCode,
   FaChartLine,
-  FaArrowUp,
-  FaArrowDown,
   FaFilter,
   FaSearch,
   FaTimes
@@ -582,9 +580,6 @@ export default function DashboardPage() {
           </div>
           <div className="flex items-baseline justify-between pt-1">
             <h3 className="text-2xl font-bold text-[#0F172A]">{stats.employees}</h3>
-            <span className="text-[10px] font-semibold text-[#2563EB] bg-[#EFF6FF] px-2 py-0.5 rounded-md border border-[#2563EB]/20 flex items-center gap-1">
-              <FaArrowUp className="text-[9px]" /> +12%
-            </span>
           </div>
           <p className="text-xs text-[#64748B]">Paid Staff & Engineers</p>
         </div>
@@ -616,9 +611,6 @@ export default function DashboardPage() {
           </div>
           <div className="flex items-baseline justify-between pt-1">
             <h3 className="text-2xl font-bold text-[#0F172A]">Rs. {(stats.monthlyRevenue || 0).toLocaleString()}</h3>
-            <span className="text-[10px] font-semibold text-[#2563EB] bg-[#EFF6FF] px-2 py-0.5 rounded-md border border-[#2563EB]/20 flex items-center gap-1">
-              <FaArrowUp className="text-[9px]" /> +18%
-            </span>
           </div>
           <p className="text-xs text-[#64748B]">Invoices Cleared This Month</p>
         </div>
@@ -633,9 +625,6 @@ export default function DashboardPage() {
           </div>
           <div className="flex items-baseline justify-between pt-1">
             <h3 className="text-2xl font-bold text-[#0F172A]">Rs. {(stats.monthlyExpenses || 0).toLocaleString()}</h3>
-            <span className="text-[10px] font-semibold text-[#64748B] bg-[#F1F5F9] px-2 py-0.5 rounded-md">
-              Budget Safe
-            </span>
           </div>
           <p className="text-xs text-[#64748B]">Salaries & Overhead Costs</p>
         </div>

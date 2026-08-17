@@ -521,7 +521,7 @@ export default function AttendancePage() {
     const present = allSystemLogs.filter(l => (l.attendance_status || "").toLowerCase().includes("present") || (l.attendance_status || "").toLowerCase().includes("on time")).length;
     const late = allSystemLogs.filter(l => (l.attendance_status || "").toLowerCase().includes("late")).length;
     const absent = allSystemLogs.filter(l => (l.attendance_status || "").toLowerCase().includes("absent")).length;
-    const ratePct = total > 0 ? Math.round((present / total) * 100) : 96;
+    const ratePct = total > 0 ? Math.round((present / total) * 100) : 0;
 
     return { total, present, late, absent, ratePct };
   }, [allSystemLogs]);

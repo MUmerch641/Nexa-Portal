@@ -1049,14 +1049,22 @@ export default function RemoteMonitoringPage() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
             <div className="p-6 rounded-2xl border border-slate-200 bg-white shadow-xs space-y-3">
               <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Average Focus Time</h3>
-              <p className="text-3xl font-black text-slate-900">5.8 Hours/Day</p>
-              <p className="text-xs text-emerald-600 font-semibold">+12% vs last week</p>
+              <p className="text-3xl font-black text-slate-900">
+                {elapsedSeconds > 0
+                  ? `${Math.floor(elapsedSeconds / 3600)}h ${Math.floor((elapsedSeconds % 3600) / 60)}m`
+                  : "—"}
+              </p>
+              <p className="text-xs text-slate-500">Current session duration</p>
             </div>
 
             <div className="p-6 rounded-2xl border border-slate-200 bg-white shadow-xs space-y-3">
-              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Department Efficiency</h3>
-              <p className="text-3xl font-black text-blue-600">93.4%</p>
-              <p className="text-xs text-slate-500">Highest: Frontend Team (96%)</p>
+              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Activity Score</h3>
+              <p className="text-3xl font-black text-blue-600">
+                {elapsedSeconds > 0
+                  ? `${Math.round((activeSeconds / elapsedSeconds) * 100)}%`
+                  : "—"}
+              </p>
+              <p className="text-xs text-slate-500">Active vs total session time</p>
             </div>
 
             <div className="p-6 rounded-2xl border border-slate-200 bg-white shadow-xs space-y-3">
