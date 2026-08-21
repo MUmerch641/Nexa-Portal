@@ -2,9 +2,11 @@
 
 import { useState, useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
+import { supabase } from "@/lib/supabase";
+import { resolveUserRoleAndProfile } from "@/lib/auth";
 import Sidebar from "@/components/Sidebar";
 import Navbar from "@/components/Navbar";
-import ToastContainer from "@/components/Toast";
+import ToastContainer, { showToast } from "@/components/Toast";
 
 export default function DashboardLayout({ children }) {
   const router = useRouter();
@@ -29,13 +31,35 @@ export default function DashboardLayout({ children }) {
   }, [pathname]);
 
   useEffect(() => {
-    const checkAuth = () => {
-      const isLoggedIn = localStorage.getItem("isLoggedIn") === "true";
-      const userRole = localStorage.getItem("user_role");
+    let isMounted = true;
+
+    const checkAuth = async () => {
+      let isLoggedIn = localStorage.getItem("isLoggedIn") === "true";
+      let userRole = localStorage.getItem("user_role");
+
+      // If local storage is empty or needs refresh, check Supabase Auth Session
+      if (!isLoggedIn || !userRole) {
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session && session.user) {
+            const profile = await resolveUserRoleAndProfile(session.user);
+            userRole = profile.role || "employee";
+            isLoggedIn = true;
+
+            localStorage.setItem("isLoggedIn", "true");
+            localStorage.setItem("user_role", userRole);
+            localStorage.setItem("current_user_email", session.user.email);
+            localStorage.setItem("current_user_name", profile.fullName || session.user.email.split("@")[0]);
+            localStorage.setItem("current_user_id", session.user.id);
+          }
+        } catch (e) {}
+      }
 
       if (!isLoggedIn || !userRole) {
-        setAuthorized(false);
-        router.replace("/login");
+        if (isMounted) {
+          setAuthorized(false);
+          router.replace("/login");
+        }
         return;
       }
 
@@ -73,17 +97,36 @@ export default function DashboardLayout({ children }) {
         }
       }
 
-      setAuthorized(true);
-      setRole(userRole);
+      if (isMounted) {
+        setAuthorized(true);
+        setRole(userRole);
+      }
     };
 
     checkAuth();
 
+    // Listen to Supabase Auth State changes & local storage events
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "SIGNED_OUT") {
+        if (isMounted) {
+          setAuthorized(false);
+          router.replace("/login");
+        }
+      }
+    });
+
     window.addEventListener("popstate", checkAuth);
-    const handleRoleChange = () => setRole(localStorage.getItem("user_role") || "admin");
+    const handleRoleChange = () => {
+      const currentRole = localStorage.getItem("user_role") || "admin";
+      setRole(currentRole);
+    };
     window.addEventListener("roleChanged", handleRoleChange);
 
     return () => {
+      isMounted = false;
+      if (authListener?.subscription) {
+        authListener.subscription.unsubscribe();
+      }
       window.removeEventListener("popstate", checkAuth);
       window.removeEventListener("roleChanged", handleRoleChange);
     };

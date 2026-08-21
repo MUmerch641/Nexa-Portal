@@ -3,8 +3,11 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { showToast } from "@/components/Toast";
-import { FaLock, FaEnvelope, FaUser, FaBuilding, FaArrowRight, FaShieldAlt } from "react-icons/fa";
+import { supabase } from "@/lib/supabase";
+import { dbSaveRecord } from "@/lib/dbPersistence";
+import Modal from "@/components/Modal";
+import ToastContainer, { showToast } from "@/components/Toast";
+import { FaLock, FaEnvelope, FaUser, FaBuilding, FaArrowRight, FaShieldAlt, FaSignInAlt } from "react-icons/fa";
 
 export default function SignupPage() {
   const router = useRouter();
@@ -14,44 +17,162 @@ export default function SignupPage() {
   const [role, setRole] = useState("student");
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e) => {
+  const [modal, setModal] = useState({
+    isOpen: false,
+    title: "",
+    message: "",
+    type: "info",
+  });
+
+  const showAlert = (title, message, type = "info") => {
+    setModal({ isOpen: true, title, message, type });
+  };
+
+  const closeModal = () => {
+    setModal({ ...modal, isOpen: false });
+  };
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!fullName.trim() || !email.trim() || !password) {
-      showToast("Validation Error 🛑", "Please fill all required fields.", "error");
+    const cleanName = (fullName || "").trim();
+    const cleanEmail = (email || "").trim().toLowerCase();
+    const cleanPassword = (password || "").trim();
+
+    if (!cleanName || !cleanEmail || !cleanPassword) {
+      showToast("Validation Error 🛑", "Please fill in all required fields.", "error");
       return;
     }
 
-    if (password.length < 6) {
-      showToast("Password Error 🛑", "Password must be at least 6 characters.", "error");
+    if (cleanPassword.length < 6) {
+      showToast("Password Error 🛑", "Password must be at least 6 characters long.", "error");
       return;
     }
 
     setLoading(true);
 
-    setTimeout(() => {
-      localStorage.setItem("isLoggedIn", "true");
-      localStorage.setItem("user_role", role);
-      localStorage.setItem("user_email", email.trim().toLowerCase());
-      localStorage.setItem("user_name", fullName.trim());
+    try {
+      // 1. Register with Supabase Auth Cloud
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: cleanEmail,
+        password: cleanPassword,
+        options: {
+          data: {
+            full_name: cleanName,
+            role: role,
+          },
+          emailRedirectTo: typeof window !== "undefined" ? `${window.location.origin}/login` : undefined,
+        },
+      });
 
-      showToast("Account Created 🎉", `Welcome ${fullName}! Logging you into the portal...`, "success");
-
-      if (role === "admin") {
-        router.replace("/dashboard");
-      } else if (role === "employee") {
-        router.replace("/dashboard/employee");
-      } else if (role === "student") {
-        router.replace("/dashboard/student");
-      } else if (role === "intern") {
-        router.replace("/dashboard/internships");
-      } else {
-        router.replace("/dashboard");
+      if (authError) {
+        setLoading(false);
+        const msg = (authError.message || "").toLowerCase();
+        if (msg.includes("already registered") || msg.includes("user already exists")) {
+          showToast("Account Exists ⚠️", "An account with this email already exists. Please log in.", "warning");
+          showAlert(
+            "Account Already Exists ⚠️",
+            `An account with email "${cleanEmail}" is already registered in the system.\n\nPlease proceed to the Sign In page to log into your portal.`,
+            "warning"
+          );
+        } else {
+          showToast("Registration Failed 🛑", authError.message || "Could not register account.", "error");
+          showAlert("Registration Failed 🛑", authError.message || "An error occurred during account creation.", "error");
+        }
+        return;
       }
-    }, 600);
+
+      const authUser = authData?.user;
+      const authUserId = authUser?.id || `usr_${Date.now()}`;
+
+      // 2. Persist user record in database
+      if (role === "student") {
+        const studentProfile = {
+          student_id: `s-${Date.now()}`,
+          auth_user_id: authUserId,
+          full_name: cleanName,
+          email: cleanEmail,
+          course_name: "Full Stack MERN Web Development",
+          role: "student",
+          status: "active",
+          created_at: new Date().toISOString(),
+        };
+        await dbSaveRecord("students", studentProfile).catch(() => {});
+      } else if (role === "employee" || role === "admin" || role === "intern") {
+        const employeeProfile = {
+          employee_id: `emp-${Date.now()}`,
+          auth_user_id: authUserId,
+          full_name: cleanName,
+          email: cleanEmail,
+          role: role,
+          department: role === "admin" ? "Administration" : "Software Engineering",
+          status: "active",
+          created_at: new Date().toISOString(),
+        };
+        await dbSaveRecord("employees", employeeProfile).catch(() => {});
+      }
+
+      // Also create profile record
+      try {
+        await supabase.from("profiles").upsert([
+          {
+            id: authUserId,
+            full_name: cleanName,
+            email: cleanEmail,
+            role: role,
+            updated_at: new Date().toISOString(),
+          },
+        ]);
+      } catch (e) {}
+
+      // Check if session was automatically established (email confirmations disabled or pre-confirmed)
+      if (authData?.session) {
+        localStorage.setItem("isLoggedIn", "true");
+        localStorage.setItem("user_role", role);
+        localStorage.setItem("current_user_email", cleanEmail);
+        localStorage.setItem("current_user_name", cleanName);
+        localStorage.setItem("current_user_id", authUserId);
+        window.dispatchEvent(new Event("roleChanged"));
+
+        setLoading(false);
+        showToast("Account Created 🎉", `Welcome ${cleanName}! Accessing your ${role.toUpperCase()} Portal...`, "success");
+
+        if (role === "student") {
+          setTimeout(() => router.replace("/dashboard/student"), 800);
+        } else if (role === "employee") {
+          setTimeout(() => router.replace("/dashboard/employee"), 800);
+        } else if (role === "intern") {
+          setTimeout(() => router.replace("/dashboard/internships"), 800);
+        } else {
+          setTimeout(() => router.replace("/dashboard"), 800);
+        }
+      } else {
+        // Confirmation email required
+        setLoading(false);
+        showToast("Verification Required ✉️", `Account created! Check ${cleanEmail} for confirmation.`, "success");
+        showAlert(
+          "Verification Email Sent ✉️",
+          `Your account has been created successfully!\n\nWe sent a confirmation link to ${cleanEmail}.\nPlease click the link in your email to verify your account, then log in to access the portal.`,
+          "success"
+        );
+      }
+    } catch (err) {
+      setLoading(false);
+      console.error("Signup error:", err);
+      showToast("Error", "An unexpected error occurred during signup. Please try again.", "error");
+    }
   };
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] flex flex-col justify-center items-center p-4">
+      {/* Notification Modal */}
+      <Modal
+        isOpen={modal.isOpen}
+        title={modal.title}
+        message={modal.message}
+        type={modal.type}
+        onClose={closeModal}
+      />
+
       <div className="w-full max-w-md bg-white rounded-3xl p-8 border border-[#E2E8F0] shadow-xl space-y-6">
         {/* Brand Header */}
         <div className="text-center space-y-2">
@@ -73,7 +194,7 @@ export default function SignupPage() {
                 required
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
-                placeholder="Muhammad Ali"
+                placeholder="e.g. Muhammad Ali"
                 className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-[#E2E8F0] text-xs text-[#0F172A] outline-none focus:border-[#2563EB] bg-white transition-colors"
               />
             </div>
@@ -116,7 +237,7 @@ export default function SignupPage() {
               <select
                 value={role}
                 onChange={(e) => setRole(e.target.value)}
-                className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-[#E2E8F0] text-xs text-[#0F172A] outline-none focus:border-[#2563EB] bg-white transition-colors"
+                className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-[#E2E8F0] text-xs text-[#0F172A] outline-none focus:border-[#2563EB] bg-white transition-colors cursor-pointer"
               >
                 <option value="student">🎓 Course Student</option>
                 <option value="employee">👔 Staff / Engineer</option>
@@ -131,18 +252,28 @@ export default function SignupPage() {
             disabled={loading}
             className="w-full py-3 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold text-xs shadow-xs transition-colors cursor-pointer flex items-center justify-center gap-2"
           >
-            {loading ? "Setting up Account..." : "Create Account & Enter Portal"}
-            <FaArrowRight className="text-xs" />
+            {loading ? (
+              <>
+                <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                <span>Registering Account in Supabase...</span>
+              </>
+            ) : (
+              <>
+                <span>Create Account & Register</span>
+                <FaArrowRight className="text-xs" />
+              </>
+            )}
           </button>
         </form>
 
         <div className="pt-2 text-center text-xs text-[#64748B] border-t border-[#E2E8F0]">
           Already have an account?{" "}
-          <Link href="/login" className="font-bold text-[#2563EB] hover:underline">
-            Sign In here
+          <Link href="/login" className="font-bold text-[#2563EB] hover:underline inline-flex items-center gap-1">
+            <FaSignInAlt className="text-xs" /> Sign In here
           </Link>
         </div>
       </div>
+      <ToastContainer />
     </div>
   );
 }
