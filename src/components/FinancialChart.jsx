@@ -168,16 +168,23 @@ function FinancialChart({ revenue = 0, expenses = 0, categoryData = [] }) {
           </div>
 
           {/* Profit Summary Card */}
-          <div className="p-3.5 rounded-xl bg-[#EFF6FF] border border-[#2563EB]/20 flex items-center justify-between text-xs">
-            <span className="font-semibold text-[#0F172A]">Net Financial Margin:</span>
-            <span className={`font-bold flex items-center gap-1.5 ${netProfit > 0 ? "text-[#2563EB]" : netProfit < 0 ? "text-rose-600" : "text-slate-700"}`}>
-              {netProfit > 0 ? (
-                <FaArrowUp className="text-emerald-600" />
-              ) : netProfit < 0 ? (
-                <FaArrowDown className="text-rose-600" />
-              ) : null}
-              {formatCurrency(netProfit)} ({profitMarginPct}%)
-            </span>
+          <div className={`p-3.5 rounded-xl border flex items-center justify-between text-xs ${
+            netProfit >= 0
+              ? "bg-[#EFF6FF] border-[#2563EB]/20"
+              : "bg-[#FEE2E2] border-[#EF4444]/20"
+          }`}>
+            {safeRevenue === 0 && safeExpenses === 0 ? (
+              <span className="font-bold text-[#64748B]">No financial data recorded yet</span>
+            ) : (
+              <span className={`font-bold flex items-center gap-1.5 ${netProfit >= 0 ? "text-[#2563EB]" : "text-rose-600"}`}>
+                {netProfit > 0 ? (
+                  <FaArrowUp className="text-emerald-600" />
+                ) : netProfit < 0 ? (
+                  <FaArrowDown className="text-rose-600" />
+                ) : null}
+                {formatCurrency(netProfit)} ({profitMarginPct}%)
+              </span>
+            )}
           </div>
         </div>
 

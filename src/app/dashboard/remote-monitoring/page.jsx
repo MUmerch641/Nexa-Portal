@@ -195,7 +195,7 @@ export default function RemoteMonitoringPage() {
         if (inactiveTimeMs >= 5 * 60 * 1000 && sessionStatus === "Active") {
           setSessionStatus("Idle");
           showToast("Idle Warning ⏳", "No mouse/keyboard input detected for 5 minutes. Session marked as Idle.", "warning");
-          
+
           // Log timeline event
           const idleEvent = {
             id: `t-${Date.now()}`,
@@ -246,7 +246,7 @@ export default function RemoteMonitoringPage() {
       if (sessionStatus === "Idle") {
         setSessionStatus("Active");
         showToast("Activity Resumed 🟢", "Mouse/keyboard activity detected. Marked as Active.", "success");
-        
+
         const activeEvent = {
           id: `t-${Date.now()}`,
           employee_id: employeeId,
@@ -439,8 +439,8 @@ export default function RemoteMonitoringPage() {
 
   // Calculate Productivity Score %
   const totalTrackedSeconds = activeSeconds + idleSeconds;
-  const productivityScore = totalTrackedSeconds > 0 
-    ? Math.round((activeSeconds / totalTrackedSeconds) * 100) 
+  const productivityScore = totalTrackedSeconds > 0
+    ? Math.round((activeSeconds / totalTrackedSeconds) * 100)
     : (isSessionActive ? 100 : 0);
 
   let productivityStatusLabel = "Ready to Track";
@@ -521,21 +521,19 @@ export default function RemoteMonitoringPage() {
           <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-medium">
             <button
               onClick={() => setRole("admin")}
-              className={`px-3 py-1.5 rounded-lg transition-all ${
-                role === "admin"
+              className={`px-3 py-1.5 rounded-lg transition-all ${role === "admin"
                   ? "bg-white text-slate-900 shadow-xs font-semibold"
                   : "text-slate-600 hover:text-slate-900"
-              }`}
+                }`}
             >
               Admin / HR View
             </button>
             <button
               onClick={() => setRole("employee")}
-              className={`px-3 py-1.5 rounded-lg transition-all ${
-                role === "employee"
+              className={`px-3 py-1.5 rounded-lg transition-all ${role === "employee"
                   ? "bg-white text-slate-900 shadow-xs font-semibold"
                   : "text-slate-600 hover:text-slate-900"
-              }`}
+                }`}
             >
               Employee View
             </button>
@@ -628,7 +626,7 @@ export default function RemoteMonitoringPage() {
                 Work Session Status — Select Active Student/Employee:
               </span>
             </div>
-            
+
             <div className="flex items-center gap-3 mt-1">
               <select
                 value={employeeName}
@@ -661,22 +659,20 @@ export default function RemoteMonitoringPage() {
                 {formatTimeHHMMSS(elapsedSeconds)}
               </h2>
               <span
-                className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${
-                  sessionStatus === "Active"
+                className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${sessionStatus === "Active"
                     ? "bg-emerald-100 text-emerald-800 animate-pulse"
                     : sessionStatus === "Idle"
-                    ? "bg-amber-100 text-amber-800"
-                    : "bg-slate-100 text-slate-600"
-                }`}
+                      ? "bg-amber-100 text-amber-800"
+                      : "bg-slate-100 text-slate-600"
+                  }`}
               >
                 <span
-                  className={`h-2 w-2 rounded-full ${
-                    sessionStatus === "Active"
+                  className={`h-2 w-2 rounded-full ${sessionStatus === "Active"
                       ? "bg-emerald-500"
                       : sessionStatus === "Idle"
-                      ? "bg-amber-500"
-                      : "bg-slate-400"
-                  }`}
+                        ? "bg-amber-500"
+                        : "bg-slate-400"
+                    }`}
                 />
                 {sessionStatus}
               </span>
@@ -777,44 +773,40 @@ export default function RemoteMonitoringPage() {
       <div className="flex items-center gap-2 border-b border-slate-200 pb-2 text-xs font-semibold overflow-x-auto">
         <button
           onClick={() => setActiveTab("overview")}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl transition-all ${
-            activeTab === "overview"
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl transition-all ${activeTab === "overview"
               ? "bg-blue-600 text-white shadow-xs"
               : "text-slate-600 hover:bg-slate-100"
-          }`}
+            }`}
         >
           <FaDesktop className="h-3.5 w-3.5" /> Live Overview
         </button>
 
         <button
           onClick={() => setActiveTab("screenshots")}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl transition-all ${
-            activeTab === "screenshots"
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl transition-all ${activeTab === "screenshots"
               ? "bg-blue-600 text-white shadow-xs"
               : "text-slate-600 hover:bg-slate-100"
-          }`}
+            }`}
         >
           <FaCamera className="h-3.5 w-3.5" /> Screenshot Gallery ({filteredScreenshots.length})
         </button>
 
         <button
           onClick={() => setActiveTab("timeline")}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl transition-all ${
-            activeTab === "timeline"
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl transition-all ${activeTab === "timeline"
               ? "bg-blue-600 text-white shadow-xs"
               : "text-slate-600 hover:bg-slate-100"
-          }`}
+            }`}
         >
           <FaHistory className="h-3.5 w-3.5" /> Work Timeline
         </button>
 
         <button
           onClick={() => setActiveTab("analytics")}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl transition-all ${
-            activeTab === "analytics"
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl transition-all ${activeTab === "analytics"
               ? "bg-blue-600 text-white shadow-xs"
               : "text-slate-600 hover:bg-slate-100"
-          }`}
+            }`}
         >
           <FaChartPie className="h-3.5 w-3.5" /> Productivity Analytics
         </button>
@@ -822,11 +814,10 @@ export default function RemoteMonitoringPage() {
         {role === "admin" && (
           <button
             onClick={() => setActiveTab("settings")}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl transition-all ${
-              activeTab === "settings"
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl transition-all ${activeTab === "settings"
                 ? "bg-blue-600 text-white shadow-xs"
                 : "text-slate-600 hover:bg-slate-100"
-            }`}
+              }`}
           >
             <FaShieldAlt className="h-3.5 w-3.5" /> Retention & Rules
           </button>
@@ -909,13 +900,12 @@ export default function RemoteMonitoringPage() {
                       <p className="text-xs text-slate-500">{sess.department}</p>
                     </div>
                     <span
-                      className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                        sess.status === "Active"
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${sess.status === "Active"
                           ? "bg-emerald-100 text-emerald-800"
                           : sess.status === "Idle"
-                          ? "bg-amber-100 text-amber-800"
-                          : "bg-slate-100 text-slate-600"
-                      }`}
+                            ? "bg-amber-100 text-amber-800"
+                            : "bg-slate-100 text-slate-600"
+                        }`}
                     >
                       {sess.status}
                     </span>
@@ -1045,11 +1035,10 @@ export default function RemoteMonitoringPage() {
           <div className="relative border-l-2 border-slate-200 ml-4 space-y-6">
             {filteredTimelines.map((tl, idx) => (
               <div key={tl.id || idx} className="relative pl-6">
-                <div className={`absolute -left-[9px] top-1.5 h-4 w-4 rounded-full border-2 bg-white ${
-                  tl.type === "Login" ? "border-emerald-500" :
-                  tl.type === "Screenshot" ? "border-blue-500" :
-                  tl.type === "Idle Alert" ? "border-amber-500" : "border-slate-400"
-                }`} />
+                <div className={`absolute -left-[9px] top-1.5 h-4 w-4 rounded-full border-2 bg-white ${tl.type === "Login" ? "border-emerald-500" :
+                    tl.type === "Screenshot" ? "border-blue-500" :
+                      tl.type === "Idle Alert" ? "border-amber-500" : "border-slate-400"
+                  }`} />
 
                 <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 space-y-1">
                   <div className="flex items-center justify-between text-xs">
@@ -1071,15 +1060,21 @@ export default function RemoteMonitoringPage() {
             <div className="p-6 rounded-2xl border border-slate-200 bg-white shadow-xs space-y-3">
               <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Average Focus Time</h3>
               <p className="text-3xl font-black text-slate-900">
-                {(activeSeconds / 3600).toFixed(1)} Hours
+                {elapsedSeconds > 0
+                  ? `${Math.floor(elapsedSeconds / 3600)}h ${Math.floor((elapsedSeconds % 3600) / 60)}m`
+                  : "—"}
               </p>
-              <p className="text-xs text-emerald-600 font-semibold">Active Timer Tracking</p>
+              <p className="text-xs text-slate-500">Current session duration</p>
             </div>
 
             <div className="p-6 rounded-2xl border border-slate-200 bg-white shadow-xs space-y-3">
-              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Department Efficiency</h3>
-              <p className="text-3xl font-black text-blue-600">{productivityScore}%</p>
-              <p className="text-xs text-slate-500">Calculated from active work logs</p>
+              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Activity Score</h3>
+              <p className="text-3xl font-black text-blue-600">
+                {elapsedSeconds > 0
+                  ? `${Math.round((activeSeconds / elapsedSeconds) * 100)}%`
+                  : "—"}
+              </p>
+              <p className="text-xs text-slate-500">Active vs total session time</p>
             </div>
 
             <div className="p-6 rounded-2xl border border-slate-200 bg-white shadow-xs space-y-3">
@@ -1087,181 +1082,190 @@ export default function RemoteMonitoringPage() {
               <p className="text-3xl font-black text-slate-900">{screenshots.length} Captures</p>
               <p className="text-xs text-slate-500">Randomized 5-15 min policy</p>
             </div>
+          </div >
+        </div >
+      )
+}
+
+{/* === TAB 5: RETENTION & RULES SETTINGS === */ }
+{
+  activeTab === "settings" && role === "admin" && (
+    <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs space-y-6">
+      <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
+        <FaShieldAlt className="text-blue-600" /> Monitoring Policy & Retention Rules
+      </h2>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-xs text-slate-700">
+        <div className="space-y-2">
+          <label className="font-bold text-slate-900">Screenshot Auto-Retention Period (Days):</label>
+          <select
+            value={settings.retentionDays}
+            onChange={(e) => {
+              const updated = { ...settings, retentionDays: Number(e.target.value) };
+              setSettings(updated);
+              saveMonitoringSettings(updated);
+              showToast("Settings Saved ⚙️", `Retention period set to ${e.target.value} days.`, "success");
+            }}
+            className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 font-medium"
+          >
+            <option value={30}>30 Days Auto-Purge</option>
+            <option value={60}>60 Days Auto-Purge (Recommended)</option>
+            <option value={90}>90 Days Auto-Purge</option>
+          </select>
+        </div>
+
+        <div className="space-y-2">
+          <label className="font-bold text-slate-900">Random Screenshot Interval Window:</label>
+          <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 font-medium text-slate-800">
+            Randomized between <strong>5 Minutes</strong> and <strong>15 Minutes</strong> (Unpredictable anti-timing policy enabled).
           </div>
         </div>
-      )}
-
-      {/* === TAB 5: RETENTION & RULES SETTINGS === */}
-      {activeTab === "settings" && role === "admin" && (
-        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs space-y-6">
-          <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
-            <FaShieldAlt className="text-blue-600" /> Monitoring Policy & Retention Rules
-          </h2>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-xs text-slate-700">
-            <div className="space-y-2">
-              <label className="font-bold text-slate-900">Screenshot Auto-Retention Period (Days):</label>
-              <select
-                value={settings.retentionDays}
-                onChange={(e) => {
-                  const updated = { ...settings, retentionDays: Number(e.target.value) };
-                  setSettings(updated);
-                  saveMonitoringSettings(updated);
-                  showToast("Settings Saved ⚙️", `Retention period set to ${e.target.value} days.`, "success");
-                }}
-                className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 font-medium"
-              >
-                <option value={30}>30 Days Auto-Purge</option>
-                <option value={60}>60 Days Auto-Purge (Recommended)</option>
-                <option value={90}>90 Days Auto-Purge</option>
-              </select>
-            </div>
-
-            <div className="space-y-2">
-              <label className="font-bold text-slate-900">Random Screenshot Interval Window:</label>
-              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 font-medium text-slate-800">
-                Randomized between <strong>5 Minutes</strong> and <strong>15 Minutes</strong> (Unpredictable anti-timing policy enabled).
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* === PRIVACY CONSENT ACKNOWLEDGMENT MODAL === */}
-      {isConsentModalOpen && (
-        <Modal
-          isOpen={isConsentModalOpen}
-          onClose={() => setIsConsentModalOpen(false)}
-          title="Remote Monitoring Privacy & Transparency Consent"
-        >
-          <div className="space-y-4 text-xs text-slate-600">
-            <div className="p-4 rounded-xl bg-blue-50 border border-blue-100 text-blue-900 space-y-2">
-              <p className="font-bold">Required Acknowledgment before starting work session:</p>
-              <p>
-                "This work session is monitored for productivity purposes. The system collects screenshots at random intervals (5–15 minutes), activity information (mouse/keyboard input), application usage, and work timelines strictly during your active work session."
-              </p>
-            </div>
-
-            <ul className="space-y-1.5 list-disc pl-5 font-medium text-slate-700">
-              <li>Monitoring runs ONLY when your work session is Active.</li>
-              <li>Monitoring stops automatically upon logout or clicking Stop Session.</li>
-              <li>You can view all your captured screenshots and activity logs at any time.</li>
-            </ul>
-
-            <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
-              <button
-                onClick={() => setIsConsentModalOpen(false)}
-                className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 font-semibold"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleAcceptConsent}
-                className="px-5 py-2 rounded-xl bg-blue-600 text-white font-semibold hover:bg-blue-700 transition-colors shadow-xs"
-              >
-                I Acknowledge & Start Session
-              </button>
-            </div>
-          </div>
-        </Modal>
-      )}
-
-      {/* === SCREENSHOT LIGHTBOX PREVIEW MODAL === */}
-      {selectedScreenshotModal && (
-        <Modal
-          isOpen={!!selectedScreenshotModal}
-          onClose={() => setSelectedScreenshotModal(null)}
-          title={`Screenshot Metadata — ${selectedScreenshotModal.employee_name}`}
-        >
-          <div className="space-y-4 text-xs">
-            <div className="relative rounded-xl overflow-hidden bg-slate-900 border border-slate-200">
-              <img
-                src={selectedScreenshotModal.screenshot_url}
-                alt="Captured Screen"
-                className="w-full h-auto max-h-[60vh] object-contain"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 bg-slate-50 p-4 rounded-xl border border-slate-200 text-slate-700">
-              <div><span className="text-slate-400">Employee:</span> <strong>{selectedScreenshotModal.employee_name}</strong></div>
-              <div><span className="text-slate-400">Department:</span> <strong>{selectedScreenshotModal.department}</strong></div>
-              <div><span className="text-slate-400">App Captured:</span> <strong>{selectedScreenshotModal.captured_app}</strong></div>
-              <div><span className="text-slate-400">Timestamp:</span> <strong>{selectedScreenshotModal.time} ({selectedScreenshotModal.date})</strong></div>
-              <div><span className="text-slate-400">Device Name:</span> <strong>{selectedScreenshotModal.device_name}</strong></div>
-              <div><span className="text-slate-400">OS:</span> <strong>{selectedScreenshotModal.os}</strong></div>
-              <div><span className="text-slate-400">IP Address:</span> <strong>{selectedScreenshotModal.ip_address}</strong></div>
-              <div><span className="text-slate-400">Compressed Size:</span> <strong>{selectedScreenshotModal.size}</strong></div>
-            </div>
-
-            <div className="flex justify-between items-center pt-2">
-              <a
-                href={selectedScreenshotModal.screenshot_url}
-                target="_blank"
-                rel="noreferrer"
-                download
-                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 text-white font-semibold hover:bg-blue-700 transition-colors"
-              >
-                <FaDownload className="h-3.5 w-3.5" /> Download Screenshot
-              </a>
-
-              <button
-                onClick={() => setSelectedScreenshotModal(null)}
-                className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 font-semibold"
-              >
-                Close Preview
-              </button>
-            </div>
-          </div>
-        </Modal>
-      )}
-
-      {/* === DESTRUCTIVE ACTION CONFIRMATION MODAL (Requirement #2) === */}
-      {confirmModal.isOpen && (
-        <Modal
-          isOpen={confirmModal.isOpen}
-          onClose={() => setConfirmModal({ isOpen: false, loading: false })}
-          title="Confirm Destructive Action"
-        >
-          <div className="space-y-4 text-xs text-slate-700">
-            <div className="flex items-center gap-3 p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800">
-              <FaExclamationTriangle className="h-5 w-5 shrink-0 text-rose-600" />
-              <p className="font-semibold">
-                Are you sure you want to clear all monitoring logs and sessions? This action cannot be undone.
-              </p>
-            </div>
-
-            <div className="flex justify-end gap-3 pt-3">
-              <button
-                onClick={() => setConfirmModal({ isOpen: false, loading: false })}
-                className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 font-semibold hover:bg-slate-50 cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={async () => {
-                  setConfirmModal({ ...confirmModal, loading: true });
-                  if (typeof window !== "undefined") {
-                    localStorage.removeItem("remote_work_sessions");
-                    localStorage.removeItem("remote_screenshot_logs");
-                    localStorage.removeItem("remote_work_timelines");
-                    localStorage.removeItem("remote_activity_logs");
-                    localStorage.removeItem("remote_app_usage_logs");
-                  }
-                  setRemoteSessions([]);
-                  setScreenshots([]);
-                  setWorkTimelines([]);
-                  setConfirmModal({ isOpen: false, loading: false });
-                  showToast("Data Cleared 🗑️", "All dummy monitoring sessions and logs removed.", "info");
-                }}
-                disabled={confirmModal.loading}
-                className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold transition-colors shadow-xs cursor-pointer"
-              >
-                {confirmModal.loading ? "Clearing..." : "Confirm & Clear All Data 🗑️"}
-              </button>
-            </div>
-          </div>
-        </Modal>
-      )}
+      </div>
     </div>
+  )
+}
+
+{/* === PRIVACY CONSENT ACKNOWLEDGMENT MODAL === */ }
+{
+  isConsentModalOpen && (
+    <Modal
+      isOpen={isConsentModalOpen}
+      onClose={() => setIsConsentModalOpen(false)}
+      title="Remote Monitoring Privacy & Transparency Consent"
+    >
+      <div className="space-y-4 text-xs text-slate-600">
+        <div className="p-4 rounded-xl bg-blue-50 border border-blue-100 text-blue-900 space-y-2">
+          <p className="font-bold">Required Acknowledgment before starting work session:</p>
+          <p>
+            "This work session is monitored for productivity purposes. The system collects screenshots at random intervals (5–15 minutes), activity information (mouse/keyboard input), application usage, and work timelines strictly during your active work session."
+          </p>
+        </div>
+
+        <ul className="space-y-1.5 list-disc pl-5 font-medium text-slate-700">
+          <li>Monitoring runs ONLY when your work session is Active.</li>
+          <li>Monitoring stops automatically upon logout or clicking Stop Session.</li>
+          <li>You can view all your captured screenshots and activity logs at any time.</li>
+        </ul>
+
+        <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
+          <button
+            onClick={() => setIsConsentModalOpen(false)}
+            className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 font-semibold"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleAcceptConsent}
+            className="px-5 py-2 rounded-xl bg-blue-600 text-white font-semibold hover:bg-blue-700 transition-colors shadow-xs"
+          >
+            I Acknowledge & Start Session
+          </button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
+{/* === SCREENSHOT LIGHTBOX PREVIEW MODAL === */ }
+{
+  selectedScreenshotModal && (
+    <Modal
+      isOpen={!!selectedScreenshotModal}
+      onClose={() => setSelectedScreenshotModal(null)}
+      title={`Screenshot Metadata — ${selectedScreenshotModal.employee_name}`}
+    >
+      <div className="space-y-4 text-xs">
+        <div className="relative rounded-xl overflow-hidden bg-slate-900 border border-slate-200">
+          <img
+            src={selectedScreenshotModal.screenshot_url}
+            alt="Captured Screen"
+            className="w-full h-auto max-h-[60vh] object-contain"
+          />
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 bg-slate-50 p-4 rounded-xl border border-slate-200 text-slate-700">
+          <div><span className="text-slate-400">Employee:</span> <strong>{selectedScreenshotModal.employee_name}</strong></div>
+          <div><span className="text-slate-400">Department:</span> <strong>{selectedScreenshotModal.department}</strong></div>
+          <div><span className="text-slate-400">App Captured:</span> <strong>{selectedScreenshotModal.captured_app}</strong></div>
+          <div><span className="text-slate-400">Timestamp:</span> <strong>{selectedScreenshotModal.time} ({selectedScreenshotModal.date})</strong></div>
+          <div><span className="text-slate-400">Device Name:</span> <strong>{selectedScreenshotModal.device_name}</strong></div>
+          <div><span className="text-slate-400">OS:</span> <strong>{selectedScreenshotModal.os}</strong></div>
+          <div><span className="text-slate-400">IP Address:</span> <strong>{selectedScreenshotModal.ip_address}</strong></div>
+          <div><span className="text-slate-400">Compressed Size:</span> <strong>{selectedScreenshotModal.size}</strong></div>
+        </div>
+
+        <div className="flex justify-between items-center pt-2">
+          <a
+            href={selectedScreenshotModal.screenshot_url}
+            target="_blank"
+            rel="noreferrer"
+            download
+            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 text-white font-semibold hover:bg-blue-700 transition-colors"
+          >
+            <FaDownload className="h-3.5 w-3.5" /> Download Screenshot
+          </a>
+
+          <button
+            onClick={() => setSelectedScreenshotModal(null)}
+            className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 font-semibold"
+          >
+            Close Preview
+          </button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
+{/* === DESTRUCTIVE ACTION CONFIRMATION MODAL (Requirement #2) === */ }
+{
+  confirmModal.isOpen && (
+    <Modal
+      isOpen={confirmModal.isOpen}
+      onClose={() => setConfirmModal({ isOpen: false, loading: false })}
+      title="Confirm Destructive Action"
+    >
+      <div className="space-y-4 text-xs text-slate-700">
+        <div className="flex items-center gap-3 p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800">
+          <FaExclamationTriangle className="h-5 w-5 shrink-0 text-rose-600" />
+          <p className="font-semibold">
+            Are you sure you want to clear all monitoring logs and sessions? This action cannot be undone.
+          </p>
+        </div>
+
+        <div className="flex justify-end gap-3 pt-3">
+          <button
+            onClick={() => setConfirmModal({ isOpen: false, loading: false })}
+            className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 font-semibold hover:bg-slate-50 cursor-pointer"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={async () => {
+              setConfirmModal({ ...confirmModal, loading: true });
+              if (typeof window !== "undefined") {
+                localStorage.removeItem("remote_work_sessions");
+                localStorage.removeItem("remote_screenshot_logs");
+                localStorage.removeItem("remote_work_timelines");
+                localStorage.removeItem("remote_activity_logs");
+                localStorage.removeItem("remote_app_usage_logs");
+              }
+              setRemoteSessions([]);
+              setScreenshots([]);
+              setWorkTimelines([]);
+              setConfirmModal({ isOpen: false, loading: false });
+              showToast("Data Cleared 🗑️", "All dummy monitoring sessions and logs removed.", "info");
+            }}
+            disabled={confirmModal.loading}
+            className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold transition-colors shadow-xs cursor-pointer"
+          >
+            {confirmModal.loading ? "Clearing..." : "Confirm & Clear All Data 🗑️"}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+    </div >
   );
 }
