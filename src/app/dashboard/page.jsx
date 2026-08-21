@@ -33,8 +33,6 @@ import {
   FaFileInvoiceDollar,
   FaLaptopCode,
   FaChartLine,
-  FaArrowUp,
-  FaArrowDown,
   FaFilter,
   FaSearch,
   FaTimes
@@ -111,13 +109,15 @@ export default function DashboardPage() {
     try {
       const currentYearMonth = new Date().toISOString().slice(0, 7);
 
-      const [allEmps, fullProjList, incList, leaveList, expList, liveTasks] = await Promise.all([
+      const [allEmps, fullProjList, incList, leaveList, expList, liveTasks, studentList, invoiceList] = await Promise.all([
         dbFetch("employees").catch(() => []),
         dbFetch("projects").catch(() => []),
         dbFetch("incomes").catch(() => []),
         dbFetch("leaves").catch(() => []),
         dbFetch("expenses").catch(() => []),
-        dbFetch("daily_tasks").catch(() => [])
+        dbFetch("daily_tasks").catch(() => []),
+        dbFetch("students").catch(() => []),
+        dbFetch("invoices").catch(() => [])
       ]);
 
       const employeeCount = (allEmps || []).filter(e => (e.status || "").toLowerCase() !== "inactive" && (e.status || "").toLowerCase() !== "terminated").length;
@@ -130,7 +130,7 @@ export default function DashboardPage() {
         if (p1) combinedProjects = [...combinedProjects, ...JSON.parse(p1)];
         if (p2) combinedProjects = [...combinedProjects, ...JSON.parse(p2)];
         if (p3) combinedProjects = [...combinedProjects, ...JSON.parse(p3)];
-      } catch(e) {}
+      } catch (e) { }
 
       const uniqueProjMap = new Map();
       combinedProjects.forEach(p => {
@@ -139,13 +139,18 @@ export default function DashboardPage() {
       });
       let finalProjectsList = Array.from(uniqueProjMap.values());
 
-      const monthlyRevenue = (incList || [])
-        .filter(item => {
-          const isCurrentMonth = item.date && item.date.startsWith(currentYearMonth);
-          const isPaid = !item.status || item.status.toLowerCase() === "paid";
-          return isCurrentMonth && isPaid;
-        })
+      const incomesSum = (incList || [])
+        .filter(item => !item.status || item.status.toLowerCase() === "paid" || item.status.toLowerCase() === "cleared")
         .reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+
+      const studentFeesSum = (studentList || [])
+        .reduce((sum, s) => sum + (Number(s.fee_paid || s.submitted_fee || s.course_fee) || 0), 0);
+
+      const invoicesSum = (invoiceList || [])
+        .filter(inv => !inv.status || inv.status.toLowerCase() === "paid" || inv.status.toLowerCase() === "cleared")
+        .reduce((sum, inv) => sum + (Number(inv.amount || inv.total) || 0), 0);
+
+      const monthlyRevenue = incomesSum + studentFeesSum + invoicesSum;
 
       const pendingLeavesCount = (leaveList || []).filter(l => (l.status || "").toLowerCase() === "pending").length;
 
@@ -164,7 +169,7 @@ export default function DashboardPage() {
         const atLocal = localStorage.getItem("software_house_assigned_tasks");
         if (dtLocal) rawTasks = [...rawTasks, ...JSON.parse(dtLocal)];
         if (atLocal) rawTasks = [...rawTasks, ...JSON.parse(atLocal)];
-      } catch(e) {}
+      } catch (e) { }
 
       let combinedDeliverables = [];
 
@@ -306,7 +311,7 @@ export default function DashboardPage() {
           role: "student",
           department: s.course_name || "MERN Stack Course",
           attendance: getTodayAttendanceText(s.email),
-          progress: `${s.progress || 45}% Course Completed`,
+          progress: `${s.progress !== undefined ? s.progress : 0}% Course Completed`,
           dailyTask: "Submitted daily practical coding lab assignment.",
           feeStatus: s.fee_status || "Paid",
         });
@@ -322,14 +327,14 @@ export default function DashboardPage() {
           role: "intern",
           department: i.domain || "Software Engineering Intern",
           attendance: getTodayAttendanceText(i.email),
-          progress: `${i.progress || 50}% Internship Milestone Completed`,
+          progress: `${i.progress !== undefined ? i.progress : 0}% Internship Milestone Completed`,
           dailyTask: i.task_logs?.[0]?.details || "Working on assigned project module.",
           feeStatus: "Free Internship",
         });
       });
 
       setAllRegisteredUsersList(Array.from(combinedMap.values()));
-    } catch(e) {}
+    } catch (e) { }
   }, []);
 
   useEffect(() => {
@@ -450,13 +455,13 @@ export default function DashboardPage() {
 
   const executeConfirmedDelete = async () => {
     setConfirmDeleteModal(prev => ({ ...prev, loading: true }));
-    
+
     if (confirmDeleteModal.type === "clear_all_tasks") {
       setProjectsProgressList([]);
       try {
         localStorage.setItem("software_house_daily_tasks", JSON.stringify([]));
         localStorage.setItem("software_house_assigned_tasks", JSON.stringify([]));
-      } catch(e) {}
+      } catch (e) { }
       showToast("All Tasks Cleared 🗑️", "All active project tasks wiped clean.", "info");
     } else if (confirmDeleteModal.type === "single_task") {
       const targetId = confirmDeleteModal.targetId;
@@ -469,7 +474,7 @@ export default function DashboardPage() {
           const filtered = parsed.filter(t => String(t.id) !== String(targetId));
           localStorage.setItem("software_house_daily_tasks", JSON.stringify(filtered));
         }
-      } catch(e) {}
+      } catch (e) { }
       showToast("Task Deleted 🗑️", "Task removed permanently.", "info");
     }
 
@@ -488,7 +493,7 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      
+
       {/* 1. QUICK ACTION CARDS (Blue & White Design System) */}
       <div className="bg-white rounded-2xl p-6 border border-[#E2E8F0] shadow-sm space-y-4">
         <div className="flex items-center justify-between border-b border-[#E2E8F0] pb-3">
@@ -571,7 +576,6 @@ export default function DashboardPage() {
 
       {/* 2. STATISTIC CARDS GRID (Bg #FFFFFF, Border #E2E8F0, Radius 16px, Padding 24px, Light Shadow) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        
         {/* Stat 1: Total Staff */}
         <div className="bg-white rounded-2xl p-6 border border-[#E2E8F0] shadow-sm space-y-2 group">
           <div className="flex items-center justify-between">
@@ -582,8 +586,8 @@ export default function DashboardPage() {
           </div>
           <div className="flex items-baseline justify-between pt-1">
             <h3 className="text-2xl font-bold text-[#0F172A]">{stats.employees}</h3>
-            <span className="text-[10px] font-semibold text-[#2563EB] bg-[#EFF6FF] px-2 py-0.5 rounded-md border border-[#2563EB]/20 flex items-center gap-1">
-              <FaArrowUp className="text-[9px]" /> +12%
+            <span className="text-[10px] font-semibold text-[#2563EB] bg-[#EFF6FF] px-2 py-0.5 rounded-md border border-[#2563EB]/20">
+              Active Roster
             </span>
           </div>
           <p className="text-xs text-[#64748B]">Paid Staff & Engineers</p>
@@ -616,8 +620,8 @@ export default function DashboardPage() {
           </div>
           <div className="flex items-baseline justify-between pt-1">
             <h3 className="text-2xl font-bold text-[#0F172A]">Rs. {(stats.monthlyRevenue || 0).toLocaleString()}</h3>
-            <span className="text-[10px] font-semibold text-[#2563EB] bg-[#EFF6FF] px-2 py-0.5 rounded-md border border-[#2563EB]/20 flex items-center gap-1">
-              <FaArrowUp className="text-[9px]" /> +18%
+            <span className="text-[10px] font-semibold text-[#2563EB] bg-[#EFF6FF] px-2 py-0.5 rounded-md border border-[#2563EB]/20">
+              Current Month
             </span>
           </div>
           <p className="text-xs text-[#64748B]">Invoices Cleared This Month</p>
@@ -633,13 +637,9 @@ export default function DashboardPage() {
           </div>
           <div className="flex items-baseline justify-between pt-1">
             <h3 className="text-2xl font-bold text-[#0F172A]">Rs. {(stats.monthlyExpenses || 0).toLocaleString()}</h3>
-            <span className="text-[10px] font-semibold text-[#64748B] bg-[#F1F5F9] px-2 py-0.5 rounded-md">
-              Budget Safe
-            </span>
           </div>
           <p className="text-xs text-[#64748B]">Salaries & Overhead Costs</p>
         </div>
-
       </div>
 
       {/* 3. MULTI-SERIES FINANCIAL CHART */}
@@ -651,7 +651,6 @@ export default function DashboardPage() {
 
       {/* 4. ENTERPRISE MEMBERS DIRECTORY TABLE */}
       <div className="bg-white rounded-2xl p-6 border border-[#E2E8F0] shadow-sm space-y-4">
-        
         {/* Table Header */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-[#E2E8F0] pb-4">
           <div>
@@ -688,7 +687,7 @@ export default function DashboardPage() {
             { id: "onsite", label: "On-Site" },
             { id: "remote", label: "Remote" },
             { id: "present", label: "Present Today" },
-            { id: "absent", label: "Absent Today" }
+            { id: "absent", label: "Absent Today" },
           ].map((f) => (
             <button
               key={f.id}
@@ -753,11 +752,13 @@ export default function DashboardPage() {
 
                     {/* Status Badges: Present (#EFF6FF, #2563EB), Absent (#F1F5F9, #475569) */}
                     <td className="py-3.5 px-4">
-                      <span className={`text-[10px] font-semibold px-2.5 py-1 rounded-md border ${
-                        m.attendance.includes("Present")
-                          ? "bg-[#EFF6FF] text-[#2563EB] border-[#2563EB]/20"
-                          : "bg-[#F1F5F9] text-[#475569] border-[#E2E8F0]"
-                      }`}>
+                      <span
+                        className={`text-[10px] font-semibold px-2.5 py-1 rounded-md border ${
+                          m.attendance.includes("Present")
+                            ? "bg-[#EFF6FF] text-[#2563EB] border-[#2563EB]/20"
+                            : "bg-[#F1F5F9] text-[#475569] border-[#E2E8F0]"
+                        }`}
+                      >
                         {m.attendance}
                       </span>
                     </td>
@@ -1067,7 +1068,6 @@ export default function DashboardPage() {
           </div>
         </div>
       )}
-
     </div>
   );
 }

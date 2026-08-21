@@ -185,7 +185,7 @@ export default function AnnouncementsPage() {
           created_at: nowIso
         }
       ]);
-    } catch (dbErr) {}
+    } catch (dbErr) { }
 
     setCreateModalOpen(false);
     setForm({
@@ -212,7 +212,7 @@ export default function AnnouncementsPage() {
       const updated = announcements.filter((a) => a.id !== id);
       saveAnnouncementsState(updated);
       showToast("Announcement Deleted 🗑️", "Broadcast record removed successfully.", "info");
-    } catch(e) {
+    } catch (e) {
       showToast("Error", "Failed to delete announcement.", "error");
     } finally {
       setDeleteModal({ isOpen: false, item: null, loading: false });
@@ -389,7 +389,7 @@ export default function AnnouncementsPage() {
                   <option value="Tomorrow Holiday">🎉 Tomorrow Holiday Alert</option>
                   <option value="Office Meeting">📹 Office Meeting Notice</option>
                   <option value="New Policy">📜 New Company Policy</option>
-                  <option value="General Announcement">📢 General Announcement</option>
+                  <option value="General Announcement"> General Announcement</option>
                 </select>
               </div>
 
@@ -439,9 +439,8 @@ export default function AnnouncementsPage() {
                     if (validationErrors.title) setValidationErrors(prev => ({ ...prev, title: "" }));
                   }}
                   placeholder="e.g. Tomorrow Official Office Holiday Notice"
-                  className={`w-full rounded-xl border px-3.5 py-2.5 text-xs text-[#0F172A] outline-none font-medium bg-white ${
-                    validationErrors.title ? "border-rose-500" : "border-[#E2E8F0] focus:border-[#2563EB]"
-                  }`}
+                  className={`w-full rounded-xl border px-3.5 py-2.5 text-xs text-[#0F172A] outline-none font-medium bg-white ${validationErrors.title ? "border-rose-500" : "border-[#E2E8F0] focus:border-[#2563EB]"
+                    }`}
                 />
                 {validationErrors.title && (
                   <p className="text-[11px] text-rose-600 font-semibold mt-1">{validationErrors.title}</p>
@@ -461,9 +460,8 @@ export default function AnnouncementsPage() {
                     if (validationErrors.content) setValidationErrors(prev => ({ ...prev, content: "" }));
                   }}
                   placeholder="Type complete details for targeted users..."
-                  className={`w-full rounded-xl border px-3.5 py-2.5 text-xs text-[#0F172A] outline-none font-medium bg-white min-h-[90px] resize-y ${
-                    validationErrors.content ? "border-rose-500" : "border-[#E2E8F0] focus:border-[#2563EB]"
-                  }`}
+                  className={`w-full rounded-xl border px-3.5 py-2.5 text-xs text-[#0F172A] outline-none font-medium bg-white min-h-[90px] resize-y ${validationErrors.content ? "border-rose-500" : "border-[#E2E8F0] focus:border-[#2563EB]"
+                    }`}
                 />
                 {validationErrors.content && (
                   <p className="text-[11px] text-rose-600 font-semibold mt-1">{validationErrors.content}</p>

@@ -6,6 +6,7 @@ import { dbFetch, dbSaveRecord } from "@/lib/dbPersistence";
 import { logActivity, initActivityStatusTracker } from "@/lib/activityUtils";
 import Modal from "@/components/Modal";
 import { showToast } from "@/components/Toast";
+import { registerEmployeeWithCredentials } from "@/lib/studentEnrollmentUtils";
 import {
   FaUsers,
   FaUserPlus,
@@ -140,55 +141,50 @@ export default function EmployeesPage() {
       return;
     }
 
+    if (!form.assigned_password || form.assigned_password.length < 6) {
+      showToast("Password Security Error 🔴", "Temporary password must be at least 6 characters long.", "error");
+      return;
+    }
+
+    if (form.confirm_password && form.assigned_password !== form.confirm_password) {
+      showToast("Password Mismatch 🔴", "Passwords do not match. Please re-enter.", "error");
+      return;
+    }
+
     setLoading(true);
 
     try {
-      const newEmpObj = {
-        id: `emp-${Date.now()}`,
-        full_name: trimmedName,
-        father_name: form.father_name || "",
-        email: trimmedEmail,
-        phone: form.phone || "",
-        blood_group: form.blood_group || "O+",
-        department: form.department,
-        designation: form.designation || "Staff Member",
-        employment_type: form.employment_type || "Paid Staff (Full Time)",
-        joining_date: form.joining_date || new Date().toISOString().split("T")[0],
-        address: form.address || "",
-        guardian_phone: form.guardian_phone || "",
-        emergency_phone: form.emergency_phone || "",
-        status: "active"
-      };
+      const res = await registerEmployeeWithCredentials({
+        employeeData: {
+          full_name: trimmedName,
+          father_name: form.father_name || "",
+          email: trimmedEmail,
+          phone: form.phone || "",
+          blood_group: form.blood_group || "O+",
+          department: form.department,
+          designation: form.designation || "Staff Member",
+          employment_type: form.employment_type || "Paid Staff (Full Time)",
+          joining_date: form.joining_date || new Date().toISOString().split("T")[0],
+          address: form.address || "",
+          guardian_phone: form.guardian_phone || "",
+          emergency_phone: form.emergency_phone || "",
+        },
+        password: form.assigned_password,
+      });
 
-      await dbSaveRecord("employees", newEmpObj);
       await fetchEmployees();
-
-      // Credentials cache
-      const userCredentials = {
-        fullName: trimmedName,
-        email: trimmedEmail,
-        password: form.assigned_password || "employeepassword123",
-        role: "employee",
-        department: form.department,
-      };
-
-      try {
-        const saved = localStorage.getItem("registered_system_users");
-        const existing = saved ? JSON.parse(saved) : [];
-        const updatedUsers = [
-          ...existing.filter(u => u && u.email && u.email.toLowerCase().trim() !== trimmedEmail),
-          userCredentials
-        ];
-        localStorage.setItem("registered_system_users", JSON.stringify(updatedUsers));
-      } catch(err) {}
-
+      setLoading(false);
       setIsAddModalOpen(false);
+
+      showToast("Employee Account Created 🎉", `Staff record & login created for ${trimmedName}.`, "success");
+
       setForm({
         full_name: "",
         father_name: "",
         phone: "",
         email: "",
         assigned_password: "employeepassword123",
+        confirm_password: "employeepassword123",
         blood_group: "O+",
         address: "",
         guardian_phone: "",
@@ -198,10 +194,11 @@ export default function EmployeesPage() {
         employment_type: "Paid Staff (Full Time)",
         joining_date: new Date().toISOString().split("T")[0],
       });
-
-      showToast("Employee Added 👤", `'${trimmedName}' registered as Paid Staff.`, "success");
-    } finally {
+    } catch (err) {
       setLoading(false);
+      const msg = err.message || "Failed to create employee account.";
+      setEmailError(msg);
+      showToast("Error 🔴", msg, "error");
     }
   };
 

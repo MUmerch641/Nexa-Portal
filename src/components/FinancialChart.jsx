@@ -79,7 +79,7 @@ function FinancialChart({ revenue = 0, expenses = 0, categoryData = [] }) {
                 </div>
                 <div>
                   <h3 className="text-sm font-bold text-[#0F172A]">{chartTitle}</h3>
-                  <p className="text-xs text-[#64748B]">Revenue (#2563EB) & Expenses (#93C5FD)</p>
+                  <p className="text-xs text-[#64748B]">Revenue: {formatCurrency(safeRevenue)} • Expenses: {formatCurrency(safeExpenses)}</p>
                 </div>
               </div>
 
@@ -104,37 +104,38 @@ function FinancialChart({ revenue = 0, expenses = 0, categoryData = [] }) {
                   className="bg-white hover:bg-[#F8FAFC] text-[#2563EB] border border-[#E2E8F0] font-semibold px-3 py-1.5 rounded-xl text-xs transition-colors cursor-pointer flex items-center gap-1.5"
                   title="Export Financial CSV"
                 >
-                  <FaDownload className="text-xs" /> Export
+                  <FaDownload className="text-xs" /> <span>Export</span>
                 </button>
               </div>
             </div>
 
-            {/* SVG Visualizer with Blue Palette (#2563EB & #93C5FD) */}
-            <div className="pt-5 pb-2">
-              <div className="h-44 w-full flex items-end justify-between gap-2 sm:gap-3 px-2 relative">
-                
-                {/* Tooltip Card */}
-                {activeTooltip && (
-                  <div className="absolute top-0 left-1/2 -translate-x-1/2 bg-white text-[#0F172A] text-xs px-3.5 py-2 rounded-xl shadow-lg border border-[#E2E8F0] z-20 flex items-center gap-3 pointer-events-none">
-                    <span className="font-bold text-[#2563EB]">{activeTooltip.label}:</span>
-                    <span>Rev: <strong className="text-[#2563EB]">{formatCurrency(activeTooltip.revenue)}</strong></span>
-                    <span className="text-[#E2E8F0]">|</span>
-                    <span>Exp: <strong className="text-[#64748B]">{formatCurrency(activeTooltip.expenses)}</strong></span>
-                  </div>
-                )}
-
-                {trendData.map((d, i) => {
-                  const revHeightPct = Math.round((d.revenue / maxVal) * 100);
-                  const expHeightPct = Math.round((d.expenses / maxVal) * 100);
+            {/* BAR CHART CANVAS CONTAINER */}
+            <div className="mt-6">
+              <div className="h-48 flex items-end justify-between gap-2 border-b border-[#E2E8F0] pb-2 pt-4 px-2">
+                {trendData.map((d, idx) => {
+                  const revHeightPct = maxVal > 0 ? (d.revenue / maxVal) * 100 : 0;
+                  const expHeightPct = maxVal > 0 ? (d.expenses / maxVal) * 100 : 0;
 
                   return (
                     <div
-                      key={i}
-                      className="flex-1 flex flex-col items-center gap-1 group cursor-pointer"
-                      onMouseEnter={() => setActiveTooltip(d)}
+                      key={idx}
+                      className="flex-1 flex flex-col items-center h-full justify-end group relative"
+                      onMouseEnter={() => setActiveTooltip(idx)}
                       onMouseLeave={() => setActiveTooltip(null)}
                     >
-                      <div className="w-full flex items-end justify-center gap-1 h-36 border-b border-[#E2E8F0] pb-1 bg-[#F8FAFC]/50 rounded-t-lg">
+                      {/* Tooltip Hover Overlay */}
+                      {activeTooltip === idx && (
+                        <div className="absolute -top-12 z-20 bg-[#0F172A] text-white text-[10px] py-1.5 px-3 rounded-lg shadow-lg whitespace-nowrap space-y-0.5">
+                          <p className="font-bold border-b border-slate-700 pb-0.5">{d.label}</p>
+                          <p className="text-blue-400">Revenue: {formatCurrency(d.revenue)}</p>
+                          <p className="text-slate-300">Expenses: {formatCurrency(d.expenses)}</p>
+                          <p className={d.profit >= 0 ? "text-emerald-400 font-bold" : "text-rose-400 font-bold"}>
+                            Net: {formatCurrency(d.profit)}
+                          </p>
+                        </div>
+                      )}
+
+                      <div className="w-full flex items-end justify-center gap-1 h-full">
                         {/* Revenue Bar - Primary Blue #2563EB */}
                         <div
                           className="w-1/2 max-w-[16px] bg-[#2563EB] hover:bg-[#1D4ED8] rounded-t-md transition-colors"
@@ -146,7 +147,7 @@ function FinancialChart({ revenue = 0, expenses = 0, categoryData = [] }) {
                           style={{ height: `${Math.max(4, expHeightPct)}%` }}
                         />
                       </div>
-                      <span className="text-[11px] font-semibold text-[#64748B] mt-1">{d.label}</span>
+                      <span className="text-[11px] font-semibold text-[#64748B] mt-2">{d.label}</span>
                     </div>
                   );
                 })}
@@ -156,23 +157,34 @@ function FinancialChart({ revenue = 0, expenses = 0, categoryData = [] }) {
               <div className="flex items-center justify-center gap-6 mt-4 text-xs font-semibold text-[#64748B]">
                 <div className="flex items-center gap-2">
                   <span className="w-3 h-3 rounded bg-[#2563EB] inline-block" />
-                  <span>Revenue (#2563EB)</span>
+                  <span>Revenue ({formatCurrency(safeRevenue)})</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="w-3 h-3 rounded bg-[#64748B] inline-block" />
-                  <span>Expenses (#64748B)</span>
+                  <span>Expenses ({formatCurrency(safeExpenses)})</span>
                 </div>
               </div>
             </div>
           </div>
 
           {/* Profit Summary Card */}
-          <div className="p-3.5 rounded-xl bg-[#EFF6FF] border border-[#2563EB]/20 flex items-center justify-between text-xs">
-            <span className="font-semibold text-[#0F172A]">Net Financial Margin:</span>
-            <span className="font-bold text-[#2563EB] flex items-center gap-1.5">
-              <FaArrowUp />
-              {formatCurrency(netProfit)} ({profitMarginPct}%)
-            </span>
+          <div className={`p-3.5 rounded-xl border flex items-center justify-between text-xs ${
+            netProfit >= 0
+              ? "bg-[#EFF6FF] border-[#2563EB]/20"
+              : "bg-[#FEE2E2] border-[#EF4444]/20"
+          }`}>
+            {safeRevenue === 0 && safeExpenses === 0 ? (
+              <span className="font-bold text-[#64748B]">No financial data recorded yet</span>
+            ) : (
+              <span className={`font-bold flex items-center gap-1.5 ${netProfit >= 0 ? "text-[#2563EB]" : "text-rose-600"}`}>
+                {netProfit > 0 ? (
+                  <FaArrowUp className="text-emerald-600" />
+                ) : netProfit < 0 ? (
+                  <FaArrowDown className="text-rose-600" />
+                ) : null}
+                {formatCurrency(netProfit)} ({profitMarginPct}%)
+              </span>
+            )}
           </div>
         </div>
 

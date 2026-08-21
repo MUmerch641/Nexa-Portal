@@ -30,42 +30,8 @@ import { dbFetch, dbSaveList } from "@/lib/dbPersistence";
 export default function ComplaintsPage() {
   const [role, setRole] = useState("student");
   const [userEmail, setUserEmail] = useState("");
-  const initialComplaints = [
-    {
-      id: "comp-101",
-      submitted_by: "Ali Hassan (Student)",
-      email: "student@gmail.com",
-      category: "Internet Issues",
-      title: "Optix Fiber WiFi latency spike in Lab #3",
-      description: "WiFi disconnects during API submission testing in Lab #3 Station 12. Kindly inspect router.",
-      status: "In Progress",
-      created_at: "2026-08-01 10:30 AM",
-      admin_note: "IT Technician assigned to check Lab #3 Optix Router frequency.",
-    },
-    {
-      id: "comp-102",
-      submitted_by: "Sara Khan (Employee)",
-      email: "sara.design@gmail.com",
-      category: "HR Complaints",
-      title: "Overtime calculation query for July salary slip",
-      description: "Need clarification regarding 10 hours overtime tracking for July monthly payroll slip.",
-      status: "Resolved",
-      created_at: "2026-07-30 02:15 PM",
-      admin_note: "HR reviewed attendance logs and added Rs. 6,000 overtime bonus.",
-    },
-    {
-      id: "comp-103",
-      submitted_by: "Muhammad Rahim Bugti (Student)",
-      email: "rahim.student@gmail.com",
-      category: "Teacher Complaints",
-      title: "Request for extra lab session on Node.js REST APIs",
-      description: "Requesting 1-hour additional practical Q&A session with Engr. Hamza regarding backend architecture.",
-      status: "Pending",
-      created_at: "2026-08-01 11:00 AM",
-      admin_note: "Awaiting Lead Instructor schedule confirmation.",
-    },
-  ];
-  const [complaints, setComplaints] = useState(initialComplaints);
+  const initialComplaints = [];
+  const [complaints, setComplaints] = useState([]);
 
   const [filterCategory, setFilterCategory] = useState("All");
   const [filterStatus, setFilterStatus] = useState("All");
@@ -95,8 +61,19 @@ export default function ComplaintsPage() {
     setRole(savedRole);
     setUserEmail(savedEmail);
 
-    dbFetch("complaints", initialComplaints).then(data => {
-      setComplaints(data);
+    dbFetch("complaints", []).then(data => {
+      // Filter out any stale demo complaints (comp-101, comp-102, comp-103)
+      const cleanData = (data || []).filter(c =>
+        c &&
+        !c.title?.includes("Optix Fiber") &&
+        !c.title?.includes("Overtime calculation query") &&
+        !c.title?.includes("Request for extra lab session") &&
+        c.id !== "comp-101" &&
+        c.id !== "comp-102" &&
+        c.id !== "comp-103"
+      );
+      setComplaints(cleanData);
+      dbSaveList("complaints", cleanData);
     });
   }, []);
 
