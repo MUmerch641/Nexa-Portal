@@ -28,45 +28,8 @@ import { dbFetch, dbSaveList } from "@/lib/dbPersistence";
 export default function MeetingsPage() {
   const [role, setRole] = useState("admin");
   const [userEmail, setUserEmail] = useState("");
-  const initialMeetings = [
-    {
-      id: "meet-101",
-      title: "Sprint Planning & MERN Architecture Sync",
-      host: "Engr. Hamza (Lead Full-Stack)",
-      date: "2026-08-03",
-      time: "10:30 AM – 11:30 AM",
-      location: "Conference Room #1 / Google Meet",
-      meetUrl: "https://meet.google.com/xyz-abc-mno",
-      participants: [
-        { name: "Ali Hassan (Student)", email: "student@gmail.com", attendance: "Present" },
-        { name: "Muhammad Rahim Bugti (Senior Dev)", email: "rahim.staff@gmail.com", attendance: "Present" },
-        { name: "Sara Khan (UI/UX Lead)", email: "sara.design@gmail.com", attendance: "Absent" },
-      ],
-      notes: "Reviewed Supabase auth integration, foreign key relations, and PDF receipt generator edge cases.",
-      actionItems: [
-        { id: "act-1", item: "Ali Hassan: Finalize Next.js responsive flexbox layout", assignedTo: "student@gmail.com", status: "Done" },
-        { id: "act-2", item: "Rahim: Deploy Prisma PostgreSQL migration scripts", assignedTo: "rahim.staff@gmail.com", status: "Pending" },
-      ],
-    },
-    {
-      id: "meet-102",
-      title: "Weekly HR & Student Progress Review",
-      host: "Admin Officer",
-      date: "2026-08-05",
-      time: "02:00 PM – 03:00 PM",
-      location: "Main Boardroom (2nd Floor)",
-      meetUrl: "https://meet.google.com/hr-review-session",
-      participants: [
-        { name: "Ali Hassan (Student)", email: "student@gmail.com", attendance: "Pending" },
-        { name: "Sara Ahmed (Intern)", email: "sara.intern@gmail.com", attendance: "Pending" },
-      ],
-      notes: "Monthly fee proof verifications and 3-month certificate eligibility check.",
-      actionItems: [
-        { id: "act-3", item: "Admin: Verify student payment slips and issue official PDF receipts", assignedTo: "admin@gmail.com", status: "In Progress" },
-      ],
-    },
-  ];
-  const [meetings, setMeetings] = useState(initialMeetings);
+  const initialMeetings = [];
+  const [meetings, setMeetings] = useState([]);
 
   // Kebab Context Menu State
   const [activeKebabId, setActiveKebabId] = useState(null);
@@ -75,12 +38,7 @@ export default function MeetingsPage() {
   const [deleteModal, setDeleteModal] = useState({ isOpen: false, meeting: null, loading: false });
 
   // Live Group Chat State
-  const [chatMessages, setChatMessages] = useState([
-    { id: "c-1", sender: "Engr. Hamza", email: "hamza.instructor@gmail.com", text: "Welcome team! Please review the sprint deliverables.", time: "10:32 AM" },
-    { id: "c-2", sender: "Ali Hassan", email: "student@gmail.com", text: "Working on Next.js auth layout right now.", time: "10:34 AM" },
-    { id: "c-3", sender: "Muhammad Rahim Bugti", email: "rahim.staff@gmail.com", text: "Database schemas updated and ready for migration.", time: "10:35 AM" },
-  ]);
-
+  const [chatMessages, setChatMessages] = useState([]);
   const [chatInputText, setChatInputText] = useState("");
   
   // Invite Participant Modal State
@@ -91,16 +49,16 @@ export default function MeetingsPage() {
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [form, setForm] = useState({
     title: "",
-    host: "Engr. Hamza (Lead Instructor)",
-    date: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
-    time: "11:00 AM – 12:00 PM",
+    host: "",
+    date: new Date().toISOString().split("T")[0],
+    time: "10:00 AM – 11:00 AM",
     platform: "Google Meet",
     attendee_type: "Both",
     location: "Google Meet / Online",
-    meetUrl: "https://meet.google.com/new-session-id",
-    invitedEmails: "student@gmail.com, rahim.staff@gmail.com",
-    notes: "Discussion on practical assignments and weekly deliverables.",
-    actionItemsInput: "1. Finalize REST API endpoints\n2. Update database indexes",
+    meetUrl: "",
+    invitedEmails: "",
+    notes: "",
+    actionItemsInput: "",
   });
 
   // Active Workspace Modal State
@@ -122,11 +80,25 @@ export default function MeetingsPage() {
   useEffect(() => {
     const savedRole = localStorage.getItem("user_role") || "admin";
     const savedEmail = localStorage.getItem("current_user_email") || "";
+    const savedName = localStorage.getItem("current_user_name") || savedEmail || "Lead Trainer";
     setRole(savedRole);
     setUserEmail(savedEmail);
 
-    dbFetch("meetings", initialMeetings).then(data => {
-      setMeetings(data);
+    setForm((prev) => ({
+      ...prev,
+      host: prev.host || savedName,
+    }));
+
+    dbFetch("meetings", []).then(data => {
+      // Filter out any stale demo meetings containing "Engr. Hamza" or demo IDs
+      const cleanData = (data || []).filter(m =>
+        m &&
+        !m.host?.includes("Engr. Hamza") &&
+        m.id !== "meet-101" &&
+        m.id !== "meet-102"
+      );
+      setMeetings(cleanData);
+      dbSaveList("meetings", cleanData);
     });
   }, []);
 
@@ -138,7 +110,7 @@ export default function MeetingsPage() {
   const handleCreateMeeting = async (e) => {
     e.preventDefault();
     if (!form.title.trim() || !form.date || !form.time || !form.meetUrl.trim()) {
-      showToast("Missing Fields ⚠️", "Please fill in Title, Date, Time, and Link.", "warning");
+      showToast("Missing Fields ⚠️", "Please fill in Title, Date, Time, and Meeting Link.", "warning");
       return;
     }
 
@@ -183,7 +155,7 @@ export default function MeetingsPage() {
     const newMeeting = {
       id: "meet-" + Date.now(),
       title: form.title,
-      host: form.host,
+      host: form.host || userEmail || "Lead Trainer",
       date: form.date,
       time: form.time,
       platform: form.platform || "Google Meet",
@@ -202,16 +174,16 @@ export default function MeetingsPage() {
     setCreateModalOpen(false);
     setForm({
       title: "",
-      host: "Engr. Hamza (Lead Instructor)",
-      date: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
-      time: "11:00 AM – 12:00 PM",
+      host: userEmail || "Lead Trainer",
+      date: new Date().toISOString().split("T")[0],
+      time: "10:00 AM – 11:00 AM",
       platform: "Google Meet",
       attendee_type: "Both",
       location: "Google Meet / Online",
-      meetUrl: "https://meet.google.com/new-session-id",
-      invitedEmails: "student@gmail.com, rahim.staff@gmail.com",
-      notes: "Discussion on practical assignments and weekly deliverables.",
-      actionItemsInput: "1. Finalize REST API endpoints\n2. Update database indexes",
+      meetUrl: "",
+      invitedEmails: "",
+      notes: "",
+      actionItemsInput: "",
     });
 
     showToast("Meeting Scheduled 📅", `Meeting '${newMeeting.title}' created successfully.`, "success");

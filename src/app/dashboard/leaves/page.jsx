@@ -166,30 +166,30 @@ export default function LeavesPage() {
 
   const handleApprove = async (id) => {
     const targetLeave = leaves.find(l => l.id === id);
-    const updatedLeave = targetLeave ? { ...targetLeave, status: "approved", salary_cut: false } : { id, status: "approved", salary_cut: false };
+    const updatedLeave = targetLeave ? { ...targetLeave, status: "Approved", salary_cut: false } : { id, status: "Approved", salary_cut: false };
     try {
       await dbSaveRecord("leaves", updatedLeave);
     } catch(e) {}
 
-    const updated = leaves.map(l => l.id === id ? { ...l, status: "approved", salary_cut: false } : l);
+    const updated = leaves.map(l => l.id === id ? { ...l, status: "Approved", salary_cut: false } : l);
     setLeaves(updated);
     localStorage.setItem("software_house_leaves", JSON.stringify(updated));
 
-    showToast("Leave Approved 🟢", "Approved by Admin. Salary exempt.", "success");
+    showToast("Leave Approved 🟢", "Approved by Admin. Status updated for applicant.", "success");
   };
 
   const handleReject = async (id) => {
     const targetLeave = leaves.find(l => l.id === id);
-    const updatedLeave = targetLeave ? { ...targetLeave, status: "rejected", salary_cut: true } : { id, status: "rejected", salary_cut: true };
+    const updatedLeave = targetLeave ? { ...targetLeave, status: "Rejected", salary_cut: true } : { id, status: "Rejected", salary_cut: true };
     try {
       await dbSaveRecord("leaves", updatedLeave);
     } catch(e) {}
 
-    const updated = leaves.map(l => l.id === id ? { ...l, status: "rejected", salary_cut: true } : l);
+    const updated = leaves.map(l => l.id === id ? { ...l, status: "Rejected", salary_cut: true } : l);
     setLeaves(updated);
     localStorage.setItem("software_house_leaves", JSON.stringify(updated));
 
-    showToast("Leave Rejected 🔴", "Leave request rejected. Salary cut policy applied.", "info");
+    showToast("Leave Rejected 🔴", "Leave request rejected.", "info");
   };
 
   const focusForm = () => {

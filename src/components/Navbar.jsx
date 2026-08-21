@@ -207,24 +207,45 @@ export default function Navbar({ onMenuClick, isSidebarOpen = true }) {
       let resolvedEmail = storedEmail;
       let resolvedName = "";
 
-      try {
-        const { data } = await supabase.auth.getUser();
-        const authUser = data?.user;
-        resolvedEmail = (authUser?.email || resolvedEmail).trim().toLowerCase();
-        resolvedName = authUser?.user_metadata?.full_name || authUser?.user_metadata?.name || "";
-      } catch (e) {}
+      // 1. Pehle localStorage mein stored name check karo (login ke waqt save hota hai)
+      resolvedName = (localStorage.getItem("current_user_name") || "").trim();
 
+      // 2. Agar nahi mila to employees/students/interns local data mein dhundho
       if (!resolvedName && resolvedEmail) {
         try {
-          const response = await fetch(`/api/persistence?table=employees`);
-          const payload = await response.json();
-          const employee = (payload?.data || []).find(
-            (item) => (item?.email || "").trim().toLowerCase() === resolvedEmail
-          );
-          resolvedName = employee?.full_name || employee?.name || "";
+          const emps = JSON.parse(localStorage.getItem("persistent_employees") || "[]");
+          const matched = emps.find(e => (e.email || "").toLowerCase().trim() === resolvedEmail);
+          if (matched) resolvedName = matched.full_name || matched.name || "";
         } catch (e) {}
       }
 
+      if (!resolvedName && resolvedEmail) {
+        try {
+          const stus = JSON.parse(localStorage.getItem("persistent_courses") || "[]");
+          const matched = stus.find(s => (s.email || "").toLowerCase().trim() === resolvedEmail);
+          if (matched) resolvedName = matched.full_name || matched.name || "";
+        } catch (e) {}
+      }
+
+      if (!resolvedName && resolvedEmail) {
+        try {
+          const ints = JSON.parse(localStorage.getItem("persistent_interns") || "[]");
+          const matched = ints.find(i => (i.email || "").toLowerCase().trim() === resolvedEmail);
+          if (matched) resolvedName = matched.full_name || matched.name || "";
+        } catch (e) {}
+      }
+
+      // 3. Supabase auth metadata check karo
+      if (!resolvedName) {
+        try {
+          const { data } = await supabase.auth.getUser();
+          const authUser = data?.user;
+          if (authUser?.email) resolvedEmail = authUser.email.trim().toLowerCase();
+          resolvedName = authUser?.user_metadata?.full_name || authUser?.user_metadata?.name || "";
+        } catch (e) {}
+      }
+
+      // 4. Last resort — email se name banana
       if (!resolvedName && resolvedEmail) {
         resolvedName = resolvedEmail.split("@")[0].replace(/[._-]+/g, " ");
       }

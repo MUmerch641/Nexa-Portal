@@ -7,6 +7,7 @@ import Modal from "@/components/Modal";
 import { showToast } from "@/components/Toast";
 import ScrollableTabs from "@/components/ScrollableTabs";
 import Link from "next/link";
+import { registerInternWithCredentials } from "@/lib/studentEnrollmentUtils";
 import {
   FaLaptopCode,
   FaUserPlus,
@@ -27,7 +28,10 @@ import {
   FaBuilding,
   FaExternalLinkAlt,
   FaEllipsisV,
-  FaCheck
+  FaCheck,
+  FaLock,
+  FaKey,
+  FaShieldAlt,
 } from "react-icons/fa";
 
 export default function InternshipsPage() {
@@ -110,22 +114,22 @@ export default function InternshipsPage() {
   const availableDomains = [
     {
       title: "Full Stack MERN Web Development",
-      mentor: "Engr. Hamza (Lead Full-Stack)",
+      mentor: "Lead Tech Mentor",
       resources: "https://github.com/softwarehouse/mern-internship-tasks",
     },
     {
       title: "Python & AI Data Science",
-      mentor: "Dr. Bilal Ahmed (AI Specialist)",
+      mentor: "Lead AI Mentor",
       resources: "https://drive.google.com/drive/folders/ai-internship-labs",
     },
     {
       title: "UI/UX Graphic & Product Design",
-      mentor: "Ayesha Malik (Senior Designer)",
+      mentor: "Lead UI/UX Mentor",
       resources: "https://figma.com/@softwarehouse-interns",
     },
     {
       title: "Flutter Mobile App Development",
-      mentor: "Usman Raza (Mobile Apps Lead)",
+      mentor: "Lead Mobile Apps Mentor",
       resources: "https://github.com/softwarehouse/flutter-internship-tasks",
     },
   ];
@@ -135,11 +139,13 @@ export default function InternshipsPage() {
     full_name: "",
     cnic: "",
     email: "",
+    assigned_password: "internpassword123",
+    confirm_password: "internpassword123",
     phone: "",
     emergency_phone: "",
     internship_mode: "On-Site / Offline",
     course_name: "Full Stack MERN Web Development",
-    instructor: "Engr. Hamza (Lead Full-Stack)",
+    instructor: "Lead Tech Mentor",
     resources_url: "https://github.com/softwarehouse/mern-internship-tasks",
     screen_access_url: "https://meet.google.com/abc-defg-hij",
     start_date: todayStr,
@@ -185,7 +191,7 @@ export default function InternshipsPage() {
         internship_mode: "On-Site / Offline",
         is_remote: false,
         course_name: "Full Stack MERN Web Development",
-        instructor: "Engr. Hamza (Lead Full-Stack)",
+        instructor: "Lead Tech Mentor",
         start_date: "2026-05-01",
         end_date: "2026-08-01",
         progress: 100,
@@ -202,7 +208,7 @@ export default function InternshipsPage() {
         internship_mode: "Remote (Work From Home)",
         is_remote: true,
         course_name: "UI/UX Graphic & Product Design",
-        instructor: "Ayesha Malik (Senior Designer)",
+        instructor: "Lead UI/UX Mentor",
         start_date: "2026-06-01",
         end_date: "2026-09-01",
         progress: 60,
@@ -219,59 +225,63 @@ export default function InternshipsPage() {
 
   const handleAddIntern = async (e) => {
     e.preventDefault();
-    if (!form.full_name || !form.email) return;
+    if (!form.full_name.trim() || !form.email.trim()) {
+      showToast("Validation Error 🔴", "Please enter Intern Full Name and Email Address.", "error");
+      return;
+    }
+
+    if (!form.assigned_password || form.assigned_password.length < 6) {
+      showToast("Password Security Error 🔴", "Temporary password must be at least 6 characters long.", "error");
+      return;
+    }
+
+    if (form.confirm_password && form.assigned_password !== form.confirm_password) {
+      showToast("Password Mismatch 🔴", "Passwords do not match. Please re-enter.", "error");
+      return;
+    }
 
     setSubmitting(true);
-    const isRemoteMode = form.internship_mode.includes("Remote");
 
-    const newInternObj = {
-      id: `i-${Date.now()}`,
-      full_name: form.full_name,
-      cnic: form.cnic,
-      email: form.email,
-      phone: form.phone,
-      internship_mode: form.internship_mode,
-      is_remote: isRemoteMode,
-      enrollment_type: "3-Month Free Internship",
-      course_name: form.course_name,
-      instructor: form.instructor,
-      resources_url: form.resources_url,
-      screen_access_url: form.screen_access_url,
-      start_date: form.start_date,
-      end_date: form.end_date,
-      progress: Number(form.progress || 0),
-      daily_logs: [
-        {
-          id: `l-${Date.now()}`,
-          date: new Date().toLocaleString(),
-          author: form.full_name,
-          task: `Enrolled in ${form.internship_mode} 3-Month Free Internship for ${form.course_name}. Training started.`,
-        },
-      ],
-    };
+    try {
+      const res = await registerInternWithCredentials({
+        internData: form,
+        password: form.assigned_password,
+      });
 
-    const currentList = [newInternObj, ...interns];
-    setInterns(currentList);
-    await dbSaveRecord("interns", newInternObj).catch(() => {});
-    setSubmitting(false);
+      const currentList = [res.intern, ...interns];
+      setInterns(currentList);
+      setSubmitting(false);
 
-    showToast("Intern Enrolled 🎉", `${form.full_name} enrolled as ${form.internship_mode}.`, "success");
+      showToast("Intern Enrolled 🎉", `${form.full_name} enrolled as ${form.internship_mode}. Login account created.`, "success");
+      showAlert(
+        "Intern Account & Credentials Created 🟢",
+        `Intern "${form.full_name}" registered successfully!\n\nTech Domain: ${form.course_name}\nMode: ${form.internship_mode}\nLogin Email: ${form.email}\nAuth Account Created (No plain-text password stored in DB).`,
+        "success"
+      );
 
-    setForm({
-      full_name: "",
-      cnic: "",
-      email: "",
-      phone: "",
-      emergency_phone: "",
-      internship_mode: "On-Site / Offline",
-      course_name: "Full Stack MERN Web Development",
-      instructor: "Engr. Hamza (Lead Full-Stack)",
-      resources_url: "https://github.com/softwarehouse/mern-internship-tasks",
-      screen_access_url: "https://meet.google.com/abc-defg-hij",
-      start_date: todayStr,
-      end_date: threeMonthsLaterStr,
-      progress: 0,
-    });
+      setForm({
+        full_name: "",
+        cnic: "",
+        email: "",
+        assigned_password: "internpassword123",
+        confirm_password: "internpassword123",
+        phone: "",
+        emergency_phone: "",
+        internship_mode: "On-Site / Offline",
+        course_name: "Full Stack MERN Web Development",
+        instructor: "Lead Tech Mentor",
+        resources_url: "https://github.com/softwarehouse/mern-internship-tasks",
+        screen_access_url: "https://meet.google.com/abc-defg-hij",
+        start_date: todayStr,
+        end_date: threeMonthsLaterStr,
+        progress: 0,
+      });
+    } catch (err) {
+      setSubmitting(false);
+      const msg = err.message || "Failed to register intern account.";
+      showToast("Enrollment Error 🔴", msg, "error");
+      showAlert("Enrollment Error 🛑", msg, "error");
+    }
   };
 
   const postDailyLog = async (internId) => {
@@ -326,6 +336,10 @@ export default function InternshipsPage() {
   };
 
   const filteredInterns = interns.filter((i) => {
+    if (role === "intern") {
+      const userEmail = (localStorage.getItem("current_user_email") || "").trim().toLowerCase();
+      return (i.email || "").trim().toLowerCase() === userEmail;
+    }
     if (filterMode === "All") return true;
     if (filterMode === "On-Site") return !i.internship_mode?.includes("Remote");
     if (filterMode === "Remote") return i.internship_mode?.includes("Remote");
@@ -545,10 +559,47 @@ export default function InternshipsPage() {
                 </div>
               </div>
 
-              {/* Subtle Informational Badge replacing standalone green banner (Requirement #3) */}
-              <div className="rounded-xl bg-[#EFF6FF] border border-[#2563EB]/20 p-2.5 text-xs text-[#2563EB] font-bold flex items-center gap-2">
-                <FaCheck className="text-xs text-[#2563EB]" />
-                <span>✓ Free 3-Month Internship Program</span>
+              {/* Login Credentials Section */}
+              <div className="rounded-xl border border-blue-100 bg-blue-50/50 p-3 space-y-2.5 my-2">
+                <div className="flex items-center gap-1.5 text-blue-900 font-bold text-xs">
+                  <FaLock className="text-blue-600" />
+                  <span>Intern Login Credentials</span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <div>
+                    <label className="block text-[10px] font-semibold uppercase text-slate-700 mb-1">
+                      Temporary Password *
+                    </label>
+                    <input
+                      type="password"
+                      name="assigned_password"
+                      value={form.assigned_password || ""}
+                      onChange={handleChange}
+                      placeholder="Min 6 characters"
+                      required
+                      className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-900 outline-none focus:border-blue-600 font-mono"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-semibold uppercase text-slate-700 mb-1">
+                      Confirm Password *
+                    </label>
+                    <input
+                      type="password"
+                      name="confirm_password"
+                      value={form.confirm_password || ""}
+                      onChange={handleChange}
+                      placeholder="Re-enter password"
+                      required
+                      className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-900 outline-none focus:border-blue-600 font-mono"
+                    />
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-500 italic">
+                  Intern will log in using: <span className="font-semibold text-slate-700">{form.email || "intern@example.com"}</span>
+                </p>
               </div>
 
               {/* Full Width Primary CTA Button (Requirement #3) */}
@@ -558,7 +609,7 @@ export default function InternshipsPage() {
                   disabled={submitting}
                   className="w-full rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold py-3 text-xs transition-colors shadow-xs cursor-pointer"
                 >
-                  {submitting ? "Enrolling..." : `Enroll ${form.internship_mode.includes("Remote") ? "Remote" : "On-Site"} Intern`}
+                  {submitting ? "Enrolling & Creating Account..." : `Enroll ${form.internship_mode.includes("Remote") ? "Remote" : "On-Site"} Intern`}
                 </button>
               </div>
             </form>
