@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo } from "react";
 import { dbFetch, dbSaveRecord, dbSaveList } from "@/lib/dbPersistence";
 import Modal from "@/components/Modal";
 import { showToast } from "@/components/Toast";
-import { verifyOfficeWifiAttendance } from "@/lib/wifiVerificationUtils";
+import { verifyOfficeWifiAttendance } from "@/lib/attendanceIpUtils";
 import {
   FaUserCheck,
   FaCalendarCheck,
@@ -570,6 +570,8 @@ export default function EmployeeDedicatedDashboardPage() {
                 </table>
               </div>
             )}
+          </div>
+
           {/* ONLINE MCQ EXAM CARD SECTION */}
           <div className="bg-white p-6 rounded-2xl border border-[#E2E8F0] shadow-sm space-y-4">
             <div className="flex items-center justify-between border-b border-[#E2E8F0] pb-3">
