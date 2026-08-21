@@ -1,34 +1,25 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { login, resolveUserRoleAndProfile } from "@/lib/auth";
+import { login } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
 import Modal from "@/components/Modal";
 import ToastContainer, { showToast } from "@/components/Toast";
-import { FaLock, FaEnvelope, FaShieldAlt, FaArrowRight, FaUserPlus } from "react-icons/fa";
+import { FaLock, FaEnvelope } from "react-icons/fa";
 
 export default function LoginPage() {
   const router = useRouter();
+  const selectedRole = "admin";
 
   // Form Fields
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const workMode = "remote"; // 'remote' (Ipify OFF) or 'onsite'
   const [loading, setLoading] = useState(false);
-  const [resendingEmail, setResendingEmail] = useState(false);
-  const [showResendVerification, setShowResendVerification] = useState(false);
 
   // Form Validation Errors State
   const [errors, setErrors] = useState({ email: "", password: "" });
-
-  // Notification Modal State
-  const [modal, setModal] = useState({
-    isOpen: false,
-    title: "",
-    message: "",
-    type: "info",
-  });
 
   const handleEmailChange = (e) => {
     const val = e.target.value;
@@ -51,34 +42,27 @@ export default function LoginPage() {
     }
   };
 
+  // Notification Modal State
+  const [modal, setModal] = useState({
+    isOpen: false,
+    title: "",
+    message: "",
+    type: "info",
+  });
+
   // Redirect user if already logged in when visiting /login
   useEffect(() => {
-    const checkActiveSession = async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        const isLoggedIn = localStorage.getItem("isLoggedIn") === "true";
-        const userRole = localStorage.getItem("user_role");
-
-        if (session || (isLoggedIn && userRole)) {
-          const activeRole = userRole || session?.user?.user_metadata?.role || "admin";
-          if (activeRole === "client") {
-            router.replace("/dashboard/client-portal");
-          } else if (activeRole === "intern") {
-            router.replace("/dashboard/internships");
-          } else if (activeRole === "student") {
-            router.replace("/dashboard/student");
-          } else if (activeRole === "employee") {
-            router.replace("/dashboard/employee");
-          } else if (activeRole === "admin") {
-            router.replace("/dashboard");
-          } else {
-            router.replace("/dashboard");
-          }
-        }
-      } catch (e) {}
-    };
-
-    checkActiveSession();
+    const isLoggedIn = localStorage.getItem("isLoggedIn") === "true";
+    const userRole = localStorage.getItem("user_role");
+    if (isLoggedIn && userRole) {
+      if (userRole === "client") {
+        router.replace("/dashboard/client-portal");
+      } else if (userRole === "admin") {
+        router.replace("/dashboard");
+      } else {
+        router.replace("/dashboard/attendance");
+      }
+    }
   }, [router]);
 
   const showAlert = (title, message, type = "info") => {
@@ -89,43 +73,21 @@ export default function LoginPage() {
     setModal({ ...modal, isOpen: false });
   };
 
-  // Resend email verification link
-  const handleResendVerification = async () => {
-    const trimmedEmail = (email || "").trim().toLowerCase();
-    if (!trimmedEmail) {
-      showToast("Email Required", "Please enter your registered email address.", "error");
-      return;
-    }
-
-    setResendingEmail(true);
+  // Helper to load registered users from localStorage cache
+  const getRegisteredUsers = () => {
     try {
-      const { error } = await supabase.auth.resend({
-        type: "signup",
-        email: trimmedEmail,
-      });
-
-      if (error) {
-        showToast("Resend Failed 🛑", error.message || "Failed to resend confirmation email.", "error");
-      } else {
-        showToast("Verification Sent ✉️", `Confirmation email resent to ${trimmedEmail}. Please check your inbox.`, "success");
-        showAlert(
-          "Verification Email Sent ✉️",
-          `A new confirmation link has been sent to ${trimmedEmail}.\n\nPlease open the link from your email to activate your account, then return here to log in.`,
-          "success"
-        );
-      }
-    } catch (err) {
-      showToast("Error", "Could not send verification email. Please try again later.", "error");
-    } finally {
-      setResendingEmail(false);
+      const saved = localStorage.getItem("registered_system_users");
+      return saved ? JSON.parse(saved) : [];
+    } catch(e) {
+      return [];
     }
   };
 
-  // Handle login submission using Supabase Auth (Single Source of Truth)
+  // Handle login submission. New accounts are created by an administrator.
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    const trimmedEmail = (email || "").trim().toLowerCase();
+    const trimmedEmail = (email || "").trim();
     const trimmedPassword = (password || "").trim();
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -148,154 +110,163 @@ export default function LoginPage() {
 
     setErrors({ email: "", password: "" });
     setLoading(true);
-    setShowResendVerification(false);
 
+    // Check if account has been deactivated by Admin
+    let persistentEmps = [];
     try {
-      // 1. Authenticate with Supabase Auth (Single Source of Truth)
-      const { data: authData, error: authError } = await login(trimmedEmail, trimmedPassword);
+      const p = localStorage.getItem("persistent_employees");
+      if (p) persistentEmps = JSON.parse(p);
+    } catch (e) {}
 
-      if (authError) {
-        setLoading(false);
-        const errMsg = (authError.message || "").toLowerCase();
+    const matchedEmpRecord = persistentEmps.find(
+      (emp) => (emp.email || "").trim().toLowerCase() === email.trim().toLowerCase()
+    );
 
-        // Case A: Email Not Verified / Confirmed
-        if (
-          errMsg.includes("email not confirmed") ||
-          errMsg.includes("not confirmed") ||
-          errMsg.includes("verification")
-        ) {
-          setShowResendVerification(true);
-          showToast("Email Not Verified ✉️", "Please verify your email before logging in.", "warning");
-          showAlert(
-            "Email Verification Required ✉️",
-            `Your account (${trimmedEmail}) is registered, but the email address has not been verified yet.\n\nPlease check your inbox for the confirmation link. If you didn't receive it, click 'Resend Verification Link' below.`,
-            "warning"
-          );
-          return;
-        }
-
-        // Case B: Invalid Credentials (Wrong Email or Wrong Password)
-        if (
-          errMsg.includes("invalid login credentials") ||
-          errMsg.includes("invalid_grant") ||
-          errMsg.includes("invalid credentials")
-        ) {
-          // Check local offline fallback seed for offline development simulation
-          const defaultAccounts = [
-            { email: "admin@gmail.com", password: "adminpassword", role: "admin", fullName: "Admin User" },
-            { email: "student@gmail.com", password: "studentpassword", role: "student", fullName: "Ali Hassan" },
-            { email: "sara.design@gmail.com", password: "employeepassword", role: "employee", fullName: "Sara Khan" },
-            { email: "rahim.dev@gmail.com", password: "employeepassword", role: "employee", fullName: "Muhammad Rahim Bugti" },
-            { email: "ali.staff@gmail.com", password: "employeepassword", role: "employee", fullName: "Muhammad Ali" },
-            { email: "client@acmetech.com", password: "clientpassword", role: "client", fullName: "Client User" },
-          ];
-
-          let registeredUsers = [];
-          try {
-            const saved = localStorage.getItem("registered_system_users");
-            if (saved) registeredUsers = JSON.parse(saved);
-          } catch (e) {}
-
-          const offlineMatch = [...defaultAccounts, ...registeredUsers].find(
-            (u) => (u.email || "").toLowerCase() === trimmedEmail && u.password === trimmedPassword
-          );
-
-          if (offlineMatch) {
-            // Local dev fallback match
-            const activeRole = offlineMatch.role || "employee";
-            const fullName = offlineMatch.fullName || offlineMatch.full_name || trimmedEmail.split("@")[0];
-
-            localStorage.setItem("isLoggedIn", "true");
-            localStorage.setItem("user_role", activeRole);
-            localStorage.setItem("current_user_email", trimmedEmail);
-            localStorage.setItem("current_user_name", fullName);
-            window.dispatchEvent(new Event("roleChanged"));
-
-            showToast("Login Successful 🟢", `Welcome back! Logging into ${activeRole.toUpperCase()} Portal...`, "success");
-            redirectToDashboard(activeRole);
-            return;
-          }
-
-          showToast("Invalid Credentials 🔴", "Incorrect email or password. Please check your credentials.", "error");
-          showAlert(
-            "Invalid Credentials 🔴",
-            "The email address or password you entered is incorrect. Please check your credentials and try again.",
-            "error"
-          );
-          return;
-        }
-
-        // Case C: Network or Service Error
-        if (errMsg.includes("fetch") || errMsg.includes("network") || errMsg.includes("connection")) {
-          showToast("Network Error 🌐", "Could not connect to authentication service. Please check your connection.", "error");
-          showAlert(
-            "Connection Error 🌐",
-            "Unable to reach the authentication service. Please check your internet connection or try again in a few moments.",
-            "error"
-          );
-          return;
-        }
-
-        // Case D: Other Supabase Auth Error
-        showToast("Authentication Error 🛑", authError.message || "Failed to sign in.", "error");
-        showAlert("Authentication Error 🛑", authError.message || "An error occurred during authentication.", "error");
-        return;
-      }
-
-      // 2. Successful Supabase Auth Login
-      if (authData && authData.user) {
-        const user = authData.user;
-
-        // Resolve user role, full name, and remote work properties
-        const profileInfo = await resolveUserRoleAndProfile(user);
-        const resolvedRole = profileInfo.role || "employee";
-        const resolvedName = profileInfo.fullName || user.user_metadata?.full_name || trimmedEmail.split("@")[0];
-
-        // Store active session keys
-        localStorage.setItem("isLoggedIn", "true");
-        localStorage.setItem("user_role", resolvedRole);
-        localStorage.setItem("current_user_email", trimmedEmail);
-        localStorage.setItem("current_user_name", resolvedName);
-        localStorage.setItem("current_user_id", user.id);
-
-        if (profileInfo.isRemote) {
-          localStorage.setItem(`is_remote_user_${trimmedEmail}`, "true");
-          localStorage.setItem(`remote_attendance_override_${trimmedEmail}`, "true");
-        }
-
-        window.dispatchEvent(new Event("roleChanged"));
-        setLoading(false);
-
-        showToast("Login Successful 🟢", `Welcome back, ${resolvedName}! Accessing ${resolvedRole.toUpperCase()} Portal...`, "success");
-        redirectToDashboard(resolvedRole);
-      }
-    } catch (err) {
+    if (matchedEmpRecord && (matchedEmpRecord.status === "inactive" || matchedEmpRecord.status === "deactivated")) {
       setLoading(false);
-      console.error("Login exception:", err);
-      showToast("System Error", "An unexpected error occurred during login. Please try again.", "error");
+      showToast("Account Deactivated 🛑", "Your account has been deactivated by Admin. Access denied.", "error");
+      showAlert(
+        "Account Deactivated 🛑",
+        "Your employee account has been deactivated by Management. You cannot log into the system portal. Please contact HR or System Administrator.",
+        "error"
+      );
+      return;
     }
-  };
 
-  const redirectToDashboard = (role) => {
-    const targetRole = (role || "").toLowerCase().trim();
-    if (targetRole === "client") {
-      setTimeout(() => router.replace("/dashboard/client-portal"), 500);
-    } else if (targetRole === "intern") {
-      setTimeout(() => router.replace("/dashboard/internships"), 500);
-    } else if (targetRole === "student") {
-      setTimeout(() => router.replace("/dashboard/student"), 500);
-    } else if (targetRole === "employee") {
-      setTimeout(() => router.replace("/dashboard/employee"), 500);
-    } else if (targetRole === "admin") {
-      setTimeout(() => router.replace("/dashboard"), 500);
+    // Normal Login Flow: Strict authentication against registered accounts
+    const registeredUsers = getRegisteredUsers();
+    
+    // Default system seed accounts assigned by Admin
+    const defaultAccounts = [
+      { email: "admin@gmail.com", password: "adminpassword", role: "admin", fullName: "Admin User" },
+      { email: "student@gmail.com", password: "studentpassword", role: "student", fullName: "Ali Hassan" },
+      { email: "sara.design@gmail.com", password: "employeepassword", role: "employee", fullName: "Sara Khan" },
+      { email: "rahim.dev@gmail.com", password: "employeepassword", role: "employee", fullName: "Muhammad Rahim Bugti" },
+      { email: "ali.staff@gmail.com", password: "employeepassword", role: "employee", fullName: "Muhammad Ali" },
+      { email: "client@acmetech.com", password: "clientpassword", role: "client", fullName: "Client User" },
+    ];
+
+    const allValidUsers = [...defaultAccounts, ...registeredUsers];
+
+    const matchedUser = allValidUsers.find(
+      (u) => u.email.toLowerCase() === email.toLowerCase() && u.password === password
+    );
+
+    // 1. Check if user credentials match registered local/seed accounts first
+    if (matchedUser) {
+      const activeRole = matchedUser.role || selectedRole;
+      const emailLower = email.trim().toLowerCase();
+
+      // Check if matched user account is Remote
+      const isRemoteUser = (
+        matchedUser.is_remote === true ||
+        (matchedUser.work_mode && String(matchedUser.work_mode).toLowerCase().includes("remote")) ||
+        (matchedUser.employment_type && String(matchedUser.employment_type).toLowerCase().includes("remote")) ||
+        (matchedUser.department && String(matchedUser.department).toLowerCase().includes("remote")) ||
+        emailLower.includes("remote")
+      );
+
+      if (isRemoteUser) {
+        localStorage.setItem(`is_remote_user_${emailLower}`, "true");
+        localStorage.setItem(`remote_attendance_override_${emailLower}`, "true");
+      }
+
+      localStorage.setItem("isLoggedIn", "true");
+      localStorage.setItem("user_role", activeRole);
+      localStorage.setItem("current_user_email", email);
+
+      // Naam resolve karo: matched user → employees list → students list → email se
+      let resolvedName = matchedUser.fullName || matchedUser.full_name || "";
+      if (!resolvedName) {
+        try {
+          const emps = JSON.parse(localStorage.getItem("persistent_employees") || "[]");
+          const emp = emps.find(e => (e.email || "").toLowerCase() === emailLower);
+          if (emp) resolvedName = emp.full_name || emp.name || "";
+        } catch(e) {}
+      }
+      if (!resolvedName) {
+        try {
+          const stus = JSON.parse(localStorage.getItem("persistent_courses") || "[]");
+          const stu = stus.find(s => (s.email || "").toLowerCase() === emailLower);
+          if (stu) resolvedName = stu.full_name || stu.name || "";
+        } catch(e) {}
+      }
+      localStorage.setItem("current_user_name", resolvedName);
+      window.dispatchEvent(new Event("roleChanged"));
+
+      setLoading(false);
+      showToast("Login Successful 🟢", `Welcome back! Logging into ${activeRole.toUpperCase()} Portal...`, "success");
+
+      if (activeRole === "client") {
+        setTimeout(() => router.replace("/dashboard/client-portal"), 800);
+      } else if (activeRole === "intern") {
+        setTimeout(() => router.replace("/dashboard/internships"), 800);
+      } else if (activeRole === "student") {
+        setTimeout(() => router.replace("/dashboard/student"), 800);
+      } else if (activeRole === "admin") {
+        setTimeout(() => router.replace("/dashboard"), 800);
+      } else {
+        setTimeout(() => router.replace("/dashboard/attendance"), 800);
+      }
+      return;
+    }
+
+    // 2. Fallback: Try Supabase Auth API login
+    let supabaseAuthSuccess = false;
+    try {
+      const { error } = await login(email, password);
+      if (!error) {
+        supabaseAuthSuccess = true;
+      }
+    } catch(e) {}
+
+    if (supabaseAuthSuccess) {
+      const emailLower = email.trim().toLowerCase();
+      if (workMode === "remote") {
+        localStorage.setItem(`is_remote_user_${emailLower}`, "true");
+        localStorage.setItem(`remote_attendance_override_${emailLower}`, "true");
+      }
+
+      localStorage.setItem("isLoggedIn", "true");
+      localStorage.setItem("user_role", selectedRole);
+      localStorage.setItem("current_user_email", email);
+      localStorage.setItem("current_user_name", "");
+      window.dispatchEvent(new Event("roleChanged"));
+
+      setLoading(false);
+      showToast("Login Successful 🟢", `Welcome back! Logging into ${selectedRole.toUpperCase()} Portal...`, "success");
+
+      if (selectedRole === "client") {
+        setTimeout(() => router.replace("/dashboard/client-portal"), 800);
+      } else if (selectedRole === "intern") {
+        setTimeout(() => router.replace("/dashboard/internships"), 800);
+      } else if (selectedRole === "student") {
+        setTimeout(() => router.replace("/dashboard/student"), 800);
+      } else if (selectedRole === "employee") {
+        setTimeout(() => router.replace("/dashboard/employee"), 800);
+      } else if (selectedRole === "admin") {
+        setTimeout(() => router.replace("/dashboard"), 800);
+      } else {
+        setTimeout(() => router.replace("/dashboard/employee"), 800);
+      }
     } else {
-      setTimeout(() => router.replace("/dashboard"), 500);
+      setLoading(false);
+      showToast("Invalid Credentials 🔴", "Incorrect Email or Password. Please check your credentials and try again.", "error");
+      showAlert(
+        "Invalid Credentials 🔴",
+        "Incorrect Email or Password. Only registered accounts can log in. If you are new, click 'Register Account' to verify OTP first.",
+        "error"
+      );
     }
   };
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-white bg-dot-matrix px-4 py-12 relative overflow-hidden">
-      {/* Soft Ambient Radial Glow */}
+      {/* Ultra-Subtle Soft Ambient Pulse Dots (Minimal & Elegant) */}
+      <div className="absolute top-20 left-24 w-2 h-2 rounded-full bg-blue-500/40 animate-dot-pulse-1 pointer-events-none"></div>
+      <div className="absolute bottom-24 right-28 w-2 h-2 rounded-full bg-indigo-500/40 animate-dot-pulse-2 pointer-events-none"></div>
+
+      {/* Single Soft Ambient Radial Glow */}
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-blue-50/40 rounded-full blur-3xl pointer-events-none"></div>
 
       {/* Notification Modal */}
@@ -313,11 +284,8 @@ export default function LoginPage() {
         <div className="text-center flex flex-col items-center">
           <img
             src="/logo.jpeg"
-            alt="Nexa Logo"
-            className="h-16 w-16 object-contain mb-3 rounded-xl shadow-xs"
-            onError={(e) => {
-              e.currentTarget.style.display = "none";
-            }}
+            alt="Software House Logo"
+            className="h-16 w-16 object-contain mb-3"
           />
 
           <h1 className="text-2xl font-black text-slate-900 tracking-tight">
@@ -336,7 +304,7 @@ export default function LoginPage() {
           </span>
         </div>
 
-        {/* Login Form */}
+        {/* Login / Register Form */}
         <form className="space-y-4" onSubmit={handleSubmit}>
           <div>
             <label className="mb-1 block text-xs font-semibold uppercase text-slate-600">
@@ -382,56 +350,23 @@ export default function LoginPage() {
             )}
           </div>
 
-          {/* Resend Verification Button if unconfirmed */}
-          {showResendVerification && (
-            <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-xs text-amber-800 space-y-2">
-              <p className="font-semibold">Account pending email verification.</p>
-              <button
-                type="button"
-                onClick={handleResendVerification}
-                disabled={resendingEmail}
-                className="w-full py-1.5 px-3 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs transition-colors cursor-pointer"
-              >
-                {resendingEmail ? "Sending Verification..." : "Resend Confirmation Email"}
-              </button>
-            </div>
-          )}
-
           <button
             type="submit"
             disabled={loading}
-            className="w-full rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 py-3 text-sm font-bold text-white transition-all hover:from-blue-700 hover:to-indigo-700 disabled:opacity-60 shadow-lg cursor-pointer relative overflow-hidden group flex items-center justify-center gap-2"
+            className="w-full rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 py-3 text-sm font-bold text-white transition-all hover:from-blue-700 hover:to-indigo-700 disabled:opacity-60 shadow-lg cursor-pointer relative overflow-hidden group"
           >
-            <span className="relative z-10 flex items-center gap-2">
-              {loading ? (
-                <>
-                  <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
-                  <span>Verifying Credentials...</span>
-                </>
-              ) : (
-                <>
-                  <span>Sign In to Portal</span>
-                  <FaArrowRight className="text-xs" />
-                </>
-              )}
+            {/* Shimmer sweep animation effect */}
+            <span className="absolute inset-0 w-1/2 h-full bg-white/20 transform -skew-x-12 -translate-x-full group-hover:animate-shimmer-pass"></span>
+            <span className="relative z-10">
+              {loading ? "Authenticating Database..." : "Sign In to System Portal"}
             </span>
           </button>
         </form>
 
-        {/* Footer Actions */}
-        <div className="space-y-3 pt-2 text-center border-t border-slate-100">
-          <div className="text-xs text-slate-600">
-            Need a new account?{" "}
-            <Link href="/signup" className="font-bold text-blue-600 hover:underline inline-flex items-center gap-1">
-              <FaUserPlus className="text-xs" /> Register Account
-            </Link>
-          </div>
-          <p className="text-[11px] text-slate-400">
-            Internal Portal • Nexa Innovation & Technology
-          </p>
-        </div>
+        <p className="border-t border-slate-100 pt-4 text-center text-xs font-medium text-slate-500">
+          Accounts are created by an administrator.
+        </p>
       </div>
-
       {/* Global Toast Notification Engine */}
       <ToastContainer />
     </div>
