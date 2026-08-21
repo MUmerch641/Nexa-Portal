@@ -81,8 +81,9 @@ const employeeMenuGroups = [
     title: "Staff Workspace",
     id: "staff_core",
     items: [
-      { name: "My Staff Portal", href: "/dashboard/employees", icon: FaUserTie },
-      { name: "My Projects Progress", href: "/dashboard/projects", icon: FaProjectDiagram },
+      { name: "Employee Dashboard", href: "/dashboard/employee", icon: FaUserTie },
+      { name: "My Attendance", href: "/dashboard/attendance", icon: FaCalendarCheck },
+      { name: "My Tasks", href: "/dashboard/projects", icon: FaProjectDiagram },
       { name: "Remote Work Monitor", href: "/dashboard/remote-monitoring", icon: FaDesktop },
     ]
   },
@@ -90,19 +91,11 @@ const employeeMenuGroups = [
     title: "HR & Self Service",
     id: "staff_hr",
     items: [
-      { name: "My Salary & Payslips", href: "/dashboard/payroll", icon: FaWallet },
-      { name: "Leave Applications", href: "/dashboard/leaves", icon: FaUserClock },
+      { name: "Announcements", href: "/dashboard/announcements", icon: FaBullhorn },
+      { name: "Apply for Leave", href: "/dashboard/leaves", icon: FaUserClock },
       { name: "My Performance", href: "/dashboard/performance", icon: FaTrophy },
       { name: "Meeting Room", href: "/dashboard/meetings", icon: FaVideo },
-    ]
-  },
-  {
-    title: "Support & Settings",
-    id: "staff_support",
-    items: [
-      { name: "Announcements", href: "/dashboard/announcements", icon: FaBullhorn },
       { name: "Complaints Box", href: "/dashboard/complaints", icon: FaExclamationTriangle },
-      { name: "Company Settings", href: "/dashboard/settings", icon: FaCogs },
     ]
   }
 ];
@@ -113,9 +106,9 @@ const studentMenuGroups = [
     id: "student_core",
     items: [
       { name: "Student Dashboard", href: "/dashboard/student", icon: FaGraduationCap },
+      { name: "My Attendance", href: "/dashboard/attendance", icon: FaCalendarCheck },
+      { name: "My Tasks / Assignments", href: "/dashboard/projects", icon: FaProjectDiagram },
       { name: "My Internships", href: "/dashboard/internships", icon: FaLaptopCode },
-      { name: "Assigned Projects", href: "/dashboard/projects", icon: FaProjectDiagram },
-      { name: "Remote Work Monitor", href: "/dashboard/remote-monitoring", icon: FaDesktop },
     ]
   },
   {
@@ -123,9 +116,9 @@ const studentMenuGroups = [
     id: "student_support",
     items: [
       { name: "Announcements", href: "/dashboard/announcements", icon: FaBullhorn },
+      { name: "Apply for Leave", href: "/dashboard/leaves", icon: FaUserClock },
       { name: "Performance Score", href: "/dashboard/performance", icon: FaTrophy },
       { name: "Meetings", href: "/dashboard/meetings", icon: FaVideo },
-      { name: "Leave Request", href: "/dashboard/leaves", icon: FaUserClock },
       { name: "Complaints Box", href: "/dashboard/complaints", icon: FaExclamationTriangle },
     ]
   }

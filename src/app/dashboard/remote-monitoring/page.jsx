@@ -441,7 +441,26 @@ export default function RemoteMonitoringPage() {
   const totalTrackedSeconds = activeSeconds + idleSeconds;
   const productivityScore = totalTrackedSeconds > 0 
     ? Math.round((activeSeconds / totalTrackedSeconds) * 100) 
-    : 94;
+    : (isSessionActive ? 100 : 0);
+
+  let productivityStatusLabel = "Ready to Track";
+  let productivityStatusColor = "text-slate-500";
+
+  if (isSessionActive || totalTrackedSeconds > 0) {
+    if (productivityScore >= 90) {
+      productivityStatusLabel = "High Focus Efficiency";
+      productivityStatusColor = "text-emerald-600";
+    } else if (productivityScore >= 75) {
+      productivityStatusLabel = "Good Focus Efficiency";
+      productivityStatusColor = "text-blue-600";
+    } else if (productivityScore >= 50) {
+      productivityStatusLabel = "Moderate Efficiency";
+      productivityStatusColor = "text-amber-600";
+    } else {
+      productivityStatusLabel = "Low Focus / High Idle";
+      productivityStatusColor = "text-rose-600";
+    }
+  }
 
   // Filtered Screenshots for Admin/Employee
   const filteredScreenshots = screenshots.filter((sc) => {
@@ -747,7 +766,9 @@ export default function RemoteMonitoringPage() {
             <p className="text-lg font-bold text-blue-600 mt-2 font-mono">
               {productivityScore}%
             </p>
-            <p className="text-[10px] text-emerald-600 font-semibold mt-1">High Focus Efficiency</p>
+            <p className={`text-[10px] font-semibold mt-1 ${productivityStatusColor}`}>
+              {productivityStatusLabel}
+            </p>
           </div>
         </div>
       </div>
@@ -1049,14 +1070,16 @@ export default function RemoteMonitoringPage() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
             <div className="p-6 rounded-2xl border border-slate-200 bg-white shadow-xs space-y-3">
               <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Average Focus Time</h3>
-              <p className="text-3xl font-black text-slate-900">5.8 Hours/Day</p>
-              <p className="text-xs text-emerald-600 font-semibold">+12% vs last week</p>
+              <p className="text-3xl font-black text-slate-900">
+                {(activeSeconds / 3600).toFixed(1)} Hours
+              </p>
+              <p className="text-xs text-emerald-600 font-semibold">Active Timer Tracking</p>
             </div>
 
             <div className="p-6 rounded-2xl border border-slate-200 bg-white shadow-xs space-y-3">
               <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Department Efficiency</h3>
-              <p className="text-3xl font-black text-blue-600">93.4%</p>
-              <p className="text-xs text-slate-500">Highest: Frontend Team (96%)</p>
+              <p className="text-3xl font-black text-blue-600">{productivityScore}%</p>
+              <p className="text-xs text-slate-500">Calculated from active work logs</p>
             </div>
 
             <div className="p-6 rounded-2xl border border-slate-200 bg-white shadow-xs space-y-3">

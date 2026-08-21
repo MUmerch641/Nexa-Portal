@@ -26,6 +26,7 @@ export const TABLE_STORAGE_KEYS = {
   app_usage_logs: "remote_app_usage_logs",
   work_timelines: "remote_work_timelines",
   productivity_reports: "remote_productivity_reports",
+  student_fee_cycles: "persistent_student_fee_cycles",
 };
 
 /**

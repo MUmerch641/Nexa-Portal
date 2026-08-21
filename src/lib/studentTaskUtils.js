@@ -9,54 +9,8 @@ export const STUDENT_STORAGE_KEYS = {
   fees: "student_fee_records",
 };
 
-// Initial Seed Tasks for Immediate Visual Quality
-export const INITIAL_STUDENT_TASKS = [
-  {
-    id: "task-101",
-    task_title: "Design Responsive Navbar & Hero Section",
-    description: "Build flexbox/grid layout using Tailwind CSS with clean modern dark mode toggle",
-    priority: "High",
-    assigned_to_email: "student@gmail.com",
-    assigned_by_name: "Engr. Hamza (Lead Instructor)",
-    due_date: new Date(Date.now() + 2 * 24 * 3600 * 1000).toISOString().split("T")[0],
-    estimated_hours: 2.5,
-    status: "In Progress",
-    start_time: new Date(Date.now() - 45 * 60 * 1000).toISOString(),
-    pause_time: null,
-    total_working_seconds: 2700,
-    notes: "Completed mobile menu drawer. Working on desktop links.",
-  },
-  {
-    id: "task-102",
-    task_title: "Supabase Authentication & Row Level Security (RLS)",
-    description: "Connect Next.js client with Supabase auth and create custom RLS policies for students",
-    priority: "Urgent",
-    assigned_to_email: "student@gmail.com",
-    assigned_by_name: "Engr. Hamza",
-    due_date: new Date(Date.now() + 1 * 24 * 3600 * 1000).toISOString().split("T")[0],
-    estimated_hours: 3.0,
-    status: "Pending",
-    start_time: null,
-    pause_time: null,
-    total_working_seconds: 0,
-    notes: "",
-  },
-  {
-    id: "task-103",
-    task_title: "Publish MERN Stack E-Commerce API Endpoints",
-    description: "Write Express controllers for Cart management, Order checkout, and Stripe webhook",
-    priority: "Medium",
-    assigned_to_email: "student@gmail.com",
-    assigned_by_name: "Engr. Hamza",
-    due_date: new Date(Date.now() - 1 * 24 * 3600 * 1000).toISOString().split("T")[0],
-    estimated_hours: 4.0,
-    status: "Completed",
-    start_time: new Date(Date.now() - 28 * 3600 * 1000).toISOString(),
-    completion_time: new Date(Date.now() - 24 * 3600 * 1000).toISOString(),
-    total_working_seconds: 14400,
-    notes: "All test cases passed cleanly.",
-  },
-];
+// Initial Seed Tasks (Clean empty array so deleted tasks do not reappear)
+export const INITIAL_STUDENT_TASKS = [];
 
 // Initial Seed Certificates for Testing Verification
 export const INITIAL_CERTIFICATES = [

@@ -7,6 +7,13 @@ import Modal from "@/components/Modal";
 import { showToast } from "@/components/Toast";
 import { generatePrintableStudentFeeReceiptPdf } from "@/lib/generateStudentReceiptPdf";
 import { generatePrintable3MonthStudentCertificatePdf } from "@/lib/generate3MonthStudentCertificatePdf";
+import { enrollStudentWithCredentials } from "@/lib/studentEnrollmentUtils";
+import {
+  getAllMcqExams,
+  saveMcqExam,
+  deleteMcqExam,
+  getAllExamAttempts
+} from "@/lib/mcqExamUtils";
 import {
   FaGraduationCap,
   FaUserPlus,
@@ -22,6 +29,9 @@ import {
   FaPrint,
   FaTimes,
   FaHistory,
+  FaLock,
+  FaKey,
+  FaShieldAlt,
   FaMoneyBillWave,
   FaVideo,
   FaTasks,
@@ -64,6 +74,33 @@ export default function CoursesPage() {
     student: null,
   });
 
+  // MCQ Exams & Attempts State
+  const [mcqExams, setMcqExams] = useState([]);
+  const [allAttempts, setAllAttempts] = useState([]);
+  const [activeTab, setActiveTab] = useState("students"); // "students" | "mcq_exams" | "mcq_results"
+  const [showExamModal, setShowExamModal] = useState(false);
+  const [examForm, setExamForm] = useState({
+    id: "",
+    title: "",
+    description: "",
+    course: "Full Stack MERN Web Development",
+    time_limit: 10,
+    passing_score: 50,
+    due_date: "2026-08-30",
+    assigned_to_email: "all",
+    questions: [
+      {
+        id: "q1",
+        question: "",
+        option_a: "",
+        option_b: "",
+        option_c: "",
+        option_d: "",
+        correct_answer: "option_a",
+      },
+    ],
+  });
+
   const showAlert = (title, message, type = "info") => {
     setModal({ isOpen: true, title, message, type });
   };
@@ -85,31 +122,31 @@ export default function CoursesPage() {
     {
       title: "Full Stack MERN Web Development",
       defaultFee: 25000,
-      instructor: "Engr. Hamza (Lead Full-Stack)",
+      instructor: "Lead Full-Stack Instructor",
       resources: "https://github.com/softwarehouse/mern-course-materials",
     },
     {
       title: "Python & Artificial Intelligence",
       defaultFee: 30000,
-      instructor: "Dr. Bilal Ahmed (AI Specialist)",
+      instructor: "Lead AI Instructor",
       resources: "https://drive.google.com/drive/folders/ai-python-resources",
     },
     {
       title: "UI/UX Graphic & Product Design",
       defaultFee: 20000,
-      instructor: "Ayesha Malik (Senior UI/UX Designer)",
+      instructor: "Lead UI/UX Instructor",
       resources: "https://figma.com/@softwarehouse-design-system",
     },
     {
       title: "Mobile App Development (Flutter)",
       defaultFee: 28000,
-      instructor: "Usman Raza (Mobile Apps Lead)",
+      instructor: "Lead Mobile Apps Instructor",
       resources: "https://github.com/softwarehouse/flutter-mobile-course",
     },
     {
       title: "Cybersecurity & Ethical Hacking",
       defaultFee: 35000,
-      instructor: "Zain Ali (Security Consultant)",
+      instructor: "Lead Security Instructor",
       resources: "https://drive.google.com/drive/folders/cyber-security-labs",
     },
   ];
@@ -128,7 +165,7 @@ export default function CoursesPage() {
     assignments_count: 5,
     completed_assignments: 3,
     course_name: "Full Stack MERN Web Development",
-    instructor: "Engr. Hamza (Lead Full-Stack)",
+    instructor: "Lead Full-Stack Instructor",
     resources_url: "https://github.com/softwarehouse/mern-course-materials",
     start_date: todayStr,
     end_date: threeMonthsLaterStr,
@@ -155,7 +192,7 @@ export default function CoursesPage() {
         phone: "03001234567",
         enrollment_type: "Paid Course Student",
         course_name: "Full Stack MERN Web Development",
-        instructor: "Engr. Hamza (Lead Full-Stack)",
+        instructor: "Lead Full-Stack Instructor",
         start_date: "2026-05-01",
         end_date: "2026-08-01",
         progress: 100,
@@ -192,8 +229,111 @@ export default function CoursesPage() {
       setLoading(false);
     });
 
+    // Fetch MCQ Exams and Attempt Results
+    async function loadMcqData() {
+      try {
+        const exams = await getAllMcqExams();
+        const attempts = await getAllExamAttempts();
+        setMcqExams(exams || []);
+        setAllAttempts(attempts || []);
+      } catch (e) {}
+    }
+    loadMcqData();
+
     return () => window.removeEventListener("roleChanged", handleRoleChange);
   }, []);
+
+  // MCQ Question Form Handlers
+  const handleAddQuestion = () => {
+    setExamForm((prev) => ({
+      ...prev,
+      questions: [
+        ...prev.questions,
+        {
+          id: `q-${Date.now()}-${prev.questions.length + 1}`,
+          question: "",
+          option_a: "",
+          option_b: "",
+          option_c: "",
+          option_d: "",
+          correct_answer: "option_a",
+        },
+      ],
+    }));
+  };
+
+  const handleRemoveQuestion = (idx) => {
+    if (examForm.questions.length <= 1) {
+      showToast("Question Minimum", "At least one question is required.", "info");
+      return;
+    }
+    setExamForm((prev) => ({
+      ...prev,
+      questions: prev.questions.filter((_, i) => i !== idx),
+    }));
+  };
+
+  const handleQuestionChange = (idx, field, value) => {
+    setExamForm((prev) => {
+      const updatedQuestions = [...prev.questions];
+      updatedQuestions[idx] = { ...updatedQuestions[idx], [field]: value };
+      return { ...prev, questions: updatedQuestions };
+    });
+  };
+
+  const handleSaveExamSubmit = async (e) => {
+    e.preventDefault();
+    if (!examForm.title.trim()) {
+      showToast("Validation Error 🛑", "Please enter Exam Title.", "error");
+      return;
+    }
+
+    const validQuestions = examForm.questions.filter((q) => q.question.trim() !== "");
+    if (validQuestions.length === 0) {
+      showToast("Validation Error 🛑", "Please enter at least one valid question text.", "error");
+      return;
+    }
+
+    const examData = {
+      ...examForm,
+      id: examForm.id || `exam-${Date.now()}`,
+      questions: validQuestions,
+      created_at: new Date().toISOString(),
+    };
+
+    const updated = await saveMcqExam(examData);
+    setMcqExams(updated);
+    setShowExamModal(false);
+    showToast("MCQ Exam Saved 🟢", `Exam "${examForm.title}" assigned successfully.`, "success");
+    setExamForm({
+      id: "",
+      title: "",
+      description: "",
+      course: "Full Stack MERN Web Development",
+      time_limit: 10,
+      passing_score: 50,
+      due_date: "2026-08-30",
+      assigned_to_email: "all",
+      questions: [
+        {
+          id: "q1",
+          question: "",
+          option_a: "",
+          option_b: "",
+          option_c: "",
+          option_d: "",
+          correct_answer: "option_a",
+        },
+      ],
+    });
+  };
+
+  const handleDeleteExamAction = async (examId) => {
+    if (!confirm("Are you sure you want to delete this MCQ Exam?")) return;
+    const updated = await deleteMcqExam(examId);
+    setMcqExams(updated);
+    showToast("Exam Deleted 🔴", "MCQ Exam removed.", "info");
+  };
 
   const handleCourseSelect = (e) => {
     const selectedTitle = e.target.value;
@@ -221,62 +361,74 @@ export default function CoursesPage() {
 
   const handleAddStudent = async (e) => {
     e.preventDefault();
-    if (!form.full_name.trim() || !form.email.trim()) return;
+    if (!form.full_name.trim() || !form.email.trim()) {
+      showToast("Validation Error 🔴", "Please enter Student Name and Email Address.", "error");
+      return;
+    }
+
+    if (!form.assigned_password || form.assigned_password.length < 6) {
+      showToast("Password Security Error 🔴", "Temporary password must be at least 6 characters long.", "error");
+      return;
+    }
+
+    if (form.confirm_password && form.assigned_password !== form.confirm_password) {
+      showToast("Password Mismatch 🔴", "Passwords do not match. Please re-enter.", "error");
+      return;
+    }
 
     setSubmitting(true);
-    const totalFeeAmount = Number(form.course_fee || 25000);
-    const feePaidAmount = Number(form.fee_paid || 25000);
 
-    const newStudentObj = {
-      id: `s-${Date.now()}`,
-      full_name: form.full_name,
-      cnic: form.cnic,
-      email: form.email,
-      phone: form.phone,
-      enrollment_type: "Paid Course Student",
-      course_name: form.course_name,
-      instructor: form.instructor,
-      resources_url: form.resources_url,
-      start_date: form.start_date,
-      end_date: form.end_date,
-      progress: Number(form.progress || 0),
-      course_fee: totalFeeAmount,
-      fee_paid: feePaidAmount,
-      last_payment_date: form.last_payment_date,
-      next_due_date: form.next_due_date,
-      fee_status: feePaidAmount >= totalFeeAmount ? "Paid" : "Pending Due",
-      reminder_sent: false,
-    };
+    try {
+      const res = await enrollStudentWithCredentials({
+        studentData: form,
+        password: form.assigned_password,
+      });
 
-    setStudents([newStudentObj, ...students]);
-    dbSaveRecord("students", newStudentObj).catch(() => {});
-    setSubmitting(false);
+      setStudents([res.student, ...students]);
+      setSubmitting(false);
 
-    showToast("Student Enrolled 🎉", `${form.full_name} enrolled in ${form.course_name}. 30-day fee cycle active.`, "success");
+      showToast(
+        "Student Enrolled 🎉",
+        `${form.full_name} enrolled in ${form.course_name}. 30-day fee cycle active.`,
+        "success"
+      );
 
-    setForm({
-      full_name: "",
-      cnic: "",
-      email: "",
-      assigned_password: "studentpassword123",
-      phone: "",
-      batch: "Batch #14 (Morning Tech)",
-      guardian_name: "",
-      guardian_phone: "",
-      emergency_phone: "",
-      assignments_count: 5,
-      completed_assignments: 3,
-      course_name: "Full Stack MERN Web Development",
-      instructor: "Engr. Hamza (Lead Full-Stack)",
-      resources_url: "https://github.com/softwarehouse/mern-course-materials",
-      start_date: todayStr,
-      end_date: threeMonthsLaterStr,
-      progress: 0,
-      course_fee: "25000",
-      fee_paid: "25000",
-      last_payment_date: todayStr,
-      next_due_date: calculate30DaysLater(todayStr),
-    });
+      showAlert(
+        "Student Enrolled & Account Created 🟢",
+        `Student "${form.full_name}" enrolled successfully!\n\nCourse: ${form.course_name}\nBatch: ${form.batch}\nLogin Email: ${form.email}\n30-Day Recurring Fee Cycles Generated: 3 Cycles\nAuth Account Created (No plain-text password stored in DB).`,
+        "success"
+      );
+
+      setForm({
+        full_name: "",
+        cnic: "",
+        email: "",
+        assigned_password: "studentpassword123",
+        confirm_password: "studentpassword123",
+        phone: "",
+        batch: "Batch #14 (Morning Tech)",
+        guardian_name: "",
+        guardian_phone: "",
+        emergency_phone: "",
+        assignments_count: 5,
+        completed_assignments: 3,
+        course_name: "Full Stack MERN Web Development",
+        instructor: "Lead Full-Stack Instructor",
+        resources_url: "https://github.com/softwarehouse/mern-course-materials",
+        start_date: todayStr,
+        end_date: threeMonthsLaterStr,
+        progress: 0,
+        course_fee: "25000",
+        fee_paid: "25000",
+        last_payment_date: todayStr,
+        next_due_date: calculate30DaysLater(todayStr),
+      });
+    } catch (err) {
+      setSubmitting(false);
+      const msg = err.message || "Failed to enroll student.";
+      showToast("Enrollment Error 🔴", msg, "error");
+      showAlert("Enrollment Error 🛑", msg, "error");
+    }
   };
 
   const updateStudentProgress = async (studentId, newProgress) => {
@@ -406,8 +558,50 @@ export default function CoursesPage() {
         </div>
       </div>
 
-      {/* MAIN BALANCED GRID (40% Left Form / 60% Right Directory Table) */}
-      <div className="grid gap-6 lg:grid-cols-12">
+      {/* SECTION TABS */}
+      <div className="flex items-center gap-2 border-b border-slate-200 pb-2">
+        <button
+          type="button"
+          onClick={() => setActiveTab("students")}
+          className={`px-4 py-2.5 rounded-xl font-bold text-xs transition-colors flex items-center gap-2 cursor-pointer ${
+            activeTab === "students"
+              ? "bg-[#2563EB] text-white shadow-xs"
+              : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
+          }`}
+        >
+          <FaGraduationCap />
+          <span>Course Students & Fees</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab("mcq_exams")}
+          className={`px-4 py-2.5 rounded-xl font-bold text-xs transition-colors flex items-center gap-2 cursor-pointer ${
+            activeTab === "mcq_exams"
+              ? "bg-[#2563EB] text-white shadow-xs"
+              : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
+          }`}
+        >
+          <FaTasks />
+          <span>MCQ Exam Creator & Assignment ({mcqExams.length})</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab("mcq_results")}
+          className={`px-4 py-2.5 rounded-xl font-bold text-xs transition-colors flex items-center gap-2 cursor-pointer ${
+            activeTab === "mcq_results"
+              ? "bg-[#2563EB] text-white shadow-xs"
+              : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
+          }`}
+        >
+          <FaCheckCircle />
+          <span>Exam Attempts & Grades ({allAttempts.length})</span>
+        </button>
+      </div>
+
+      {activeTab === "students" && (
+        <div className="grid gap-6 lg:grid-cols-12">
         
         {/* 2-COLUMN RESPONSIVE ENROLLMENT FORM (Requirement #2 - 40% Width) */}
         {role === "admin" && (
@@ -577,6 +771,49 @@ export default function CoursesPage() {
                 </div>
               </div>
 
+              {/* Login Credentials Section */}
+              <div className="rounded-xl border border-blue-100 bg-blue-50/50 p-3 space-y-2.5 my-2">
+                <div className="flex items-center gap-1.5 text-blue-900 font-bold text-xs">
+                  <FaLock className="text-blue-600" />
+                  <span>Student Login Credentials</span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <div>
+                    <label className="block text-[10px] font-semibold uppercase text-slate-700 mb-1">
+                      Temporary Password *
+                    </label>
+                    <input
+                      type="password"
+                      name="assigned_password"
+                      value={form.assigned_password || ""}
+                      onChange={handleChange}
+                      placeholder="Min 6 characters"
+                      required
+                      className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-900 outline-none focus:border-blue-600 font-mono"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-semibold uppercase text-slate-700 mb-1">
+                      Confirm Password *
+                    </label>
+                    <input
+                      type="password"
+                      name="confirm_password"
+                      value={form.confirm_password || ""}
+                      onChange={handleChange}
+                      placeholder="Re-enter password"
+                      required
+                      className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-900 outline-none focus:border-blue-600 font-mono"
+                    />
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-500 italic">
+                  Student will log in using: <span className="font-semibold text-slate-700">{form.email || "student@example.com"}</span>
+                </p>
+              </div>
+
               {/* Full Width Primary Submit CTA Button (Requirement #2) */}
               <div className="pt-2">
                 <button
@@ -584,7 +821,7 @@ export default function CoursesPage() {
                   disabled={submitting}
                   className="w-full rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold py-3 text-xs transition-colors shadow-xs cursor-pointer"
                 >
-                  {submitting ? "Enrolling..." : "Enroll Student & Set 30-Day Cycle"}
+                  {submitting ? "Enrolling & Creating Account..." : "Enroll Student & Set 30-Day Cycle"}
                 </button>
               </div>
             </form>
@@ -592,8 +829,7 @@ export default function CoursesPage() {
         )}
 
         {/* ENROLLED STUDENTS DIRECTORY TABLE (Requirement #1 - 60% Width & Clean Action Column) */}
-        {role === "admin" && (
-          <div className="lg:col-span-7 rounded-2xl border border-[#E2E8F0] bg-white shadow-sm overflow-hidden flex flex-col">
+        <div className={`rounded-2xl border border-[#E2E8F0] bg-white shadow-sm overflow-hidden flex flex-col ${role === "admin" ? "lg:col-span-7" : "lg:col-span-12"}`}>
             <div className="p-4 border-b border-[#E2E8F0] bg-[#F8FAFC] flex items-center justify-between">
               <h2 className="text-sm font-bold text-[#0F172A]">Enrolled Course Students Directory</h2>
               <span className="text-xs font-semibold text-[#64748B]">Auto 30-Day Fee Engine Active</span>
@@ -739,8 +975,354 @@ export default function CoursesPage() {
               </table>
             </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
+
+      {/* MCQ EXAMS TAB */}
+      {activeTab === "mcq_exams" && (
+        <div className="space-y-6">
+          <div className="flex justify-between items-center bg-white p-6 rounded-2xl border border-slate-200 shadow-xs">
+            <div>
+              <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <FaTasks className="text-[#2563EB]" /> Admin MCQ Exam Management
+              </h2>
+              <p className="text-xs text-slate-500">Create, edit, assign online MCQ evaluation tests to students and employees.</p>
+            </div>
+            <button
+              onClick={() => {
+                setExamForm({
+                  id: "",
+                  title: "",
+                  description: "",
+                  course: "Full Stack MERN Web Development",
+                  time_limit: 10,
+                  passing_score: 50,
+                  due_date: "2026-08-30",
+                  assigned_to_email: "all",
+                  questions: [
+                    {
+                      id: "q1",
+                      question: "",
+                      option_a: "",
+                      option_b: "",
+                      option_c: "",
+                      option_d: "",
+                      correct_answer: "option_a",
+                    },
+                  ],
+                });
+                setShowExamModal(true);
+              }}
+              className="bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold px-4 py-2.5 rounded-xl text-xs shadow-xs cursor-pointer flex items-center gap-2"
+            >
+              + Create & Assign New MCQ Exam
+            </button>
+          </div>
+
+          {/* ASSIGNED EXAMS DIRECTORY TABLE */}
+          <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4">
+            <h3 className="text-sm font-bold text-slate-900">Active & Assigned MCQ Exams</h3>
+            {mcqExams.length === 0 ? (
+              <p className="text-xs text-slate-500 italic py-4 text-center">No exams created yet.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead>
+                    <tr className="border-b border-slate-200 text-slate-500 uppercase text-[10px]">
+                      <th className="py-3 px-3">Exam Title</th>
+                      <th className="py-3 px-3">Course / Domain</th>
+                      <th className="py-3 px-3">Time Limit</th>
+                      <th className="py-3 px-3">Pass %</th>
+                      <th className="py-3 px-3">Assigned To</th>
+                      <th className="py-3 px-3">Questions</th>
+                      <th className="py-3 px-3 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {mcqExams.map((ex) => (
+                      <tr key={ex.id} className="hover:bg-slate-50">
+                        <td className="py-3 px-3 font-bold text-slate-900">{ex.title}</td>
+                        <td className="py-3 px-3 text-slate-600">{ex.course}</td>
+                        <td className="py-3 px-3 font-mono font-semibold text-slate-800">{ex.time_limit} Mins</td>
+                        <td className="py-3 px-3 font-semibold text-blue-700">{ex.passing_score}%</td>
+                        <td className="py-3 px-3 font-mono text-slate-700">{ex.assigned_to_email || "all"}</td>
+                        <td className="py-3 px-3 font-bold text-slate-900">{ex.questions?.length || 0} MCQs</td>
+                        <td className="py-3 px-3 text-right">
+                          <button
+                            onClick={() => handleDeleteExamAction(ex.id)}
+                            className="p-1.5 rounded-lg text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                            title="Delete Exam"
+                          >
+                            <FaTrash />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* MCQ RESULTS TAB */}
+      {activeTab === "mcq_results" && (
+        <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4">
+          <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+            <div>
+              <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <FaCheckCircle className="text-[#2563EB]" /> Student & Employee Exam Attempt Results
+              </h2>
+              <p className="text-xs text-slate-500">Live evaluation scorecards, grades, and completion metrics.</p>
+            </div>
+            <span className="text-xs font-bold text-slate-800 bg-slate-100 px-3 py-1 rounded-full border border-slate-200">
+              Total Attempts Logged: {allAttempts.length}
+            </span>
+          </div>
+
+          {allAttempts.length === 0 ? (
+            <p className="text-xs text-slate-500 italic text-center py-6">No exam attempts recorded yet.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="border-b border-slate-200 text-slate-500 uppercase text-[10px]">
+                    <th className="py-3 px-3">Applicant Name</th>
+                    <th className="py-3 px-3">Role</th>
+                    <th className="py-3 px-3">Exam Title</th>
+                    <th className="py-3 px-3">Score</th>
+                    <th className="py-3 px-3">Percentage</th>
+                    <th className="py-3 px-3">Result</th>
+                    <th className="py-3 px-3">Time Taken</th>
+                    <th className="py-3 px-3">Attempt Date</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {allAttempts.map((att) => (
+                    <tr key={att.id} className="hover:bg-slate-50">
+                      <td className="py-3 px-3">
+                        <p className="font-bold text-slate-900">{att.user_name}</p>
+                        <p className="text-[10px] text-slate-500">{att.user_email}</p>
+                      </td>
+                      <td className="py-3 px-3">
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 border uppercase">
+                          {att.user_role || "Student"}
+                        </span>
+                      </td>
+                      <td className="py-3 px-3 font-semibold text-slate-900">{att.exam_title}</td>
+                      <td className="py-3 px-3 font-mono font-bold text-slate-900">{att.score}</td>
+                      <td className="py-3 px-3 font-mono font-bold text-blue-700">{att.percentage}%</td>
+                      <td className="py-3 px-3">
+                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase border ${
+                          att.result === "PASSED"
+                            ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                            : "bg-rose-50 text-rose-700 border-rose-200"
+                        }`}>
+                          {att.result}
+                        </span>
+                      </td>
+                      <td className="py-3 px-3 font-mono text-slate-600">{att.time_taken_seconds || 0} Secs</td>
+                      <td className="py-3 px-3 text-slate-500 text-[11px]">
+                        {att.submitted_at ? new Date(att.submitted_at).toLocaleString() : "Recently"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* MCQ EXAM CREATOR MODAL */}
+      {showExamModal && (
+        <Modal
+          isOpen={showExamModal}
+          onClose={() => setShowExamModal(false)}
+          title="Create & Assign New MCQ Exam"
+        >
+          <form onSubmit={handleSaveExamSubmit} className="space-y-4 text-xs text-left">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-800 uppercase mb-1">Exam Title *</label>
+                <input
+                  type="text"
+                  value={examForm.title}
+                  onChange={(e) => setExamForm({ ...examForm, title: e.target.value })}
+                  placeholder="e.g. MERN Stack Mid-Term Evaluation"
+                  required
+                  className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs text-slate-900 outline-none focus:border-[#2563EB]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-800 uppercase mb-1">Course / Subject *</label>
+                <select
+                  value={examForm.course}
+                  onChange={(e) => setExamForm({ ...examForm, course: e.target.value })}
+                  className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs text-slate-900 bg-white outline-none focus:border-[#2563EB]"
+                >
+                  {availableCourses.map((c) => (
+                    <option key={c.title} value={c.title}>{c.title}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-800 uppercase mb-1">Description / Instructions</label>
+              <input
+                type="text"
+                value={examForm.description}
+                onChange={(e) => setExamForm({ ...examForm, description: e.target.value })}
+                placeholder="Short description or exam guidelines..."
+                className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs text-slate-900 outline-none focus:border-[#2563EB]"
+              />
+            </div>
+
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-800 uppercase mb-1">Time Limit (Mins)</label>
+                <input
+                  type="number"
+                  value={examForm.time_limit}
+                  onChange={(e) => setExamForm({ ...examForm, time_limit: Number(e.target.value) })}
+                  min={1}
+                  className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs text-slate-900 outline-none focus:border-[#2563EB]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-800 uppercase mb-1">Passing Score (%)</label>
+                <input
+                  type="number"
+                  value={examForm.passing_score}
+                  onChange={(e) => setExamForm({ ...examForm, passing_score: Number(e.target.value) })}
+                  min={1}
+                  max={100}
+                  className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs text-slate-900 outline-none focus:border-[#2563EB]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-800 uppercase mb-1">Due Date</label>
+                <input
+                  type="date"
+                  value={examForm.due_date}
+                  onChange={(e) => setExamForm({ ...examForm, due_date: e.target.value })}
+                  className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs text-slate-900 outline-none focus:border-[#2563EB]"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-800 uppercase mb-1">Assign To (Student / Employee Email)</label>
+              <input
+                type="text"
+                value={examForm.assigned_to_email}
+                onChange={(e) => setExamForm({ ...examForm, assigned_to_email: e.target.value })}
+                placeholder="Type 'all' or specific student/employee email..."
+                required
+                className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs text-slate-900 outline-none focus:border-[#2563EB]"
+              />
+            </div>
+
+            {/* DYNAMIC QUESTIONS BUILDER */}
+            <div className="space-y-4 pt-2 border-t border-slate-200">
+              <div className="flex justify-between items-center">
+                <h4 className="font-bold text-slate-900 uppercase tracking-wider text-[11px]">Multiple Choice Questions ({examForm.questions.length})</h4>
+                <button
+                  type="button"
+                  onClick={handleAddQuestion}
+                  className="px-3 py-1 rounded-lg bg-blue-50 text-blue-700 font-bold text-xs hover:bg-blue-100 transition-colors"
+                >
+                  + Add Question
+                </button>
+              </div>
+
+              <div className="space-y-4 max-h-72 overflow-y-auto pr-1">
+                {examForm.questions.map((q, idx) => (
+                  <div key={q.id || idx} className="p-3.5 rounded-xl border border-slate-200 bg-slate-50 space-y-2.5 relative">
+                    <div className="flex justify-between items-center">
+                      <span className="font-bold text-slate-800">Q{idx + 1}. Question Details</span>
+                      {examForm.questions.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveQuestion(idx)}
+                          className="text-rose-600 hover:text-rose-800 font-bold text-xs"
+                        >
+                          Remove
+                        </button>
+                      )}
+                    </div>
+
+                    <input
+                      type="text"
+                      value={q.question}
+                      onChange={(e) => handleQuestionChange(idx, "question", e.target.value)}
+                      placeholder="Type question text..."
+                      className="w-full rounded-lg border border-slate-200 p-2 text-xs text-slate-900 bg-white outline-none focus:border-blue-500"
+                    />
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <input
+                        type="text"
+                        value={q.option_a}
+                        onChange={(e) => handleQuestionChange(idx, "option_a", e.target.value)}
+                        placeholder="Option A"
+                        className="rounded-lg border border-slate-200 p-1.5 text-xs text-slate-900 bg-white"
+                      />
+                      <input
+                        type="text"
+                        value={q.option_b}
+                        onChange={(e) => handleQuestionChange(idx, "option_b", e.target.value)}
+                        placeholder="Option B"
+                        className="rounded-lg border border-slate-200 p-1.5 text-xs text-slate-900 bg-white"
+                      />
+                      <input
+                        type="text"
+                        value={q.option_c}
+                        onChange={(e) => handleQuestionChange(idx, "option_c", e.target.value)}
+                        placeholder="Option C"
+                        className="rounded-lg border border-slate-200 p-1.5 text-xs text-slate-900 bg-white"
+                      />
+                      <input
+                        type="text"
+                        value={q.option_d}
+                        onChange={(e) => handleQuestionChange(idx, "option_d", e.target.value)}
+                        placeholder="Option D"
+                        className="rounded-lg border border-slate-200 p-1.5 text-xs text-slate-900 bg-white"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-600 uppercase mb-0.5">Correct Answer</label>
+                      <select
+                        value={q.correct_answer}
+                        onChange={(e) => handleQuestionChange(idx, "correct_answer", e.target.value)}
+                        className="w-full rounded-lg border border-slate-200 p-1.5 text-xs text-slate-900 bg-white font-bold text-blue-700"
+                      >
+                        <option value="option_a">Option A</option>
+                        <option value="option_b">Option B</option>
+                        <option value="option_c">Option C</option>
+                        <option value="option_d">Option D</option>
+                      </select>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              className="w-full py-2.5 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold text-xs transition-colors shadow-xs cursor-pointer"
+            >
+              Save & Assign Exam
+            </button>
+          </form>
+        </Modal>
+      )}
 
       {/* FULL STUDENT RECORD INSPECTION MODAL */}
       {inspectStudentModal && (
@@ -804,7 +1386,7 @@ export default function CoursesPage() {
                     completion_date: inspectStudentModal.end_date || "2026-08-01",
                     certificate_no: `CERT-${inspectStudentModal.id || "9901"}`,
                     grade: "A+ (98%)",
-                    instructor: inspectStudentModal.instructor || "Engr. Hamza",
+                    instructor: inspectStudentModal.instructor || "Lead Course Instructor",
                   });
                 }}
                 className="bg-[#EFF6FF] hover:bg-[#DBEAFE] text-[#2563EB] font-bold px-3 py-2 rounded-xl text-xs transition-colors flex items-center gap-1.5"

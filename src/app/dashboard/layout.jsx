@@ -39,6 +39,40 @@ export default function DashboardLayout({ children }) {
         return;
       }
 
+      // RBAC Route Guarding for Direct URL Access Protection
+      const adminOnlyPaths = [
+        "/dashboard",
+        "/dashboard/employees",
+        "/dashboard/courses",
+        "/dashboard/finance",
+        "/dashboard/settings",
+        "/dashboard/payroll",
+        "/dashboard/expenses",
+        "/dashboard/clients"
+      ];
+
+      const currentPath = pathname ? pathname.replace(/\/$/, "") : "";
+
+      if (userRole === "employee") {
+        if (adminOnlyPaths.includes(currentPath) || currentPath === "/dashboard") {
+          showToast("403 Forbidden 🛑", "Access Denied: Admin privileges required. Redirecting to Employee Portal...", "error");
+          router.replace("/dashboard/employee");
+          return;
+        }
+      } else if (userRole === "student") {
+        if (adminOnlyPaths.includes(currentPath) || currentPath === "/dashboard") {
+          showToast("403 Forbidden 🛑", "Access Denied: Admin privileges required. Redirecting to Student Portal...", "error");
+          router.replace("/dashboard/student");
+          return;
+        }
+      } else if (userRole === "intern") {
+        if (adminOnlyPaths.includes(currentPath) || currentPath === "/dashboard") {
+          showToast("403 Forbidden 🛑", "Access Denied. Redirecting to Internships Portal...", "error");
+          router.replace("/dashboard/internships");
+          return;
+        }
+      }
+
       setAuthorized(true);
       setRole(userRole);
     };
@@ -60,7 +94,7 @@ export default function DashboardLayout({ children }) {
       <div className="min-h-screen bg-[#F8FAFC] flex items-center justify-center text-[#0F172A] p-6 text-center">
         <div className="flex items-center gap-3 text-xs font-bold uppercase bg-white px-5 py-3 rounded-2xl border border-[#E2E8F0] shadow-sm">
           <span className="w-4 h-4 border-2 border-[#2563EB] border-t-transparent rounded-full animate-spin"></span>
-          <span>Authentication Guard Active • Redirecting to Login...</span>
+          <span>Security Guard Active • Verifying Permissions...</span>
         </div>
       </div>
     );

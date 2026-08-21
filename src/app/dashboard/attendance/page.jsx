@@ -515,7 +515,7 @@ export default function AttendancePage() {
   const checkIn = todayRecords.find((r) => r.type === "check_in" || r.check_in_time);
   const checkOut = todayRecords.find((r) => r.type === "check_out" || (r.check_out_time && r.check_out_time !== "Not Checked Out"));
 
-  // Attendance Metrics for Sidebar Widget 1
+  // Attendance Metrics & Dynamic Avg Check-In Time for Sidebar Widget 1
   const attendanceMetrics = useMemo(() => {
     const total = allSystemLogs.length;
     const present = allSystemLogs.filter(l => (l.attendance_status || "").toLowerCase().includes("present") || (l.attendance_status || "").toLowerCase().includes("on time")).length;
@@ -525,6 +525,50 @@ export default function AttendancePage() {
 
     return { total, present, late, absent, ratePct };
   }, [allSystemLogs]);
+
+  const avgCheckInTimeStr = useMemo(() => {
+    const checkInLogs = (allSystemLogs || []).filter(
+      l => l.check_in_time || l.time || l.timestamp
+    );
+
+    if (checkInLogs.length === 0 && checkIn) {
+      return checkIn.check_in_time || checkIn.time || "10:00 AM";
+    }
+
+    if (checkInLogs.length === 0) {
+      return "10:00 AM";
+    }
+
+    let totalMinutes = 0;
+    let validCount = 0;
+
+    checkInLogs.forEach(l => {
+      const rawTime = l.check_in_time || l.time;
+      if (!rawTime) return;
+      const match = rawTime.match(/(\d{1,2}):(\d{2})\s*(AM|PM)?/i);
+      if (match) {
+        let hrs = parseInt(match[1], 10);
+        const mins = parseInt(match[2], 10);
+        const period = match[3] ? match[3].toUpperCase() : "AM";
+        if (period === "PM" && hrs < 12) hrs += 12;
+        if (period === "AM" && hrs === 12) hrs = 0;
+
+        totalMinutes += hrs * 60 + mins;
+        validCount++;
+      }
+    });
+
+    if (validCount === 0) return checkIn?.check_in_time || "10:00 AM";
+
+    const avgMins = Math.round(totalMinutes / validCount);
+    let avgHrs = Math.floor(avgMins / 60);
+    const finalMins = avgMins % 60;
+    const finalPeriod = avgHrs >= 12 ? "PM" : "AM";
+    if (avgHrs > 12) avgHrs -= 12;
+    if (avgHrs === 0) avgHrs = 12;
+
+    return `${String(avgHrs).padStart(2, "0")}:${String(finalMins).padStart(2, "0")} ${finalPeriod}`;
+  }, [allSystemLogs, checkIn]);
 
   // Filtered System Logs for Full-Width Bottom Table
   const filteredSystemLogs = useMemo(() => {
@@ -809,7 +853,7 @@ export default function AttendancePage() {
 
             <div className="p-3 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] text-xs flex justify-between items-center">
               <span className="text-[#64748B] font-semibold">Avg Check-In Time:</span>
-              <span className="font-mono font-bold text-[#0F172A]">10:04 AM</span>
+              <span className="font-mono font-bold text-[#0F172A]">{avgCheckInTimeStr}</span>
             </div>
           </div>
 

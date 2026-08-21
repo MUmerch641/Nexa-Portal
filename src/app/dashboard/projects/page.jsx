@@ -89,7 +89,7 @@ export default function ProjectsPage() {
     setRole(savedRole);
     setUserEmail(savedEmail);
 
-    dbFetch("daily_tasks").then(tasks => setDailyTasks(tasks || []));
+    dbFetch("daily_tasks", []).then(tasks => setDailyTasks(tasks || []));
     dbFetch("projects").then(projs => setProjects(projs || []));
   }, []);
 
@@ -168,12 +168,13 @@ export default function ProjectsPage() {
     setConfirmModal(prev => ({ ...prev, loading: true }));
 
     if (confirmModal.type === "clear_all") {
-      setDailyTasks([]);
+      saveTasksState([]);
       try {
         localStorage.setItem("software_house_daily_tasks", JSON.stringify([]));
         localStorage.setItem("software_house_assigned_tasks", JSON.stringify([]));
+        localStorage.setItem("student_daily_tasks", JSON.stringify([]));
       } catch(e) {}
-      showToast("All Tasks Cleared 🗑️", "All task entries wiped clean.", "info");
+      showToast("All Tasks Cleared 🗑️", "All task entries wiped clean permanently.", "info");
     } else if (confirmModal.type === "single_task") {
       const targetId = confirmModal.taskId;
       const updated = dailyTasks.filter(t => String(t.id) !== String(targetId));

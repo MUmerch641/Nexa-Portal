@@ -111,13 +111,15 @@ export default function DashboardPage() {
     try {
       const currentYearMonth = new Date().toISOString().slice(0, 7);
 
-      const [allEmps, fullProjList, incList, leaveList, expList, liveTasks] = await Promise.all([
+      const [allEmps, fullProjList, incList, leaveList, expList, liveTasks, studentList, invoiceList] = await Promise.all([
         dbFetch("employees").catch(() => []),
         dbFetch("projects").catch(() => []),
         dbFetch("incomes").catch(() => []),
         dbFetch("leaves").catch(() => []),
         dbFetch("expenses").catch(() => []),
-        dbFetch("daily_tasks").catch(() => [])
+        dbFetch("daily_tasks").catch(() => []),
+        dbFetch("students").catch(() => []),
+        dbFetch("invoices").catch(() => [])
       ]);
 
       const employeeCount = (allEmps || []).filter(e => (e.status || "").toLowerCase() !== "inactive" && (e.status || "").toLowerCase() !== "terminated").length;
@@ -139,13 +141,18 @@ export default function DashboardPage() {
       });
       let finalProjectsList = Array.from(uniqueProjMap.values());
 
-      const monthlyRevenue = (incList || [])
-        .filter(item => {
-          const isCurrentMonth = item.date && item.date.startsWith(currentYearMonth);
-          const isPaid = !item.status || item.status.toLowerCase() === "paid";
-          return isCurrentMonth && isPaid;
-        })
+      const incomesSum = (incList || [])
+        .filter(item => !item.status || item.status.toLowerCase() === "paid" || item.status.toLowerCase() === "cleared")
         .reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+
+      const studentFeesSum = (studentList || [])
+        .reduce((sum, s) => sum + (Number(s.fee_paid || s.submitted_fee || s.course_fee) || 0), 0);
+
+      const invoicesSum = (invoiceList || [])
+        .filter(inv => !inv.status || inv.status.toLowerCase() === "paid" || inv.status.toLowerCase() === "cleared")
+        .reduce((sum, inv) => sum + (Number(inv.amount || inv.total) || 0), 0);
+
+      const monthlyRevenue = incomesSum + studentFeesSum + invoicesSum;
 
       const pendingLeavesCount = (leaveList || []).filter(l => (l.status || "").toLowerCase() === "pending").length;
 
@@ -306,7 +313,7 @@ export default function DashboardPage() {
           role: "student",
           department: s.course_name || "MERN Stack Course",
           attendance: getTodayAttendanceText(s.email),
-          progress: `${s.progress || 45}% Course Completed`,
+          progress: `${s.progress !== undefined ? s.progress : 0}% Course Completed`,
           dailyTask: "Submitted daily practical coding lab assignment.",
           feeStatus: s.fee_status || "Paid",
         });
@@ -322,7 +329,7 @@ export default function DashboardPage() {
           role: "intern",
           department: i.domain || "Software Engineering Intern",
           attendance: getTodayAttendanceText(i.email),
-          progress: `${i.progress || 50}% Internship Milestone Completed`,
+          progress: `${i.progress !== undefined ? i.progress : 0}% Internship Milestone Completed`,
           dailyTask: i.task_logs?.[0]?.details || "Working on assigned project module.",
           feeStatus: "Free Internship",
         });
@@ -582,8 +589,8 @@ export default function DashboardPage() {
           </div>
           <div className="flex items-baseline justify-between pt-1">
             <h3 className="text-2xl font-bold text-[#0F172A]">{stats.employees}</h3>
-            <span className="text-[10px] font-semibold text-[#2563EB] bg-[#EFF6FF] px-2 py-0.5 rounded-md border border-[#2563EB]/20 flex items-center gap-1">
-              <FaArrowUp className="text-[9px]" /> +12%
+            <span className="text-[10px] font-semibold text-[#2563EB] bg-[#EFF6FF] px-2 py-0.5 rounded-md border border-[#2563EB]/20">
+              Active Roster
             </span>
           </div>
           <p className="text-xs text-[#64748B]">Paid Staff & Engineers</p>
@@ -616,8 +623,8 @@ export default function DashboardPage() {
           </div>
           <div className="flex items-baseline justify-between pt-1">
             <h3 className="text-2xl font-bold text-[#0F172A]">Rs. {(stats.monthlyRevenue || 0).toLocaleString()}</h3>
-            <span className="text-[10px] font-semibold text-[#2563EB] bg-[#EFF6FF] px-2 py-0.5 rounded-md border border-[#2563EB]/20 flex items-center gap-1">
-              <FaArrowUp className="text-[9px]" /> +18%
+            <span className="text-[10px] font-semibold text-[#2563EB] bg-[#EFF6FF] px-2 py-0.5 rounded-md border border-[#2563EB]/20">
+              Current Month
             </span>
           </div>
           <p className="text-xs text-[#64748B]">Invoices Cleared This Month</p>

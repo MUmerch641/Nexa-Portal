@@ -182,6 +182,10 @@ export default function LoginPage() {
 
       if (activeRole === "client") {
         setTimeout(() => router.replace("/dashboard/client-portal"), 800);
+      } else if (activeRole === "intern") {
+        setTimeout(() => router.replace("/dashboard/internships"), 800);
+      } else if (activeRole === "student") {
+        setTimeout(() => router.replace("/dashboard/student"), 800);
       } else if (activeRole === "admin") {
         setTimeout(() => router.replace("/dashboard"), 800);
       } else {
@@ -217,10 +221,16 @@ export default function LoginPage() {
 
       if (selectedRole === "client") {
         setTimeout(() => router.replace("/dashboard/client-portal"), 800);
+      } else if (selectedRole === "intern") {
+        setTimeout(() => router.replace("/dashboard/internships"), 800);
+      } else if (selectedRole === "student") {
+        setTimeout(() => router.replace("/dashboard/student"), 800);
+      } else if (selectedRole === "employee") {
+        setTimeout(() => router.replace("/dashboard/employee"), 800);
       } else if (selectedRole === "admin") {
         setTimeout(() => router.replace("/dashboard"), 800);
       } else {
-        setTimeout(() => router.replace("/dashboard/attendance"), 800);
+        setTimeout(() => router.replace("/dashboard/employee"), 800);
       }
     } else {
       setLoading(false);
