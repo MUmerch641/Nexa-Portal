@@ -314,10 +314,33 @@ export default function RemoteMonitoringPage() {
 
   // Helper to grab real live screen frame onto canvas
   const grabRealLiveScreenFrame = async () => {
-    if (screenStreamRef.current && screenStreamRef.current.active) {
+    let activeStream = screenStreamRef.current;
+
+    // Prompt user directly for their real desktop screen if stream not yet active
+    if (!activeStream || !activeStream.active) {
+      if (typeof navigator !== "undefined" && navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia) {
+        try {
+          activeStream = await navigator.mediaDevices.getDisplayMedia({
+            video: { cursor: "always" },
+            audio: false,
+          });
+          setScreenStream(activeStream);
+          screenStreamRef.current = activeStream;
+
+          activeStream.getVideoTracks()[0].onended = () => {
+            setScreenStream(null);
+            screenStreamRef.current = null;
+          };
+        } catch (e) {
+          console.warn("Screen share prompt cancelled:", e);
+        }
+      }
+    }
+
+    if (activeStream && activeStream.active) {
       try {
         const video = document.createElement("video");
-        video.srcObject = screenStreamRef.current;
+        video.srcObject = activeStream;
         video.muted = true;
         await video.play();
 
@@ -334,7 +357,7 @@ export default function RemoteMonitoringPage() {
         ctx.font = "bold 13px sans-serif";
         ctx.fillText(`NEXA LIVE MONITOR • ${employeeName || 'User'} (${department}) • ${new Date().toLocaleTimeString()}`, 26, canvas.height - 25);
 
-        return canvas.toDataURL("image/webp", 0.85);
+        return canvas.toDataURL("image/webp", 0.9);
       } catch (err) {
         console.warn("Could not capture frame from stream:", err);
       }
