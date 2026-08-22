@@ -175,7 +175,40 @@ export default function LeavesPage() {
     setLeaves(updated);
     localStorage.setItem("software_house_leaves", JSON.stringify(updated));
 
-    showToast("Leave Approved 🟢", "Approved by Admin. Status updated for applicant.", "success");
+    // Auto-mark attendance log as On Leave (Approved)
+    const applicantName = targetLeave?.employee_name || targetLeave?.applicant_name || "Applicant";
+    const todayStr = new Date().toISOString().split("T")[0];
+    const leaveDate = targetLeave?.start_date || todayStr;
+    const leaveAttRecord = {
+      id: `att-leave-${Date.now()}`,
+      user_id: applicantName,
+      user_name: applicantName,
+      user_role: targetLeave?.role || "student",
+      attendance_status: "On Leave (Approved)",
+      type: "check_in",
+      total_work_hours: "Leave Authorized",
+      attendance_date: leaveDate,
+      check_in_time: "Leave Approved",
+      public_ip: "Leave / Off-Site",
+      created_at: new Date().toISOString()
+    };
+
+    try {
+      const savedAttLogs = JSON.parse(localStorage.getItem("software_house_master_attendance_logs") || "[]");
+      const filteredLogs = savedAttLogs.filter(a => !(a.user_name === applicantName && a.attendance_date === leaveDate));
+      const newAttLogs = [leaveAttRecord, ...filteredLogs];
+      localStorage.setItem("software_house_master_attendance_logs", JSON.stringify(newAttLogs));
+      
+      const userEmailKey = (targetLeave?.applicant_email || targetLeave?.email || "").trim().toLowerCase();
+      if (userEmailKey) {
+        localStorage.setItem(`today_attendance_${userEmailKey}`, JSON.stringify([leaveAttRecord]));
+      }
+
+      await dbSaveRecord("attendance", leaveAttRecord).catch(() => {});
+      window.dispatchEvent(new Event("storage"));
+    } catch (e) {}
+
+    showToast("Leave Approved 🟢", "Approved by Admin. Attendance marked as 'On Leave' (Not Absent).", "success");
   };
 
   const handleReject = async (id) => {

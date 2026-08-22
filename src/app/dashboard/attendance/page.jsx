@@ -1018,9 +1018,13 @@ export default function AttendancePage() {
                     <td className="py-3.5 px-4">
                       {/* Consistent Badge Padding (Requirement #4) */}
                       <span className={`text-[10px] font-semibold px-2.5 py-1 rounded-full border whitespace-nowrap ${
-                        (r.attendance_status || "").toLowerCase().includes("late")
-                          ? "bg-[#FEF3C7] text-[#92400E] border-[#F59E0B]/20"
-                          : "bg-[#EFF6FF] text-[#2563EB] border-[#2563EB]/20"
+                        (r.attendance_status || "").toLowerCase().includes("leave")
+                          ? "bg-[#F5F3FF] text-[#7C3AED] border-[#7C3AED]/20 font-bold"
+                          : (r.attendance_status || "").toLowerCase().includes("absent")
+                          ? "bg-[#FEE2E2] text-[#991B1B] border-[#EF4444]/20 font-bold"
+                          : (r.attendance_status || "").toLowerCase().includes("late")
+                          ? "bg-[#FEF3C7] text-[#92400E] border-[#F59E0B]/20 font-bold"
+                          : "bg-[#EFF6FF] text-[#2563EB] border-[#2563EB]/20 font-bold"
                       }`}>
                         {r.attendance_status || "Present"}
                       </span>

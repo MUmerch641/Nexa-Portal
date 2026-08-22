@@ -235,11 +235,41 @@ export default function Navbar({ onMenuClick, isSidebarOpen = true }) {
       
       if (target) {
         await dbSaveRecord("leaves", { ...target, status: "approved", salary_cut: false }).catch(() => {});
+
+        // Auto-mark attendance as On Leave (Approved) instead of Absent
+        const applicantName = target.employee_name || target.applicant_name || "Applicant";
+        const todayStr = new Date().toISOString().split("T")[0];
+        const leaveDate = target.start_date || todayStr;
+        const leaveAttRecord = {
+          id: `att-leave-${Date.now()}`,
+          user_id: applicantName,
+          user_name: applicantName,
+          user_role: target.role || "student",
+          attendance_status: "On Leave (Approved)",
+          type: "check_in",
+          total_work_hours: "Leave Authorized",
+          attendance_date: leaveDate,
+          check_in_time: "Leave Approved",
+          public_ip: "Leave / Off-Site",
+          created_at: new Date().toISOString()
+        };
+
+        const savedAttLogs = JSON.parse(localStorage.getItem("software_house_master_attendance_logs") || "[]");
+        const filteredLogs = savedAttLogs.filter(a => !(a.user_name === applicantName && a.attendance_date === leaveDate));
+        const newAttLogs = [leaveAttRecord, ...filteredLogs];
+        localStorage.setItem("software_house_master_attendance_logs", JSON.stringify(newAttLogs));
+
+        const userEmailKey = (target.applicant_email || target.email || "").trim().toLowerCase();
+        if (userEmailKey) {
+          localStorage.setItem(`today_attendance_${userEmailKey}`, JSON.stringify([leaveAttRecord]));
+        }
+
+        await dbSaveRecord("attendance", leaveAttRecord).catch(() => {});
       }
       
       setPendingLeaves(updated.filter(l => (l.status || "").toLowerCase() === "pending"));
       setSelectedLeaveModal(null);
-      showToast("Leave Approved 🟢", `Leave application for ${target?.employee_name || target?.applicant_name || 'Applicant'} approved.`, "success");
+      showToast("Leave Approved 🟢", `Leave approved! Attendance marked as 'On Leave' (Not Absent).`, "success");
       window.dispatchEvent(new Event("storage"));
     } catch (e) {
       showToast("Error ⚠️", "Failed to update leave status.", "error");
