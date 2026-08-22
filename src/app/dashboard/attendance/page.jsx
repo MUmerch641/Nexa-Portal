@@ -631,188 +631,282 @@ export default function AttendancePage() {
       {/* 1. BALANCED TWO-COLUMN RESPONSIVE GRID (65% LEFT / 35% RIGHT) */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         
-        {/* LEFT COLUMN (65% - 8 COLS): PRIMARY WORKFLOW & VERIFICATION STEPPER */}
+        {/* LEFT COLUMN (65% - 8 COLS) */}
         <div className="lg:col-span-8 space-y-6">
           
-          {/* REAL-TIME VERIFICATION STEPPER (Requirement #6 - Horizontal Stepper) */}
-          <div className="bg-white rounded-2xl p-6 border border-[#E2E8F0] shadow-sm space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#E2E8F0] pb-3">
-              <div>
-                <span className="text-[10px] font-bold uppercase tracking-wider text-[#2563EB] bg-[#EFF6FF] px-2.5 py-0.5 rounded-md border border-[#2563EB]/20">
-                  Verification Progress Engine
-                </span>
-                <h2 className="text-base font-bold text-[#0F172A] mt-1">Real-Time Attendance Stepper</h2>
-              </div>
+          {/* === ADMIN MASTER SUPERVISION & MONITORING COMMAND HUB === */}
+          {currentRole === "admin" ? (
+            <div className="space-y-6">
+              {/* Admin Master Overview Card */}
+              <div className="bg-white rounded-2xl p-6 border border-[#E2E8F0] border-l-4 border-l-[#2563EB] shadow-sm space-y-5">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#E2E8F0] pb-4">
+                  <div>
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-[#2563EB] bg-[#EFF6FF] px-2.5 py-0.5 rounded-md border border-[#2563EB]/20">
+                      Executive Master Control
+                    </span>
+                    <h2 className="text-lg font-bold text-[#0F172A] mt-1 flex items-center gap-2">
+                      <FaShieldAlt className="text-[#2563EB]" /> Organization Live Attendance Hub
+                    </h2>
+                    <p className="text-xs text-[#64748B] mt-0.5">
+                      Monitor all employees, remote interns, and students in real time. (Admin supervisory role).
+                    </p>
+                  </div>
 
-              <button
-                type="button"
-                onClick={() => handleVerifyIpify()}
-                disabled={isVerifyingIp}
-                className="bg-white hover:bg-[#F8FAFC] text-[#2563EB] border border-[#E2E8F0] font-semibold px-3 py-1.5 rounded-xl text-xs transition-colors cursor-pointer flex items-center gap-1.5 shadow-xs shrink-0"
-              >
-                <FaWifi className={`text-xs ${isVerifyingIp ? "animate-spin" : ""}`} />
-                <span>{isVerifyingIp ? "Verifying..." : "Verify Office Network"}</span>
-              </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={exportAttendanceCsv}
+                      className="bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold px-4 py-2 rounded-xl text-xs transition-colors cursor-pointer flex items-center gap-1.5 shadow-xs whitespace-nowrap"
+                    >
+                      <FaDownload className="text-xs" /> Export Report CSV
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowIpManagerModal(true)}
+                      className="bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 font-semibold px-3 py-2 rounded-xl text-xs transition-colors cursor-pointer flex items-center gap-1.5 whitespace-nowrap"
+                    >
+                      <FaWifi className="text-xs text-blue-600" /> Office Wi-Fi IP
+                    </button>
+                  </div>
+                </div>
+
+                {/* Organization Attendance Metrics Grid */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                  <div className="p-4 rounded-xl bg-emerald-50/70 border border-emerald-200 space-y-1">
+                    <span className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider block">Present & On Time</span>
+                    <p className="text-2xl font-black text-emerald-700">{attendanceMetrics.present}</p>
+                    <span className="text-[10px] text-emerald-600 font-medium">Verified Active</span>
+                  </div>
+
+                  <div className="p-4 rounded-xl bg-amber-50/70 border border-amber-200 space-y-1">
+                    <span className="text-[10px] font-bold text-amber-800 uppercase tracking-wider block">Late Warning</span>
+                    <p className="text-2xl font-black text-amber-700">{attendanceMetrics.late}</p>
+                    <span className="text-[10px] text-amber-600 font-medium">After 10:15 AM</span>
+                  </div>
+
+                  <div className="p-4 rounded-xl bg-purple-50/70 border border-purple-200 space-y-1">
+                    <span className="text-[10px] font-bold text-purple-800 uppercase tracking-wider block">On Leave</span>
+                    <p className="text-2xl font-black text-purple-700">
+                      {allSystemLogs.filter(l => (l.attendance_status || "").toLowerCase().includes("leave")).length}
+                    </p>
+                    <span className="text-[10px] text-purple-600 font-medium">Approved by Admin</span>
+                  </div>
+
+                  <div className="p-4 rounded-xl bg-rose-50/70 border border-rose-200 space-y-1">
+                    <span className="text-[10px] font-bold text-rose-800 uppercase tracking-wider block">Absent Today</span>
+                    <p className="text-2xl font-black text-rose-700">{attendanceMetrics.absent}</p>
+                    <span className="text-[10px] text-rose-600 font-medium">No check-in recorded</span>
+                  </div>
+                </div>
+
+                {/* Quick Supervisory Action Links */}
+                <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+                  <div className="flex items-center gap-2 text-slate-600">
+                    <FaInfoCircle className="text-blue-600 shrink-0" />
+                    <span>Employees and students record their individual check-in on their own dashboards.</span>
+                  </div>
+                  <div className="flex items-center gap-2 w-full sm:w-auto">
+                    <button
+                      type="button"
+                      onClick={() => router.push("/dashboard/leaves")}
+                      className="px-3.5 py-1.5 rounded-lg bg-purple-100 hover:bg-purple-200 text-purple-800 font-bold transition-colors cursor-pointer text-[11px] whitespace-nowrap"
+                    >
+                      🔔 Review Leave Applications
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => router.push("/dashboard/remote-monitoring")}
+                      className="px-3.5 py-1.5 rounded-lg bg-blue-100 hover:bg-blue-200 text-blue-800 font-bold transition-colors cursor-pointer text-[11px] whitespace-nowrap"
+                    >
+                      🖥️ Live Screen Monitoring
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
-
-            {/* Horizontal Step Pipeline (Network -> Policy -> Clock-In -> Session -> Clock-Out) */}
-            <div className="pt-2">
-              <div className="flex items-center justify-between relative">
-                <div className="absolute top-1/2 left-0 right-0 h-0.5 bg-[#E2E8F0] -translate-y-1/2 z-0" />
-
-                {/* Step 1: Network */}
-                <div className="relative z-10 flex flex-col items-center gap-1 bg-white px-2">
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
-                    ipVerificationResult?.success
-                      ? "bg-[#EFF6FF] text-[#2563EB] border-2 border-[#2563EB]"
-                      : "bg-[#F8FAFC] text-[#94A3B8] border-2 border-[#E2E8F0]"
-                  }`}>
-                    {ipVerificationResult?.success ? <FaCheck className="text-xs text-[#2563EB]" /> : "1"}
+          ) : (
+            <>
+              {/* REAL-TIME VERIFICATION STEPPER FOR EMPLOYEES / STUDENTS */}
+              <div className="bg-white rounded-2xl p-6 border border-[#E2E8F0] shadow-sm space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#E2E8F0] pb-3">
+                  <div>
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-[#2563EB] bg-[#EFF6FF] px-2.5 py-0.5 rounded-md border border-[#2563EB]/20">
+                      Verification Progress Engine
+                    </span>
+                    <h2 className="text-base font-bold text-[#0F172A] mt-1">Real-Time Attendance Stepper</h2>
                   </div>
-                  <span className={`text-[11px] font-bold ${ipVerificationResult?.success ? "text-[#2563EB]" : "text-[#64748B]"}`}>Network</span>
-                </div>
-
-                {/* Step 2: Policy */}
-                <div className="relative z-10 flex flex-col items-center gap-1 bg-white px-2">
-                  <div className="w-8 h-8 rounded-full bg-[#EFF6FF] text-[#2563EB] border-2 border-[#2563EB] flex items-center justify-center text-xs font-bold">
-                    <FaCheck className="text-xs text-[#2563EB]" />
-                  </div>
-                  <span className="text-[11px] font-bold text-[#2563EB]">Policy</span>
-                </div>
-
-                {/* Step 3: Clock-In */}
-                <div className="relative z-10 flex flex-col items-center gap-1 bg-white px-2">
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
-                    checkIn
-                      ? "bg-[#EFF6FF] text-[#2563EB] border-2 border-[#2563EB]"
-                      : "bg-[#F8FAFC] text-[#94A3B8] border-2 border-[#E2E8F0]"
-                  }`}>
-                    {checkIn ? <FaCheck className="text-xs text-[#2563EB]" /> : "3"}
-                  </div>
-                  <span className={`text-[11px] font-bold ${checkIn ? "text-[#2563EB]" : "text-[#64748B]"}`}>Clock-In</span>
-                </div>
-
-                {/* Step 4: Session */}
-                <div className="relative z-10 flex flex-col items-center gap-1 bg-white px-2">
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
-                    checkIn
-                      ? "bg-[#EFF6FF] text-[#2563EB] border-2 border-[#2563EB]"
-                      : "bg-[#F8FAFC] text-[#94A3B8] border-2 border-[#E2E8F0]"
-                  }`}>
-                    {checkIn ? <FaCheck className="text-xs text-[#2563EB]" /> : "4"}
-                  </div>
-                  <span className={`text-[11px] font-bold ${checkIn ? "text-[#2563EB]" : "text-[#64748B]"}`}>Session</span>
-                </div>
-
-                {/* Step 5: Clock-Out */}
-                <div className="relative z-10 flex flex-col items-center gap-1 bg-white px-2">
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
-                    checkOut
-                      ? "bg-[#EFF6FF] text-[#2563EB] border-2 border-[#2563EB]"
-                      : "bg-[#F8FAFC] text-[#94A3B8] border-2 border-[#E2E8F0]"
-                  }`}>
-                    {checkOut ? <FaCheck className="text-xs text-[#2563EB]" /> : "5"}
-                  </div>
-                  <span className={`text-[11px] font-bold ${checkOut ? "text-[#2563EB]" : "text-[#64748B]"}`}>Clock-Out</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* PRIMARY ATTENDANCE WORKFLOW (Requirements #7 & #8 - Context Aware CTAs Only) */}
-          <div className="bg-white rounded-2xl p-6 border border-[#E2E8F0] border-l-4 border-l-[#2563EB] shadow-sm space-y-4">
-            <div className="flex items-center justify-between border-b border-[#E2E8F0] pb-3">
-              <h3 className="text-sm font-bold text-[#0F172A] flex items-center gap-2">
-                <FaClock className="text-[#2563EB]" />
-                <span>Primary Attendance Workflow</span>
-              </h3>
-              <span className="text-xs font-semibold text-[#2563EB] bg-[#EFF6FF] px-2.5 py-0.5 rounded-full border border-[#2563EB]/20">
-                1 Check-In Per Day
-              </span>
-            </div>
-
-            {/* STATE 1: Wi-Fi Unverified */}
-            {(!ipVerificationResult || !ipVerificationResult.success) && (
-              <div className="p-4 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
-                <div className="flex items-center gap-2 text-[#64748B]">
-                  <FaInfoCircle className="text-[#2563EB] text-base shrink-0" />
-                  <span>Connect to authorized Office Wi-Fi to unlock Clock-In.</span>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => handleVerifyIpify()}
-                  disabled={isVerifyingIp}
-                  className="bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold px-4 py-2 rounded-xl transition-colors cursor-pointer text-xs shrink-0"
-                >
-                  Verify Office Wi-Fi
-                </button>
-              </div>
-            )}
-
-            {/* STATE 2: Wi-Fi Verified, Ready to Clock In */}
-            {ipVerificationResult?.success && !checkIn && (
-              <div className="space-y-3">
-                <button
-                  type="button"
-                  onClick={() => handleAttendance("check_in")}
-                  className="w-full py-3.5 px-4 rounded-xl font-bold text-xs bg-[#2563EB] hover:bg-[#1D4ED8] text-white transition-colors cursor-pointer flex items-center justify-center gap-2 shadow-xs"
-                >
-                  <FaCheckCircle className="text-sm" />
-                  <span>Clock In (Mark Attendance)</span>
-                </button>
-              </div>
-            )}
-
-            {/* STATE 3: Clocked In, Ready to Clock Out */}
-            {checkIn && !checkOut && (
-              <div className="space-y-3">
-                <div className="flex gap-3">
-                  <button
-                    type="button"
-                    onClick={() => handleAttendance("check_out")}
-                    className="flex-1 py-3.5 px-4 rounded-xl font-bold text-xs bg-[#2563EB] hover:bg-[#1D4ED8] text-white transition-colors cursor-pointer flex items-center justify-center gap-2 shadow-xs"
-                  >
-                    <FaTimesCircle className="text-sm" />
-                    <span>Clock Out</span>
-                  </button>
 
                   <button
                     type="button"
-                    onClick={navigateToDashboard}
-                    className="flex-1 py-3.5 px-4 rounded-xl font-semibold text-xs bg-white hover:bg-[#F8FAFC] text-[#2563EB] border border-[#E2E8F0] transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+                    onClick={() => handleVerifyIpify()}
+                    disabled={isVerifyingIp}
+                    className="bg-white hover:bg-[#F8FAFC] text-[#2563EB] border border-[#E2E8F0] font-semibold px-3 py-1.5 rounded-xl text-xs transition-colors cursor-pointer flex items-center gap-1.5 shadow-xs shrink-0"
                   >
-                    <span>Proceed to Workspace</span>
-                    <FaArrowRight className="text-xs" />
+                    <FaWifi className={`text-xs ${isVerifyingIp ? "animate-spin" : ""}`} />
+                    <span>{isVerifyingIp ? "Verifying..." : "Verify Office Network"}</span>
                   </button>
                 </div>
-              </div>
-            )}
 
-            {/* STATE 4: Clocked Out Completed */}
-            {checkIn && checkOut && (
-              <div className="p-4 rounded-xl bg-[#EFF6FF] border border-[#2563EB]/20 flex items-center justify-between text-xs">
-                <span className="font-bold text-[#2563EB] flex items-center gap-1.5">
-                  <FaCheckCircle /> Attendance Completed for Today
-                </span>
-                <button
-                  type="button"
-                  onClick={navigateToDashboard}
-                  className="bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-semibold text-xs px-4 py-2 rounded-xl transition-colors cursor-pointer"
-                >
-                  Proceed to Workspace →
-                </button>
-              </div>
-            )}
-          </div>
+                {/* Horizontal Step Pipeline (Network -> Policy -> Clock-In -> Session -> Clock-Out) */}
+                <div className="pt-2">
+                  <div className="flex items-center justify-between relative">
+                    <div className="absolute top-1/2 left-0 right-0 h-0.5 bg-[#E2E8F0] -translate-y-1/2 z-0" />
 
-          {/* TODAY'S ACTIVE SESSION BREAKDOWN — fills height gap below Primary Workflow */}
-          <TodaySessionBreakdown
-            checkIn={checkIn}
-            checkOut={checkOut}
-            formattedTimeString={formattedTimeString}
-            currentMinutes={currentMinutes}
-          />
+                    {/* Step 1: Network */}
+                    <div className="relative z-10 flex flex-col items-center gap-1 bg-white px-2">
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
+                        ipVerificationResult?.success
+                          ? "bg-[#EFF6FF] text-[#2563EB] border-2 border-[#2563EB]"
+                          : "bg-[#F8FAFC] text-[#94A3B8] border-2 border-[#E2E8F0]"
+                      }`}>
+                        {ipVerificationResult?.success ? <FaCheck className="text-xs text-[#2563EB]" /> : "1"}
+                      </div>
+                      <span className={`text-[11px] font-bold ${ipVerificationResult?.success ? "text-[#2563EB]" : "text-[#64748B]"}`}>Network</span>
+                    </div>
+
+                    {/* Step 2: Policy */}
+                    <div className="relative z-10 flex flex-col items-center gap-1 bg-white px-2">
+                      <div className="w-8 h-8 rounded-full bg-[#EFF6FF] text-[#2563EB] border-2 border-[#2563EB] flex items-center justify-center text-xs font-bold">
+                        <FaCheck className="text-xs text-[#2563EB]" />
+                      </div>
+                      <span className="text-[11px] font-bold text-[#2563EB]">Policy</span>
+                    </div>
+
+                    {/* Step 3: Clock-In */}
+                    <div className="relative z-10 flex flex-col items-center gap-1 bg-white px-2">
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
+                        checkIn
+                          ? "bg-[#EFF6FF] text-[#2563EB] border-2 border-[#2563EB]"
+                          : "bg-[#F8FAFC] text-[#94A3B8] border-2 border-[#E2E8F0]"
+                      }`}>
+                        {checkIn ? <FaCheck className="text-xs text-[#2563EB]" /> : "3"}
+                      </div>
+                      <span className={`text-[11px] font-bold ${checkIn ? "text-[#2563EB]" : "text-[#64748B]"}`}>Clock-In</span>
+                    </div>
+
+                    {/* Step 4: Session */}
+                    <div className="relative z-10 flex flex-col items-center gap-1 bg-white px-2">
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
+                        checkIn
+                          ? "bg-[#EFF6FF] text-[#2563EB] border-2 border-[#2563EB]"
+                          : "bg-[#F8FAFC] text-[#94A3B8] border-2 border-[#E2E8F0]"
+                      }`}>
+                        {checkIn ? <FaCheck className="text-xs text-[#2563EB]" /> : "4"}
+                      </div>
+                      <span className={`text-[11px] font-bold ${checkIn ? "text-[#2563EB]" : "text-[#64748B]"}`}>Session</span>
+                    </div>
+
+                    {/* Step 5: Clock-Out */}
+                    <div className="relative z-10 flex flex-col items-center gap-1 bg-white px-2">
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
+                        checkOut
+                          ? "bg-[#EFF6FF] text-[#2563EB] border-2 border-[#2563EB]"
+                          : "bg-[#F8FAFC] text-[#94A3B8] border-2 border-[#E2E8F0]"
+                      }`}>
+                        {checkOut ? <FaCheck className="text-xs text-[#2563EB]" /> : "5"}
+                      </div>
+                      <span className={`text-[11px] font-bold ${checkOut ? "text-[#2563EB]" : "text-[#64748B]"}`}>Clock-Out</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* PRIMARY ATTENDANCE WORKFLOW FOR EMPLOYEES / STUDENTS */}
+              <div className="bg-white rounded-2xl p-6 border border-[#E2E8F0] border-l-4 border-l-[#2563EB] shadow-sm space-y-4">
+                <div className="flex items-center justify-between border-b border-[#E2E8F0] pb-3">
+                  <h3 className="text-sm font-bold text-[#0F172A] flex items-center gap-2">
+                    <FaClock className="text-[#2563EB]" />
+                    <span>Primary Attendance Workflow</span>
+                  </h3>
+                  <span className="text-xs font-semibold text-[#2563EB] bg-[#EFF6FF] px-2.5 py-0.5 rounded-full border border-[#2563EB]/20">
+                    1 Check-In Per Day
+                  </span>
+                </div>
+
+                {/* STATE 1: Wi-Fi Unverified */}
+                {(!ipVerificationResult || !ipVerificationResult.success) && (
+                  <div className="p-4 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+                    <div className="flex items-center gap-2 text-[#64748B]">
+                      <FaInfoCircle className="text-[#2563EB] text-base shrink-0" />
+                      <span>Connect to authorized Office Wi-Fi to unlock Clock-In.</span>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => handleVerifyIpify()}
+                      disabled={isVerifyingIp}
+                      className="bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold px-4 py-2 rounded-xl transition-colors cursor-pointer text-xs shrink-0"
+                    >
+                      Verify Office Wi-Fi
+                    </button>
+                  </div>
+                )}
+
+                {/* STATE 2: Wi-Fi Verified, Ready to Clock In */}
+                {ipVerificationResult?.success && !checkIn && (
+                  <div className="space-y-3">
+                    <button
+                      type="button"
+                      onClick={() => handleAttendance("check_in")}
+                      className="w-full py-3.5 px-4 rounded-xl font-bold text-xs bg-[#2563EB] hover:bg-[#1D4ED8] text-white transition-colors cursor-pointer flex items-center justify-center gap-2 shadow-xs"
+                    >
+                      <FaCheckCircle className="text-sm" />
+                      <span>Clock In (Mark Attendance)</span>
+                    </button>
+                  </div>
+                )}
+
+                {/* STATE 3: Clocked In, Ready to Clock Out */}
+                {checkIn && !checkOut && (
+                  <div className="space-y-3">
+                    <div className="flex gap-3">
+                      <button
+                        type="button"
+                        onClick={() => handleAttendance("check_out")}
+                        className="flex-1 py-3.5 px-4 rounded-xl font-bold text-xs bg-[#2563EB] hover:bg-[#1D4ED8] text-white transition-colors cursor-pointer flex items-center justify-center gap-2 shadow-xs"
+                      >
+                        <FaTimesCircle className="text-sm" />
+                        <span>Clock Out</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={navigateToDashboard}
+                        className="flex-1 py-3.5 px-4 rounded-xl font-semibold text-xs bg-white hover:bg-[#F8FAFC] text-[#2563EB] border border-[#E2E8F0] transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+                      >
+                        <span>Proceed to Workspace</span>
+                        <FaArrowRight className="text-xs" />
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* STATE 4: Clocked Out Completed */}
+                {checkIn && checkOut && (
+                  <div className="p-4 rounded-xl bg-[#EFF6FF] border border-[#2563EB]/20 flex items-center justify-between text-xs">
+                    <span className="font-bold text-[#2563EB] flex items-center gap-1.5">
+                      <FaCheckCircle /> Attendance Completed for Today
+                    </span>
+                    <button
+                      type="button"
+                      onClick={navigateToDashboard}
+                      className="bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-semibold text-xs px-4 py-2 rounded-xl transition-colors cursor-pointer"
+                    >
+                      Proceed to Workspace →
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* TODAY'S ACTIVE SESSION BREAKDOWN */}
+              <TodaySessionBreakdown
+                checkIn={checkIn}
+                checkOut={checkOut}
+                formattedTimeString={formattedTimeString}
+                currentMinutes={currentMinutes}
+              />
+            </>
+          )}
 
         </div>
 
