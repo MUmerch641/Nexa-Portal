@@ -194,6 +194,8 @@ export default function AttendancePage() {
   const [activeKebabId, setActiveKebabId] = useState(null);
   const [deleteModal, setDeleteModal] = useState({ isOpen: false, record: null, loading: false });
   const [inspectModal, setInspectModal] = useState(null);
+  const [showIpManagerModal, setShowIpManagerModal] = useState(false);
+  const [customOfficeIp, setCustomOfficeIp] = useState("39.46.102.129");
 
   useEffect(() => {
     setFormattedTimeString(new Date().toLocaleTimeString());
@@ -1242,6 +1244,81 @@ export default function AttendancePage() {
             <div className="pt-2 text-right">
               <button onClick={() => setInspectModal(null)} className="bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold px-4 py-2 rounded-xl text-xs">
                 Close Details
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* OFFICE WI-FI IP SECURITY GEOFENCING MODAL */}
+      {showIpManagerModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-xl border border-[#E2E8F0] space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between border-b border-[#E2E8F0] pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="h-9 w-9 rounded-xl bg-blue-50 border border-blue-200 text-blue-600 flex items-center justify-center">
+                  <FaWifi className="text-base" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-[#0F172A] text-sm">Office Wi-Fi IP Geofencing</h3>
+                  <p className="text-[11px] text-slate-500">Authorize official office network for attendance.</p>
+                </div>
+              </div>
+              <button onClick={() => setShowIpManagerModal(false)} className="text-slate-400 hover:text-slate-700 font-bold text-base cursor-pointer">✕</button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div className="p-3.5 rounded-2xl bg-blue-50/50 border border-blue-100 space-y-1">
+                <span className="text-[10px] font-bold text-blue-900 uppercase">Current Detected Public IP</span>
+                <p className="font-mono font-black text-blue-700 text-sm">{userIp || "Detecting..."}</p>
+                <p className="text-[11px] text-slate-600">Your current router public IP address.</p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold uppercase text-slate-700 mb-1">
+                  Authorized Office Public IP *
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={customOfficeIp}
+                    onChange={(e) => setCustomOfficeIp(e.target.value)}
+                    placeholder="e.g. 39.46.102.129"
+                    className="flex-1 rounded-xl border border-slate-200 px-3 py-2 font-mono text-xs text-slate-900 outline-none focus:border-blue-600"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setCustomOfficeIp(userIp)}
+                    className="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs cursor-pointer whitespace-nowrap"
+                  >
+                    Use Current IP
+                  </button>
+                </div>
+              </div>
+
+              <p className="text-[11px] text-slate-500 italic">
+                🛡️ Only staff and students connected to this public IP will be authorized to mark attendance on-site.
+              </p>
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowIpManagerModal(false)}
+                className="flex-1 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setOfficeNetworkInfo(prev => ({ ...prev, public_ip_address: customOfficeIp }));
+                  setShowIpManagerModal(false);
+                  showToast("Office IP Saved 🛡️", `Authorized IP set to ${customOfficeIp}`, "success");
+                }}
+                className="flex-1 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs cursor-pointer"
+              >
+                Save & Enforce IP
               </button>
             </div>
           </div>
