@@ -655,7 +655,7 @@ export default function AttendancePage() {
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
-                      onClick={exportAttendanceCsv}
+                      onClick={handleExportCsv}
                       className="bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold px-4 py-2 rounded-xl text-xs transition-colors cursor-pointer flex items-center gap-1.5 shadow-xs whitespace-nowrap"
                     >
                       <FaDownload className="text-xs" /> Export Report CSV
