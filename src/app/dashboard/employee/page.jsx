@@ -79,18 +79,59 @@ export default function EmployeeDedicatedDashboardPage() {
     setModal({ ...modal, isOpen: false });
   };
 
+  const [orgEmployeesAttendance, setOrgEmployeesAttendance] = useState([]);
+
   useEffect(() => {
+    const savedRole = localStorage.getItem("user_role") || "employee";
     const savedEmail = (localStorage.getItem("current_user_email") || "").trim().toLowerCase();
     const savedName = localStorage.getItem("current_user_name") || savedEmail.split("@")[0] || "Employee";
 
+    const isAdmin = savedRole === "admin" || savedEmail.includes("admin") || savedEmail.includes("owner");
+    setIsAdminUser(isAdmin);
     setEmployeeEmail(savedEmail);
     setEmployeeName(savedName);
 
-    fetchEmployeeDashboardData(savedEmail);
+    fetchEmployeeDashboardData(savedEmail, isAdmin);
   }, []);
 
-  const fetchEmployeeDashboardData = async (email) => {
+  const fetchEmployeeDashboardData = async (email, isAdmin = false) => {
     if (!email) return;
+
+    // If Admin, fetch all employees & today's attendance status
+    if (isAdmin) {
+      try {
+        const [allEmployees, allLogs] = await Promise.all([
+          dbFetch("employees").catch(() => []),
+          dbFetch("attendance").catch(() => [])
+        ]);
+        const todayStr = new Date().toISOString().split("T")[0];
+        const statusList = (allEmployees || []).map((emp) => {
+          const empEmail = (emp.email || "").toLowerCase().trim();
+          const matchLog = (allLogs || []).find(
+            (l) => (l.user_email || l.email || "").toLowerCase().trim() === empEmail &&
+                   (l.attendance_date === todayStr || (l.timestamp && l.timestamp.startsWith(todayStr)))
+          );
+          let status = "Absent";
+          let checkIn = "--:--";
+          let checkOut = "--:--";
+          if (matchLog) {
+            status = matchLog.attendance_status || (matchLog.check_out_time ? "Completed" : "Present");
+            checkIn = matchLog.check_in_time || "--:--";
+            checkOut = matchLog.check_out_time || "--:--";
+          }
+          return {
+            id: emp.id || empEmail,
+            name: emp.full_name || emp.name,
+            department: emp.department || emp.designation || "Staff",
+            email: emp.email,
+            status,
+            checkIn,
+            checkOut
+          };
+        });
+        setOrgEmployeesAttendance(statusList);
+      } catch (e) {}
+    }
 
     // 1. Fetch Today's Attendance & History Log
     try {
@@ -499,74 +540,127 @@ export default function EmployeeDedicatedDashboardPage() {
         {/* LEFT COLUMN (7 COLS): Attendance Card & My Tasks */}
         <div className="lg:col-span-7 space-y-6">
           {/* TODAY'S ATTENDANCE CARD */}
-          <div className="bg-white p-6 rounded-2xl border border-[#E2E8F0] shadow-sm space-y-4">
-            <div className="flex items-center justify-between border-b border-[#E2E8F0] pb-3">
-              <h2 className="text-sm font-bold text-[#0F172A] flex items-center gap-2">
-                <FaCalendarCheck className="text-[#2563EB]" />
-                <span>Today's Attendance Control</span>
-              </h2>
-              <span className={`text-[10px] font-bold uppercase px-2.5 py-1 rounded-full border ${
-                todayAttendance?.check_out_time
-                  ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                  : todayAttendance?.check_in_time
-                  ? "bg-blue-50 text-blue-700 border-blue-200"
-                  : "bg-amber-50 text-amber-700 border-amber-200"
-              }`}>
-                {todayAttendance?.check_out_time
-                  ? "Completed"
-                  : todayAttendance?.check_in_time
-                  ? "Checked In"
-                  : "Not Checked In"}
-              </span>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="p-4 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-1">
-                <span className="text-[10px] font-semibold text-[#64748B] uppercase">Check-In Time</span>
-                <p className="text-base font-mono font-bold text-[#0F172A]">
-                  {todayAttendance?.check_in_time || "--:--"}
-                </p>
+          {isAdminUser ? (
+            <div className="bg-white p-6 rounded-2xl border border-[#E2E8F0] border-l-4 border-l-[#2563EB] shadow-sm space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#E2E8F0] pb-3">
+                <div className="space-y-0.5">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-[#2563EB] bg-[#EFF6FF] px-2.5 py-0.5 rounded-full border border-[#2563EB]/20">
+                    Admin Supervisory View
+                  </span>
+                  <h2 className="text-sm font-bold text-[#0F172A] flex items-center gap-2 mt-1">
+                    <FaCalendarCheck className="text-[#2563EB]" />
+                    <span>Employees Today&apos;s Attendance Status</span>
+                  </h2>
+                </div>
+                <span className="text-xs font-semibold text-slate-500">
+                  {orgEmployeesAttendance.filter(e => e.status.toLowerCase().includes("present") || e.status.toLowerCase().includes("on time")).length} / {orgEmployeesAttendance.length} Present
+                </span>
               </div>
 
-              <div className="p-4 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-1">
-                <span className="text-[10px] font-semibold text-[#64748B] uppercase">Check-Out Time</span>
-                <p className="text-base font-mono font-bold text-[#0F172A]">
-                  {todayAttendance?.check_out_time || "--:--"}
-                </p>
+              {/* Employees Attendance List */}
+              <div className="divide-y divide-slate-100 max-h-72 overflow-y-auto">
+                {orgEmployeesAttendance.length === 0 ? (
+                  <p className="text-xs text-slate-400 text-center py-6">No employee records found.</p>
+                ) : (
+                  orgEmployeesAttendance.map((emp) => (
+                    <div key={emp.id} className="py-2.5 flex items-center justify-between gap-3 text-xs">
+                      <div>
+                        <p className="font-bold text-slate-900">{emp.name}</p>
+                        <p className="text-[11px] text-slate-500">{emp.department} • In: {emp.checkIn} | Out: {emp.checkOut}</p>
+                      </div>
+                      <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
+                        emp.status.toLowerCase().includes("present") || emp.status.toLowerCase().includes("on time")
+                          ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                          : emp.status.toLowerCase().includes("leave")
+                          ? "bg-purple-50 text-purple-700 border-purple-200"
+                          : emp.status.toLowerCase().includes("late")
+                          ? "bg-amber-50 text-amber-700 border-amber-200"
+                          : "bg-rose-50 text-rose-700 border-rose-200"
+                      }`}>
+                        {emp.status}
+                      </span>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+                <span>🛡️ Employees clock in from their personal devices.</span>
+                <Link href="/dashboard/attendance" className="text-blue-600 font-bold hover:underline">
+                  Full Master Hub →
+                </Link>
               </div>
             </div>
+          ) : (
+            <div className="bg-white p-6 rounded-2xl border border-[#E2E8F0] shadow-sm space-y-4">
+              <div className="flex items-center justify-between border-b border-[#E2E8F0] pb-3">
+                <h2 className="text-sm font-bold text-[#0F172A] flex items-center gap-2">
+                  <FaCalendarCheck className="text-[#2563EB]" />
+                  <span>Today&apos;s Attendance Control</span>
+                </h2>
+                <span className={`text-[10px] font-bold uppercase px-2.5 py-1 rounded-full border ${
+                  todayAttendance?.check_out_time
+                    ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                    : todayAttendance?.check_in_time
+                    ? "bg-blue-50 text-blue-700 border-blue-200"
+                    : "bg-amber-50 text-amber-700 border-amber-200"
+                }`}>
+                  {todayAttendance?.check_out_time
+                    ? "Completed"
+                    : todayAttendance?.check_in_time
+                    ? "Checked In"
+                    : "Not Checked In"}
+                </span>
+              </div>
 
-            {/* Check-In / Check-Out Buttons */}
-            <div className="grid grid-cols-2 gap-3 pt-2">
-              <button
-                type="button"
-                onClick={handleCheckIn}
-                disabled={markingAttendance || Boolean(todayAttendance?.check_in_time)}
-                className={`py-3 rounded-xl font-bold text-xs shadow-xs transition-colors flex items-center justify-center gap-2 cursor-pointer ${
-                  todayAttendance?.check_in_time
-                    ? "bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed"
-                    : "bg-[#2563EB] hover:bg-[#1D4ED8] text-white"
-                }`}
-              >
-                <FaUserCheck />
-                <span>{todayAttendance?.check_in_time ? "Checked In 🟢" : "Check In"}</span>
-              </button>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="p-4 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-1">
+                  <span className="text-[10px] font-semibold text-[#64748B] uppercase">Check-In Time</span>
+                  <p className="text-base font-mono font-bold text-[#0F172A]">
+                    {todayAttendance?.check_in_time || "--:--"}
+                  </p>
+                </div>
 
-              <button
-                type="button"
-                onClick={handleCheckOut}
-                disabled={markingAttendance || !todayAttendance?.check_in_time || Boolean(todayAttendance?.check_out_time)}
-                className={`py-3 rounded-xl font-bold text-xs shadow-xs transition-colors flex items-center justify-center gap-2 cursor-pointer ${
-                  !todayAttendance?.check_in_time || todayAttendance?.check_out_time
-                    ? "bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed"
-                    : "bg-rose-600 hover:bg-rose-700 text-white"
-                }`}
-              >
-                <FaUserTimes />
-                <span>{todayAttendance?.check_out_time ? "Checked Out 🔴" : "Check Out"}</span>
-              </button>
+                <div className="p-4 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-1">
+                  <span className="text-[10px] font-semibold text-[#64748B] uppercase">Check-Out Time</span>
+                  <p className="text-base font-mono font-bold text-[#0F172A]">
+                    {todayAttendance?.check_out_time || "--:--"}
+                  </p>
+                </div>
+              </div>
+
+              {/* Check-In / Check-Out Buttons for Employee */}
+              <div className="grid grid-cols-2 gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={handleCheckIn}
+                  disabled={markingAttendance || Boolean(todayAttendance?.check_in_time)}
+                  className={`py-3 rounded-xl font-bold text-xs shadow-xs transition-colors flex items-center justify-center gap-2 cursor-pointer ${
+                    todayAttendance?.check_in_time
+                      ? "bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed"
+                      : "bg-[#2563EB] hover:bg-[#1D4ED8] text-white"
+                  }`}
+                >
+                  <FaUserCheck />
+                  <span>{todayAttendance?.check_in_time ? "Checked In 🟢" : "Check In"}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleCheckOut}
+                  disabled={markingAttendance || !todayAttendance?.check_in_time || Boolean(todayAttendance?.check_out_time)}
+                  className={`py-3 rounded-xl font-bold text-xs shadow-xs transition-colors flex items-center justify-center gap-2 cursor-pointer ${
+                    !todayAttendance?.check_in_time || todayAttendance?.check_out_time
+                      ? "bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed"
+                      : "bg-rose-600 hover:bg-rose-700 text-white"
+                  }`}
+                >
+                  <FaUserTimes />
+                  <span>{todayAttendance?.check_out_time ? "Checked Out 🔴" : "Check Out"}</span>
+                </button>
+              </div>
             </div>
-          </div>
+          )}
 
           {/* MY ATTENDANCE HISTORY TABLE */}
           <div className="bg-white p-6 rounded-2xl border border-[#E2E8F0] shadow-sm space-y-4">
