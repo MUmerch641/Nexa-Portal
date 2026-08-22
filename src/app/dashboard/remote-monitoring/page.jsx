@@ -876,8 +876,6 @@ export default function RemoteMonitoringPage() {
                 />
               </div>
             </div>
-          )} </div>
-            </div>
           )}
 
           {/* Active Employee Cards Grid */}
