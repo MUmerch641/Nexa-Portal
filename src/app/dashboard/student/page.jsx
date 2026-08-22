@@ -461,19 +461,29 @@ export default function StudentDedicatedDashboardPage() {
 
     const newLeave = {
       id: `leave-${Date.now()}`,
-      applicant_name: studentInfo.name,
+      applicant_name: studentInfo.name || "Student Applicant",
+      employee_name: studentInfo.name || "Student Applicant",
       applicant_email: studentInfo.email,
       email: studentInfo.email,
       role: "student",
       leave_type: studentLeaveForm.leave_type,
+      type: studentLeaveForm.leave_type,
       start_date: studentLeaveForm.start_date,
       end_date: studentLeaveForm.end_date,
       reason: studentLeaveForm.reason.trim(),
-      status: "Pending",
+      status: "pending",
+      salary_cut: false,
       applied_at: new Date().toISOString().split("T")[0],
     };
 
     setMyStudentLeaves((prev) => [newLeave, ...prev]);
+
+    try {
+      const savedLeaves = JSON.parse(localStorage.getItem("software_house_leaves") || "[]");
+      localStorage.setItem("software_house_leaves", JSON.stringify([newLeave, ...savedLeaves.filter(l => l.id !== newLeave.id)]));
+      window.dispatchEvent(new Event("storage"));
+    } catch (err) {}
+
     await dbSaveRecord("leaves", newLeave).catch(() => {});
 
     setSubmittingStudentLeave(false);

@@ -337,20 +337,30 @@ export default function EmployeeDedicatedDashboardPage() {
 
     const newLeave = {
       id: `leave-${Date.now()}`,
-      applicant_name: employeeName,
+      applicant_name: employeeName || "Employee Staff",
+      employee_name: employeeName || "Employee Staff",
       applicant_email: employeeEmail,
       email: employeeEmail,
       role: "employee",
       leave_type: leaveForm.leave_type,
+      type: leaveForm.leave_type,
       start_date: leaveForm.start_date,
       end_date: leaveForm.end_date,
       reason: leaveForm.reason.trim(),
-      status: "Pending",
+      status: "pending",
+      salary_cut: false,
       applied_at: new Date().toISOString().split("T")[0],
     };
 
     const updatedLeaves = [newLeave, ...myLeaves];
     setMyLeaves(updatedLeaves);
+
+    try {
+      const savedLeaves = JSON.parse(localStorage.getItem("software_house_leaves") || "[]");
+      localStorage.setItem("software_house_leaves", JSON.stringify([newLeave, ...savedLeaves.filter(l => l.id !== newLeave.id)]));
+      window.dispatchEvent(new Event("storage"));
+    } catch (err) {}
+
     await dbSaveRecord("leaves", newLeave).catch(() => {});
 
     setSubmittingLeave(false);

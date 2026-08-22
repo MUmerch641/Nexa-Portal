@@ -3,6 +3,9 @@
 import { useEffect, useState, useRef } from "react";
 import { logout } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
+import { dbSaveRecord } from "@/lib/dbPersistence";
+import Modal from "@/components/Modal";
+import { showToast } from "@/components/Toast";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import {
@@ -27,7 +30,14 @@ import {
   FaUsers,
   FaLandmark,
   FaFilter,
-  FaFileInvoiceDollar
+  FaFileInvoiceDollar,
+  FaCalendarAlt,
+  FaClock,
+  FaFileAlt,
+  FaTimesCircle,
+  FaShieldAlt,
+  FaInfoCircle,
+  FaUserGraduate
 } from "react-icons/fa";
 
 export default function Navbar({ onMenuClick, isSidebarOpen = true }) {
@@ -49,6 +59,10 @@ export default function Navbar({ onMenuClick, isSidebarOpen = true }) {
   // Admin Notifications Lists
   const [pendingLeaves, setPendingLeaves] = useState([]);
   const [pendingComplaints, setPendingComplaints] = useState([]);
+
+  // Detail Modals for Bell Notifications
+  const [selectedLeaveModal, setSelectedLeaveModal] = useState(null);
+  const [selectedComplaintModal, setSelectedComplaintModal] = useState(null);
 
   // Student & Employee Notifications List
   const [userAlerts, setUserAlerts] = useState([]);
@@ -157,14 +171,13 @@ export default function Navbar({ onMenuClick, isSidebarOpen = true }) {
   }, [userEmail]);
 
   const loadAllNotifications = () => {
-    const currentRole = localStorage.getItem("user_role") || "admin";
-    const email = localStorage.getItem("current_user_email") || "";
-
     try {
       const savedLeaves = localStorage.getItem("software_house_leaves");
       if (savedLeaves) {
         const list = JSON.parse(savedLeaves);
-        setPendingLeaves(list.filter(l => l.status === "pending"));
+        setPendingLeaves(list.filter(l => (l.status || "").toLowerCase() === "pending"));
+      } else {
+        setPendingLeaves([]);
       }
     } catch(e) {}
 
@@ -172,9 +185,51 @@ export default function Navbar({ onMenuClick, isSidebarOpen = true }) {
       const savedComplaints = localStorage.getItem("software_house_complaints_list");
       if (savedComplaints) {
         const cList = JSON.parse(savedComplaints);
-        setPendingComplaints(cList.filter(c => c.status === "Pending"));
+        setPendingComplaints(cList.filter(c => (c.status || "").toLowerCase() === "pending"));
+      } else {
+        setPendingComplaints([]);
       }
     } catch(e) {}
+  };
+
+  const handleApproveLeave = async (leaveId) => {
+    try {
+      const savedLeaves = JSON.parse(localStorage.getItem("software_house_leaves") || "[]");
+      const target = savedLeaves.find(l => l.id === leaveId);
+      const updated = savedLeaves.map(l => l.id === leaveId ? { ...l, status: "approved", salary_cut: false } : l);
+      localStorage.setItem("software_house_leaves", JSON.stringify(updated));
+      
+      if (target) {
+        await dbSaveRecord("leaves", { ...target, status: "approved", salary_cut: false }).catch(() => {});
+      }
+      
+      setPendingLeaves(updated.filter(l => (l.status || "").toLowerCase() === "pending"));
+      setSelectedLeaveModal(null);
+      showToast("Leave Approved 🟢", `Leave application for ${target?.employee_name || target?.applicant_name || 'Applicant'} approved.`, "success");
+      window.dispatchEvent(new Event("storage"));
+    } catch (e) {
+      showToast("Error ⚠️", "Failed to update leave status.", "error");
+    }
+  };
+
+  const handleRejectLeave = async (leaveId) => {
+    try {
+      const savedLeaves = JSON.parse(localStorage.getItem("software_house_leaves") || "[]");
+      const target = savedLeaves.find(l => l.id === leaveId);
+      const updated = savedLeaves.map(l => l.id === leaveId ? { ...l, status: "rejected", salary_cut: true } : l);
+      localStorage.setItem("software_house_leaves", JSON.stringify(updated));
+      
+      if (target) {
+        await dbSaveRecord("leaves", { ...target, status: "rejected", salary_cut: true }).catch(() => {});
+      }
+      
+      setPendingLeaves(updated.filter(l => (l.status || "").toLowerCase() === "pending"));
+      setSelectedLeaveModal(null);
+      showToast("Leave Rejected 🔴", `Leave application rejected.`, "info");
+      window.dispatchEvent(new Event("storage"));
+    } catch (e) {
+      showToast("Error ⚠️", "Failed to update leave status.", "error");
+    }
   };
 
   useEffect(() => {
@@ -192,9 +247,11 @@ export default function Navbar({ onMenuClick, isSidebarOpen = true }) {
 
     window.addEventListener("roleChanged", handleRoleChange);
     window.addEventListener("storage", loadAllNotifications);
+    window.addEventListener("leaveSubmitted", loadAllNotifications);
     return () => {
       window.removeEventListener("roleChanged", handleRoleChange);
       window.removeEventListener("storage", loadAllNotifications);
+      window.removeEventListener("leaveSubmitted", loadAllNotifications);
     };
   }, []);
 
@@ -384,31 +441,157 @@ export default function Navbar({ onMenuClick, isSidebarOpen = true }) {
 
           {/* Notifications Dropdown Panel */}
           {showNotifications && (
-            <div className="absolute right-0 mt-2 w-88 rounded-2xl bg-white p-4 shadow-lg border border-[#E2E8F0] space-y-3 z-50 animate-in fade-in zoom-in-95 duration-150 text-[#0F172A]">
-              <div className="flex items-center justify-between border-b border-[#E2E8F0] pb-2">
-                <h4 className="text-xs font-bold text-[#0F172A] flex items-center gap-1.5">
-                  <FaBell className="text-[#2563EB]" />
-                  <span>Notifications</span>
-                </h4>
-                <span className="text-[10px] font-semibold bg-[#EFF6FF] text-[#2563EB] px-2 py-0.5 rounded-full">
-                  {totalAdminCount} Items
+            <div className="absolute right-0 mt-2 w-96 rounded-2xl bg-white p-4 shadow-xl border border-[#E2E8F0] space-y-3 z-50 animate-in fade-in zoom-in-95 duration-150 text-[#0F172A]">
+              <div className="flex items-center justify-between border-b border-[#E2E8F0] pb-2.5">
+                <div className="flex items-center gap-2">
+                  <div className="p-1.5 rounded-lg bg-[#EFF6FF] text-[#2563EB]">
+                    <FaBell className="text-xs" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-bold text-[#0F172A]">Notification Center</h4>
+                    <p className="text-[10px] text-[#64748B]">Pending leaves & complaints</p>
+                  </div>
+                </div>
+                <span className="text-[10px] font-bold bg-[#EFF6FF] text-[#2563EB] px-2 py-0.5 rounded-full border border-[#2563EB]/20">
+                  {totalAdminCount} Pending
                 </span>
               </div>
 
-              <div className="max-h-72 overflow-y-auto space-y-2 pr-1 text-xs">
-                {activeComplaints.map((c) => (
-                  <div key={c.id} className="p-3 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-1">
-                    <div className="flex items-center justify-between font-semibold text-[#0F172A] text-[11px]">
-                      <span>{c.submitted_by}</span>
-                      <span className="text-[9px] bg-[#EFF6FF] text-[#2563EB] px-1.5 py-0.5 rounded font-bold">{c.category}</span>
+              {/* Category Filter Tabs */}
+              <div className="flex items-center gap-1 bg-[#F8FAFC] p-1 rounded-xl border border-[#E2E8F0] text-[11px] font-semibold">
+                <button
+                  type="button"
+                  onClick={() => setActiveNotifCategory("all")}
+                  className={`flex-1 py-1 rounded-lg text-center transition-all cursor-pointer ${
+                    activeNotifCategory === "all" ? "bg-white text-[#2563EB] shadow-xs" : "text-[#64748B]"
+                  }`}
+                >
+                  All ({totalAdminCount})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveNotifCategory("leaves")}
+                  className={`flex-1 py-1 rounded-lg text-center transition-all cursor-pointer ${
+                    activeNotifCategory === "leaves" ? "bg-white text-[#2563EB] shadow-xs" : "text-[#64748B]"
+                  }`}
+                >
+                  Leaves ({activeLeaves.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveNotifCategory("complaints")}
+                  className={`flex-1 py-1 rounded-lg text-center transition-all cursor-pointer ${
+                    activeNotifCategory === "complaints" ? "bg-white text-[#2563EB] shadow-xs" : "text-[#64748B]"
+                  }`}
+                >
+                  Complaints ({activeComplaints.length})
+                </button>
+              </div>
+
+              <div className="max-h-80 overflow-y-auto space-y-2 pr-1 text-xs">
+                {/* 1. Leaves Section */}
+                {(activeNotifCategory === "all" || activeNotifCategory === "leaves") && activeLeaves.map((l) => {
+                  const applicantName = l.applicant_name || l.employee_name || "Staff / Student";
+                  const leaveType = l.leave_type || l.type || "Leave Request";
+                  const startDate = l.start_date || "N/A";
+                  const endDate = l.end_date || "N/A";
+                  const reason = l.reason || "No reason provided";
+                  const isStudent = l.role === "student" || (applicantName.toLowerCase().includes("student"));
+
+                  return (
+                    <div
+                      key={l.id}
+                      onClick={() => {
+                        setSelectedLeaveModal(l);
+                        setShowNotifications(false);
+                      }}
+                      className="p-3 rounded-xl bg-[#F8FAFC] hover:bg-[#EFF6FF] border border-[#E2E8F0] hover:border-[#2563EB]/40 space-y-1.5 transition-all cursor-pointer group"
+                    >
+                      <div className="flex items-center justify-between font-bold text-[#0F172A] text-xs">
+                        <div className="flex items-center gap-1.5 truncate">
+                          {isStudent ? (
+                            <FaUserGraduate className="text-[#2563EB] shrink-0 text-xs" />
+                          ) : (
+                            <FaUserTie className="text-[#2563EB] shrink-0 text-xs" />
+                          )}
+                          <span className="truncate group-hover:text-[#2563EB] transition-colors">{applicantName}</span>
+                          <span className="text-[9px] px-1.5 py-0.2 rounded font-semibold bg-[#E2E8F0] text-[#475569]">
+                            {isStudent ? "Student" : "Staff"}
+                          </span>
+                        </div>
+                        <span className="text-[10px] bg-[#EFF6FF] text-[#2563EB] border border-[#2563EB]/20 px-2 py-0.5 rounded-full font-bold shrink-0">
+                          {leaveType}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 text-[11px] text-[#2563EB] font-medium">
+                        <FaCalendarAlt className="text-[10px] text-[#64748B]" />
+                        <span>{startDate} to {endDate}</span>
+                      </div>
+
+                      <p className="text-[11px] text-[#64748B] leading-snug line-clamp-2 italic">
+                        "{reason}"
+                      </p>
+
+                      <div className="flex items-center justify-between text-[10px] pt-1 border-t border-[#E2E8F0]/60">
+                        <span className="text-amber-700 font-semibold flex items-center gap-1">
+                          <FaClock className="text-[9px]" /> Pending HR Review
+                        </span>
+                        <span className="text-[#2563EB] font-bold group-hover:underline flex items-center gap-0.5">
+                          Review Details & Action →
+                        </span>
+                      </div>
                     </div>
-                    <p className="text-[11px] text-[#64748B] leading-snug">"{c.title}"</p>
+                  );
+                })}
+
+                {/* 2. Complaints Section */}
+                {(activeNotifCategory === "all" || activeNotifCategory === "complaints") && activeComplaints.map((c) => (
+                  <div
+                    key={c.id}
+                    onClick={() => {
+                      setSelectedComplaintModal(c);
+                      setShowNotifications(false);
+                    }}
+                    className="p-3 rounded-xl bg-[#F8FAFC] hover:bg-[#EFF6FF] border border-[#E2E8F0] hover:border-[#2563EB]/40 space-y-1.5 transition-all cursor-pointer group"
+                  >
+                    <div className="flex items-center justify-between font-bold text-[#0F172A] text-xs">
+                      <span className="group-hover:text-[#2563EB] transition-colors">{c.submitted_by || "Anonymous"}</span>
+                      <span className="text-[9px] bg-[#EFF6FF] text-[#2563EB] px-2 py-0.5 rounded-full font-bold">{c.category || "Complaint"}</span>
+                    </div>
+                    <p className="text-[11px] text-[#64748B] leading-snug line-clamp-2">"{c.title || c.description}"</p>
+                    <div className="flex items-center justify-between text-[10px] pt-1 border-t border-[#E2E8F0]/60">
+                      <span className="text-amber-700 font-semibold">{c.status || "Pending"}</span>
+                      <span className="text-[#2563EB] font-bold group-hover:underline">View Ticket →</span>
+                    </div>
                   </div>
                 ))}
 
-                {activeComplaints.length === 0 && (
-                  <p className="text-center py-6 text-[#64748B] italic text-[11px]">No new notifications.</p>
+                {totalAdminCount === 0 && (
+                  <div className="text-center py-8 space-y-1.5">
+                    <FaCheckCircle className="mx-auto text-emerald-500 text-2xl" />
+                    <p className="text-xs font-bold text-[#0F172A]">All caught up!</p>
+                    <p className="text-[#64748B] text-[11px]">No pending leaves or complaints to review.</p>
+                  </div>
                 )}
+              </div>
+
+              {/* Bottom Hub Link */}
+              <div className="border-t border-[#E2E8F0] pt-2 flex items-center justify-between text-[11px]">
+                <Link
+                  href="/dashboard/leaves"
+                  onClick={() => setShowNotifications(false)}
+                  className="font-bold text-[#2563EB] hover:underline flex items-center gap-1"
+                >
+                  <FaCalendarAlt className="text-[10px]" /> Go to Leaves Hub →
+                </Link>
+                <Link
+                  href="/dashboard/complaints"
+                  onClick={() => setShowNotifications(false)}
+                  className="font-bold text-[#64748B] hover:text-[#0F172A] transition-colors"
+                >
+                  Complaints Hub
+                </Link>
               </div>
             </div>
           )}
@@ -499,6 +682,129 @@ export default function Navbar({ onMenuClick, isSidebarOpen = true }) {
             </div>
           </div>
         </div>
+      {/* LEAVE DETAILS & APPROVAL MODAL FROM NOTIFICATION BELL */}
+      {selectedLeaveModal && (
+        <Modal
+          isOpen={!!selectedLeaveModal}
+          onClose={() => setSelectedLeaveModal(null)}
+          title={`Leave Application — ${selectedLeaveModal.applicant_name || selectedLeaveModal.employee_name || "Applicant"}`}
+        >
+          <div className="space-y-4 text-xs">
+            <div className="p-3.5 rounded-xl bg-[#EFF6FF] border border-[#2563EB]/20 space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] uppercase font-bold text-[#2563EB] tracking-wider">Leave Application Details</span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#FEF3C7] text-[#92400E] border border-[#F59E0B]/20 flex items-center gap-1">
+                  <FaClock className="text-[9px]" /> Pending HR Review
+                </span>
+              </div>
+              <h3 className="text-sm font-bold text-[#0F172A]">
+                {selectedLeaveModal.applicant_name || selectedLeaveModal.employee_name || "Applicant Name"}
+              </h3>
+              <p className="text-[11px] text-[#64748B]">
+                {selectedLeaveModal.applicant_email || selectedLeaveModal.email || "No email on record"} • {selectedLeaveModal.role === "student" || (selectedLeaveModal.applicant_name || "").toLowerCase().includes("student") ? "Enrolled Student" : "Staff Member"}
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-[#F8FAFC] p-3.5 rounded-xl border border-[#E2E8F0]">
+              <div>
+                <span className="text-[#64748B] block text-[10px] font-semibold uppercase">Leave Type</span>
+                <strong className="text-[#0F172A] text-xs font-bold">{selectedLeaveModal.leave_type || selectedLeaveModal.type || "Casual Leave"}</strong>
+              </div>
+              <div>
+                <span className="text-[#64748B] block text-[10px] font-semibold uppercase">Applied Date</span>
+                <span className="text-[#0F172A] text-xs font-medium">{selectedLeaveModal.applied_at || selectedLeaveModal.created_at?.split("T")[0] || "Today"}</span>
+              </div>
+              <div className="sm:col-span-2">
+                <span className="text-[#64748B] block text-[10px] font-semibold uppercase">Requested Date Range</span>
+                <div className="flex items-center gap-2 mt-0.5 text-xs font-bold text-[#2563EB]">
+                  <FaCalendarAlt className="text-xs" />
+                  <span>{selectedLeaveModal.start_date || "N/A"}</span>
+                  <span className="text-[#64748B] font-normal">to</span>
+                  <span>{selectedLeaveModal.end_date || "N/A"}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-1 bg-[#F8FAFC] p-3.5 rounded-xl border border-[#E2E8F0]">
+              <span className="text-[#64748B] block text-[10px] font-semibold uppercase">Applicant Reason & Details:</span>
+              <p className="text-xs text-[#0F172A] font-medium leading-relaxed italic bg-white p-2.5 rounded-lg border border-[#E2E8F0]">
+                "{selectedLeaveModal.reason || "No details provided"}"
+              </p>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 pt-3 border-t border-[#E2E8F0]">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleApproveLeave(selectedLeaveModal.id)}
+                  className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition-colors shadow-xs cursor-pointer"
+                >
+                  <FaCheckCircle className="text-xs" />
+                  <span>Approve (No Salary Cut)</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleRejectLeave(selectedLeaveModal.id)}
+                  className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs transition-colors shadow-xs cursor-pointer"
+                >
+                  <FaTimesCircle className="text-xs" />
+                  <span>Reject (Salary Cut)</span>
+                </button>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setSelectedLeaveModal(null)}
+                className="px-4 py-2 rounded-xl border border-[#E2E8F0] hover:bg-[#F8FAFC] text-[#64748B] font-semibold text-xs transition-colors cursor-pointer text-center"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* COMPLAINT DETAILS MODAL */}
+      {selectedComplaintModal && (
+        <Modal
+          isOpen={!!selectedComplaintModal}
+          onClose={() => setSelectedComplaintModal(null)}
+          title={`Complaint / Feedback — ${selectedComplaintModal.submitted_by || "Anonymous"}`}
+        >
+          <div className="space-y-4 text-xs">
+            <div className="p-3.5 rounded-xl bg-[#EFF6FF] border border-[#2563EB]/20 space-y-1">
+              <span className="text-[10px] uppercase font-bold text-[#2563EB] tracking-wider">Ticket Category: {selectedComplaintModal.category || "General"}</span>
+              <h3 className="text-sm font-bold text-[#0F172A]">{selectedComplaintModal.title || "Complaint Title"}</h3>
+              <p className="text-[11px] text-[#64748B]">Submitted By: {selectedComplaintModal.submitted_by || "Anonymous"}</p>
+            </div>
+
+            <div className="space-y-1 bg-[#F8FAFC] p-3.5 rounded-xl border border-[#E2E8F0]">
+              <span className="text-[#64748B] block text-[10px] font-semibold uppercase">Description:</span>
+              <p className="text-xs text-[#0F172A] font-medium leading-relaxed bg-white p-2.5 rounded-lg border border-[#E2E8F0]">
+                {selectedComplaintModal.description || selectedComplaintModal.title || "No description provided"}
+              </p>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-[#E2E8F0]">
+              <Link
+                href="/dashboard/complaints"
+                onClick={() => setSelectedComplaintModal(null)}
+                className="px-4 py-2 rounded-xl bg-[#2563EB] text-white font-bold text-xs hover:bg-blue-700 transition-colors"
+              >
+                Open in Complaints Hub →
+              </Link>
+              <button
+                type="button"
+                onClick={() => setSelectedComplaintModal(null)}
+                className="px-4 py-2 rounded-xl border border-[#E2E8F0] text-[#64748B] font-semibold text-xs hover:bg-[#F8FAFC]"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </Modal>
       )}
     </header>
   );
