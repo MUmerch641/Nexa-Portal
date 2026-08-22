@@ -640,7 +640,7 @@ export default function InternshipsPage() {
               No intern records matching current filter selection.
             </div>
           ) : (
-            filteredInterns.map((st) => {
+            filteredInterns.map((st, idx) => {
               const isRemote = st.internship_mode?.includes("Remote");
               const isCompleted = st.progress === 100;
               const dailyLogs = st.daily_logs || [];
@@ -676,7 +676,11 @@ export default function InternshipsPage() {
                         </button>
 
                         {activeKebabId === st.id && (
-                          <div className="absolute right-0 mt-1 w-44 rounded-xl bg-white p-1.5 shadow-lg border border-[#E2E8F0] z-30 space-y-0.5 text-xs text-left animate-in fade-in zoom-in-95 duration-100">
+                          <div className={`absolute right-0 w-44 rounded-xl bg-white p-1.5 shadow-xl border border-[#E2E8F0] z-50 space-y-0.5 text-xs text-left animate-in fade-in zoom-in-95 duration-100 ${
+                            idx >= Math.max(0, filteredInterns.length - 2)
+                              ? "bottom-full mb-1 origin-bottom-right"
+                              : "top-full mt-1 origin-top-right"
+                          }`}>
                             <button
                               type="button"
                               onClick={() => {

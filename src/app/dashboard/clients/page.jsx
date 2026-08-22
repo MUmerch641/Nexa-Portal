@@ -575,7 +575,7 @@ export default function ClientsPage() {
               </thead>
               <tbody className="divide-y divide-[#E2E8F0]">
                 {filteredClients.length > 0 ? (
-                  filteredClients.map((client) => {
+                  filteredClients.map((client, idx) => {
                     const contract = Number(client.contract_value || 0);
                     const paid = Number(client.amount_paid || 0);
                     const pending = contract - paid;
@@ -649,7 +649,11 @@ export default function ClientsPage() {
                               </button>
 
                               {activeKebabId === client.id && (
-                                <div className="absolute right-0 mt-1 w-44 rounded-xl bg-white p-1.5 shadow-lg border border-[#E2E8F0] z-30 space-y-0.5 text-xs text-left animate-in fade-in zoom-in-95 duration-100">
+                                <div className={`absolute right-0 w-44 rounded-xl bg-white p-1.5 shadow-lg border border-[#E2E8F0] z-30 space-y-0.5 text-xs text-left animate-in fade-in zoom-in-95 duration-100 ${
+                                  idx >= Math.max(0, filteredClients.length - 2)
+                                    ? "bottom-full mb-1 origin-bottom-right"
+                                    : "top-full mt-1 origin-top-right"
+                                }`}>
                                   <button
                                     type="button"
                                     onClick={() => {

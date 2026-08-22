@@ -846,7 +846,7 @@ export default function CoursesPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#E2E8F0]">
-                  {students.map((st) => {
+                  {students.map((st, idx) => {
                     const isCompleted = st.progress === 100;
                     const dueDate = new Date(st.next_due_date || todayStr);
                     const isFeeOverdue = dueDate <= new Date();
@@ -915,7 +915,11 @@ export default function CoursesPage() {
                               </button>
 
                               {activeKebabId === st.id && (
-                                <div className="absolute right-0 mt-1 w-44 rounded-xl bg-white p-1.5 shadow-lg border border-[#E2E8F0] z-30 space-y-0.5 text-xs text-left animate-in fade-in zoom-in-95 duration-100">
+                                <div className={`absolute right-0 w-44 rounded-xl bg-white p-1.5 shadow-lg border border-[#E2E8F0] z-30 space-y-0.5 text-xs text-left animate-in fade-in zoom-in-95 duration-100 ${
+                                  idx >= Math.max(0, students.length - 2)
+                                    ? "bottom-full mb-1 origin-bottom-right"
+                                    : "top-full mt-1 origin-top-right"
+                                }`}>
                                   <button
                                     type="button"
                                     onClick={() => {
