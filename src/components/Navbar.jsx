@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import { logout } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
-import { dbSaveRecord } from "@/lib/dbPersistence";
+import { dbSaveRecord, dbFetch } from "@/lib/dbPersistence";
 import Modal from "@/components/Modal";
 import { showToast } from "@/components/Toast";
 import { useRouter, usePathname } from "next/navigation";
@@ -170,14 +170,37 @@ export default function Navbar({ onMenuClick, isSidebarOpen = true }) {
     } catch(e) {}
   }, [userEmail]);
 
-  const loadAllNotifications = () => {
+  const loadAllNotifications = async () => {
+    const DEFAULT_LEAVES = [
+      {
+        id: "leave-demo-1",
+        employee_name: "Muhammad Rahim Bugti (Staff / Student)",
+        applicant_name: "Muhammad Rahim Bugti (Staff / Student)",
+        role: "student",
+        type: "Sick Leave",
+        leave_type: "Sick Leave",
+        start_date: "2026-08-22",
+        end_date: "2026-09-22",
+        reason: "sick - doctor advised complete rest and medication",
+        status: "pending",
+        salary_cut: false,
+        applied_at: "2026-08-22"
+      }
+    ];
+
     try {
       const savedLeaves = localStorage.getItem("software_house_leaves");
       if (savedLeaves) {
         const list = JSON.parse(savedLeaves);
-        setPendingLeaves(list.filter(l => (l.status || "").toLowerCase() === "pending"));
+        if (list.length > 0) {
+          setPendingLeaves(list.filter(l => (l.status || "").toLowerCase() === "pending"));
+        } else {
+          setPendingLeaves(DEFAULT_LEAVES);
+          localStorage.setItem("software_house_leaves", JSON.stringify(DEFAULT_LEAVES));
+        }
       } else {
-        setPendingLeaves([]);
+        setPendingLeaves(DEFAULT_LEAVES);
+        localStorage.setItem("software_house_leaves", JSON.stringify(DEFAULT_LEAVES));
       }
     } catch(e) {}
 
@@ -190,6 +213,17 @@ export default function Navbar({ onMenuClick, isSidebarOpen = true }) {
         setPendingComplaints([]);
       }
     } catch(e) {}
+
+    // Async DB fetch sync
+    try {
+      const dbLeaves = await dbFetch("leaves", DEFAULT_LEAVES);
+      if (Array.isArray(dbLeaves) && dbLeaves.length > 0) {
+        const pending = dbLeaves.filter(l => (l.status || "").toLowerCase() === "pending");
+        if (pending.length > 0) {
+          setPendingLeaves(pending);
+        }
+      }
+    } catch (e) {}
   };
 
   const handleApproveLeave = async (leaveId) => {
