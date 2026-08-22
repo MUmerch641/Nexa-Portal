@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
 import Navbar from "@/components/Navbar";
-import ToastContainer from "@/components/Toast";
+import ToastContainer, { showToast } from "@/components/Toast";
 
 export default function DashboardLayout({ children }) {
   const router = useRouter();
@@ -30,6 +30,8 @@ export default function DashboardLayout({ children }) {
 
   useEffect(() => {
     const checkAuth = () => {
+      if (typeof window === "undefined") return;
+
       const isLoggedIn = localStorage.getItem("isLoggedIn") === "true";
       const userRole = localStorage.getItem("user_role");
 
@@ -71,6 +73,12 @@ export default function DashboardLayout({ children }) {
           router.replace("/dashboard/internships");
           return;
         }
+      } else if (userRole === "client") {
+        if (adminOnlyPaths.includes(currentPath) || currentPath === "/dashboard") {
+          showToast("403 Forbidden 🛑", "Redirecting to Client Portal...", "info");
+          router.replace("/dashboard/client-portal");
+          return;
+        }
       }
 
       setAuthorized(true);
@@ -80,7 +88,11 @@ export default function DashboardLayout({ children }) {
     checkAuth();
 
     window.addEventListener("popstate", checkAuth);
-    const handleRoleChange = () => setRole(localStorage.getItem("user_role") || "admin");
+    const handleRoleChange = () => {
+      if (typeof window !== "undefined") {
+        setRole(localStorage.getItem("user_role") || "admin");
+      }
+    };
     window.addEventListener("roleChanged", handleRoleChange);
 
     return () => {
