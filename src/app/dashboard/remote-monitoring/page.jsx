@@ -488,28 +488,28 @@ export default function RemoteMonitoringPage() {
   });
 
   return (
-    <div className="space-y-6 pb-12 font-sans">
+    <div className="space-y-4 sm:space-y-6 pb-12 font-sans max-w-7xl mx-auto">
       {/* Hidden Canvas for Frame Processing */}
       <canvas ref={canvasRef} className="hidden" />
 
       {/* === TOP BANNER & ROLE SWITCHER === */}
-      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-3">
-            <div className="p-3 rounded-xl bg-blue-50 text-[#2563EB]">
-              <FaDesktop className="h-6 w-6" />
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-6 shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+        <div className="w-full md:w-auto">
+          <div className="flex items-start sm:items-center gap-3">
+            <div className="p-2.5 sm:p-3 rounded-xl bg-blue-50 text-[#2563EB] shrink-0 mt-0.5 sm:mt-0">
+              <FaDesktop className="h-5 w-5 sm:h-6 sm:w-6" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-xl font-bold text-slate-900 tracking-tight">
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="text-lg sm:text-xl font-bold text-slate-900 tracking-tight">
                   Remote Employee Monitoring Module
                 </h1>
-                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] sm:text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
                   <FaShieldAlt className="h-3 w-3" />
                   Supabase RLS Secured
                 </span>
               </div>
-              <p className="text-xs text-slate-500 mt-0.5">
+              <p className="text-xs text-slate-500 mt-0.5 leading-snug">
                 Real-time activity tracking, automated random screenshots (5–15m), application usage, and privacy-first work timelines.
               </p>
             </div>
@@ -517,20 +517,20 @@ export default function RemoteMonitoringPage() {
         </div>
 
         {/* Role & Quick Controls */}
-        <div className="flex items-center gap-3 self-end md:self-auto">
-          <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-medium">
+        <div className="w-full md:w-auto flex items-center justify-between md:justify-end gap-2 sm:gap-3">
+          <div className="flex-1 md:flex-initial flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-medium">
             <button
               onClick={() => setRole("admin")}
-              className={`px-3 py-1.5 rounded-lg transition-all ${role === "admin"
+              className={`flex-1 md:flex-initial px-2.5 sm:px-3 py-1.5 rounded-lg text-center transition-all ${role === "admin"
                   ? "bg-white text-slate-900 shadow-xs font-semibold"
                   : "text-slate-600 hover:text-slate-900"
                 }`}
             >
-              Admin / HR View
+              Admin View
             </button>
             <button
               onClick={() => setRole("employee")}
-              className={`px-3 py-1.5 rounded-lg transition-all ${role === "employee"
+              className={`flex-1 md:flex-initial px-2.5 sm:px-3 py-1.5 rounded-lg text-center transition-all ${role === "employee"
                   ? "bg-white text-slate-900 shadow-xs font-semibold"
                   : "text-slate-600 hover:text-slate-900"
                 }`}
@@ -541,17 +541,17 @@ export default function RemoteMonitoringPage() {
 
           <button
             onClick={loadMonitoringData}
-            className="p-2.5 rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 transition-colors"
+            className="p-2 sm:p-2.5 rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 transition-colors shrink-0"
             title="Refresh Live Data"
           >
             <FaSync className="h-4 w-4" />
           </button>
 
           {/* Contextual 3-Dots Action Menu (Requirement #2) */}
-          <div className="relative">
+          <div className="relative shrink-0">
             <button
               onClick={() => setIsHeaderKebabOpen(!isHeaderKebabOpen)}
-              className="p-2.5 rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 transition-colors cursor-pointer"
+              className="p-2 sm:p-2.5 rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 transition-colors cursor-pointer"
               title="More Actions"
             >
               <FaEllipsisV className="h-4 w-4" />
@@ -587,22 +587,22 @@ export default function RemoteMonitoringPage() {
       </div>
 
       {/* === PRIVACY & TRANSPARENCY NOTICE BANNER === */}
-      <div className="rounded-2xl border border-blue-200 bg-gradient-to-r from-blue-50/80 via-white to-slate-50 p-5 relative overflow-hidden">
-        <div className="flex items-start gap-4">
+      <div className="rounded-2xl border border-blue-200 bg-gradient-to-r from-blue-50/80 via-white to-slate-50 p-4 sm:p-5 relative overflow-hidden">
+        <div className="flex items-start gap-3 sm:gap-4">
           <div className="p-2.5 rounded-xl bg-blue-600 text-white shrink-0 shadow-xs">
-            <FaShieldAlt className="h-5 w-5" />
+            <FaShieldAlt className="h-4 w-4 sm:h-5 sm:w-5" />
           </div>
           <div className="space-y-1 text-xs text-slate-600 leading-relaxed">
-            <div className="flex items-center gap-2 font-bold text-slate-900 text-sm">
+            <div className="flex flex-wrap items-center gap-2 font-bold text-slate-900 text-xs sm:text-sm">
               <span>Employee Transparency & Privacy Notice</span>
               <span className="text-[10px] bg-blue-100 text-blue-800 font-semibold px-2 py-0.5 rounded-full">
                 Required Consent
               </span>
             </div>
-            <p>
+            <p className="text-[11px] sm:text-xs">
               "This work session is monitored for productivity purposes. The system collects periodic random screenshots (5–15 min intervals), mouse/keyboard activity metrics, application & website usage, and work timelines strictly during your active session."
             </p>
-            <div className="flex items-center gap-4 pt-1 font-semibold text-slate-700">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 pt-1 font-semibold text-slate-700 text-[11px] sm:text-xs">
               <span className="flex items-center gap-1 text-emerald-600">
                 <FaCheckCircle className="h-3.5 w-3.5" /> Session-bound capture only
               </span>
@@ -618,16 +618,16 @@ export default function RemoteMonitoringPage() {
       </div>
 
       {/* === WORK SESSION CONTROL PANEL (FOR EMPLOYEES & SIMULATION) === */}
-      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs space-y-6">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-100 pb-5">
-          <div>
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-6 shadow-xs space-y-4 sm:space-y-6">
+        <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 border-b border-slate-100 pb-4 sm:pb-5">
+          <div className="w-full lg:w-auto space-y-2">
             <div className="flex items-center gap-2">
-              <span className="text-xs font-semibold text-blue-600 uppercase tracking-wider">
-                Work Session Status — Select Active Student/Employee:
+              <span className="text-[11px] sm:text-xs font-semibold text-blue-600 uppercase tracking-wider">
+                Work Session Status — Select Profile:
               </span>
             </div>
 
-            <div className="flex items-center gap-3 mt-1">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2.5 sm:gap-3">
               <select
                 value={employeeName}
                 onChange={(e) => {
@@ -642,7 +642,7 @@ export default function RemoteMonitoringPage() {
                   }
                 }}
                 disabled={isSessionActive}
-                className="px-3 py-1.5 rounded-xl border border-slate-200 bg-slate-50 text-slate-900 font-bold text-xs shadow-xs focus:ring-2 focus:ring-blue-500"
+                className="w-full sm:w-auto px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-slate-900 font-bold text-xs shadow-xs focus:ring-2 focus:ring-blue-500"
               >
                 {registeredUsers.length === 0 ? (
                   <option value={employeeName || ""}>
@@ -655,68 +655,70 @@ export default function RemoteMonitoringPage() {
                 )}
               </select>
 
-              <h2 className="text-2xl font-bold text-slate-900 font-mono tracking-tight">
-                {formatTimeHHMMSS(elapsedSeconds)}
-              </h2>
-              <span
-                className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${sessionStatus === "Active"
-                    ? "bg-emerald-100 text-emerald-800 animate-pulse"
-                    : sessionStatus === "Idle"
-                      ? "bg-amber-100 text-amber-800"
-                      : "bg-slate-100 text-slate-600"
-                  }`}
-              >
+              <div className="flex items-center justify-between sm:justify-start gap-3">
+                <h2 className="text-xl sm:text-2xl font-bold text-slate-900 font-mono tracking-tight">
+                  {formatTimeHHMMSS(elapsedSeconds)}
+                </h2>
                 <span
-                  className={`h-2 w-2 rounded-full ${sessionStatus === "Active"
-                      ? "bg-emerald-500"
+                  className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${sessionStatus === "Active"
+                      ? "bg-emerald-100 text-emerald-800 animate-pulse"
                       : sessionStatus === "Idle"
-                        ? "bg-amber-500"
-                        : "bg-slate-400"
+                        ? "bg-amber-100 text-amber-800"
+                        : "bg-slate-100 text-slate-600"
                     }`}
-                />
-                {sessionStatus}
-              </span>
+                >
+                  <span
+                    className={`h-2 w-2 rounded-full ${sessionStatus === "Active"
+                        ? "bg-emerald-500"
+                        : sessionStatus === "Idle"
+                          ? "bg-amber-500"
+                          : "bg-slate-400"
+                      }`}
+                  />
+                  {sessionStatus}
+                </span>
+              </div>
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="w-full lg:w-auto flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
             {!isSessionActive ? (
               <button
                 onClick={handleStartSession}
-                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 text-white font-semibold text-xs hover:bg-emerald-700 transition-all shadow-sm"
+                className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 text-white font-semibold text-xs hover:bg-emerald-700 transition-all shadow-sm cursor-pointer"
               >
                 <FaPlay className="h-3.5 w-3.5" />
-                Start Work Session
+                <span>Start Work Session</span>
               </button>
             ) : (
               <button
                 onClick={handleStopSession}
-                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-rose-600 text-white font-semibold text-xs hover:bg-rose-700 transition-all shadow-sm"
+                className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-rose-600 text-white font-semibold text-xs hover:bg-rose-700 transition-all shadow-sm cursor-pointer"
               >
                 <FaStop className="h-3.5 w-3.5" />
-                Stop Session & Logout
+                <span>Stop Session & Logout</span>
               </button>
             )}
 
             <button
               onClick={triggerRandomScreenshotCapture}
               disabled={!isSessionActive || isCapturingScreen}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-700 font-semibold text-xs hover:bg-slate-50 disabled:opacity-50 transition-all shadow-xs"
+              className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-700 font-semibold text-xs hover:bg-slate-50 disabled:opacity-50 transition-all shadow-xs cursor-pointer"
             >
               <FaCamera className={`h-3.5 w-3.5 ${isCapturingScreen ? "animate-spin text-blue-600" : ""}`} />
-              {isCapturingScreen ? "Capturing..." : "Capture Screenshot Now"}
+              <span>{isCapturingScreen ? "Capturing..." : "Capture Screenshot"}</span>
             </button>
           </div>
         </div>
 
         {/* Live Metrics Grid */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div className="p-4 rounded-xl bg-slate-50 border border-slate-100">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+          <div className="p-3.5 sm:p-4 rounded-xl bg-slate-50 border border-slate-100">
             <div className="flex items-center justify-between text-xs text-slate-500">
               <span>Active Productive Time</span>
               <FaClock className="text-emerald-500 h-4 w-4" />
             </div>
-            <p className="text-lg font-bold text-slate-900 mt-2 font-mono">
+            <p className="text-base sm:text-lg font-bold text-slate-900 mt-2 font-mono">
               {Math.floor(activeSeconds / 60)}m {activeSeconds % 60}s
             </p>
             <div className="w-full bg-slate-200 rounded-full h-1.5 mt-2">
@@ -727,12 +729,12 @@ export default function RemoteMonitoringPage() {
             </div>
           </div>
 
-          <div className="p-4 rounded-xl bg-slate-50 border border-slate-100">
+          <div className="p-3.5 sm:p-4 rounded-xl bg-slate-50 border border-slate-100">
             <div className="flex items-center justify-between text-xs text-slate-500">
               <span>Inactive / Idle Time</span>
               <FaClock className="text-amber-500 h-4 w-4" />
             </div>
-            <p className="text-lg font-bold text-slate-900 mt-2 font-mono">
+            <p className="text-base sm:text-lg font-bold text-slate-900 mt-2 font-mono">
               {Math.floor(idleSeconds / 60)}m {idleSeconds % 60}s
             </p>
             <div className="w-full bg-slate-200 rounded-full h-1.5 mt-2">
@@ -743,23 +745,23 @@ export default function RemoteMonitoringPage() {
             </div>
           </div>
 
-          <div className="p-4 rounded-xl bg-slate-50 border border-slate-100">
+          <div className="p-3.5 sm:p-4 rounded-xl bg-slate-50 border border-slate-100">
             <div className="flex items-center justify-between text-xs text-slate-500">
               <span>Next Random Screenshot</span>
               <FaCamera className="text-blue-500 h-4 w-4" />
             </div>
-            <p className="text-lg font-bold text-slate-900 mt-2 font-mono">
+            <p className="text-base sm:text-lg font-bold text-slate-900 mt-2 font-mono">
               in {Math.floor(nextScreenshotTimer / 60)}m {nextScreenshotTimer % 60}s
             </p>
             <p className="text-[10px] text-slate-400 mt-1">Randomized ({settings.minInterval}–{settings.maxInterval}m window)</p>
           </div>
 
-          <div className="p-4 rounded-xl bg-slate-50 border border-slate-100">
+          <div className="p-3.5 sm:p-4 rounded-xl bg-slate-50 border border-slate-100">
             <div className="flex items-center justify-between text-xs text-slate-500">
               <span>Productivity Score</span>
               <FaChartLine className="text-blue-600 h-4 w-4" />
             </div>
-            <p className="text-lg font-bold text-blue-600 mt-2 font-mono">
+            <p className="text-base sm:text-lg font-bold text-blue-600 mt-2 font-mono">
               {productivityScore}%
             </p>
             <p className={`text-[10px] font-semibold mt-1 ${productivityStatusColor}`}>
@@ -770,78 +772,78 @@ export default function RemoteMonitoringPage() {
       </div>
 
       {/* === DASHBOARD NAVIGATION TABS === */}
-      <div className="flex items-center gap-2 border-b border-slate-200 pb-2 text-xs font-semibold overflow-x-auto">
+      <div className="flex items-center gap-2 border-b border-slate-200 pb-2 text-xs font-semibold overflow-x-auto no-scrollbar scroll-smooth">
         <button
           onClick={() => setActiveTab("overview")}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl transition-all ${activeTab === "overview"
+          className={`shrink-0 whitespace-nowrap flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-xl transition-all cursor-pointer ${activeTab === "overview"
               ? "bg-blue-600 text-white shadow-xs"
               : "text-slate-600 hover:bg-slate-100"
             }`}
         >
-          <FaDesktop className="h-3.5 w-3.5" /> Live Overview
+          <FaDesktop className="h-3.5 w-3.5" /> <span>Live Overview</span>
         </button>
 
         <button
           onClick={() => setActiveTab("screenshots")}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl transition-all ${activeTab === "screenshots"
+          className={`shrink-0 whitespace-nowrap flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-xl transition-all cursor-pointer ${activeTab === "screenshots"
               ? "bg-blue-600 text-white shadow-xs"
               : "text-slate-600 hover:bg-slate-100"
             }`}
         >
-          <FaCamera className="h-3.5 w-3.5" /> Screenshot Gallery ({filteredScreenshots.length})
+          <FaCamera className="h-3.5 w-3.5" /> <span>Screenshot Gallery ({filteredScreenshots.length})</span>
         </button>
 
         <button
           onClick={() => setActiveTab("timeline")}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl transition-all ${activeTab === "timeline"
+          className={`shrink-0 whitespace-nowrap flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-xl transition-all cursor-pointer ${activeTab === "timeline"
               ? "bg-blue-600 text-white shadow-xs"
               : "text-slate-600 hover:bg-slate-100"
             }`}
         >
-          <FaHistory className="h-3.5 w-3.5" /> Work Timeline
+          <FaHistory className="h-3.5 w-3.5" /> <span>Work Timeline</span>
         </button>
 
         <button
           onClick={() => setActiveTab("analytics")}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl transition-all ${activeTab === "analytics"
+          className={`shrink-0 whitespace-nowrap flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-xl transition-all cursor-pointer ${activeTab === "analytics"
               ? "bg-blue-600 text-white shadow-xs"
               : "text-slate-600 hover:bg-slate-100"
             }`}
         >
-          <FaChartPie className="h-3.5 w-3.5" /> Productivity Analytics
+          <FaChartPie className="h-3.5 w-3.5" /> <span>Productivity Analytics</span>
         </button>
 
         {role === "admin" && (
           <button
             onClick={() => setActiveTab("settings")}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl transition-all ${activeTab === "settings"
+            className={`shrink-0 whitespace-nowrap flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-xl transition-all cursor-pointer ${activeTab === "settings"
                 ? "bg-blue-600 text-white shadow-xs"
                 : "text-slate-600 hover:bg-slate-100"
               }`}
           >
-            <FaShieldAlt className="h-3.5 w-3.5" /> Retention & Rules
+            <FaShieldAlt className="h-3.5 w-3.5" /> <span>Retention & Rules</span>
           </button>
         )}
       </div>
 
       {/* === TAB 1: LIVE OVERVIEW === */}
       {activeTab === "overview" && (
-        <div className="space-y-6">
+        <div className="space-y-4 sm:space-y-6">
           {/* Admin Filters Header */}
           {role === "admin" && (
-            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs flex flex-wrap items-center justify-between gap-4 text-xs">
-              <div className="flex flex-wrap items-center gap-3">
+            <div className="rounded-2xl border border-slate-200 bg-white p-3.5 sm:p-4 shadow-xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 text-xs">
+              <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-2 sm:gap-3">
                 <div className="flex items-center gap-2">
                   <FaFilter className="text-slate-400" />
-                  <span className="font-bold text-slate-700">Filter Team:</span>
+                  <span className="font-bold text-slate-700">Filter:</span>
                 </div>
 
                 <select
                   value={selectedEmployeeFilter}
                   onChange={(e) => setSelectedEmployeeFilter(e.target.value)}
-                  className="px-3 py-1.5 rounded-lg border border-slate-200 bg-slate-50 text-slate-800 font-medium"
+                  className="w-full sm:w-auto px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-slate-800 font-medium text-xs"
                 >
-                  <option value="All">All Students & Employees</option>
+                  <option value="All">All Profiles</option>
                   {registeredUsers.map((u) => (
                     <option key={u.id} value={u.name}>{u.name} ({u.department})</option>
                   ))}
@@ -853,7 +855,7 @@ export default function RemoteMonitoringPage() {
                 <select
                   value={selectedDepartmentFilter}
                   onChange={(e) => setSelectedDepartmentFilter(e.target.value)}
-                  className="px-3 py-1.5 rounded-lg border border-slate-200 bg-slate-50 text-slate-800 font-medium"
+                  className="w-full sm:w-auto px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-slate-800 font-medium text-xs"
                 >
                   <option value="All">All Departments</option>
                   <option value="Frontend Engineering">Frontend Engineering</option>
@@ -863,16 +865,18 @@ export default function RemoteMonitoringPage() {
                 </select>
               </div>
 
-              <div className="relative">
-                <FaSearch className="absolute left-3 top-2.5 text-slate-400 h-3.5 w-3.5" />
+              <div className="relative w-full md:w-auto">
+                <FaSearch className="absolute left-3 top-3 text-slate-400 h-3.5 w-3.5" />
                 <input
                   type="text"
                   placeholder="Search employee or app..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-8 pr-3 py-1.5 rounded-lg border border-slate-200 text-slate-800 text-xs w-56"
+                  className="w-full md:w-56 pl-8 pr-3 py-2 rounded-lg border border-slate-200 text-slate-800 text-xs"
                 />
               </div>
+            </div>
+          )} </div>
             </div>
           )}
 
@@ -1183,31 +1187,31 @@ export default function RemoteMonitoringPage() {
           />
         </div>
 
-        <div className="grid grid-cols-2 gap-3 bg-slate-50 p-4 rounded-xl border border-slate-200 text-slate-700">
-          <div><span className="text-slate-400">Employee:</span> <strong>{selectedScreenshotModal.employee_name}</strong></div>
-          <div><span className="text-slate-400">Department:</span> <strong>{selectedScreenshotModal.department}</strong></div>
-          <div><span className="text-slate-400">App Captured:</span> <strong>{selectedScreenshotModal.captured_app}</strong></div>
-          <div><span className="text-slate-400">Timestamp:</span> <strong>{selectedScreenshotModal.time} ({selectedScreenshotModal.date})</strong></div>
-          <div><span className="text-slate-400">Device Name:</span> <strong>{selectedScreenshotModal.device_name}</strong></div>
-          <div><span className="text-slate-400">OS:</span> <strong>{selectedScreenshotModal.os}</strong></div>
-          <div><span className="text-slate-400">IP Address:</span> <strong>{selectedScreenshotModal.ip_address}</strong></div>
-          <div><span className="text-slate-400">Compressed Size:</span> <strong>{selectedScreenshotModal.size}</strong></div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-3 bg-slate-50 p-3.5 sm:p-4 rounded-xl border border-slate-200 text-slate-700">
+          <div className="truncate"><span className="text-slate-400">Employee:</span> <strong>{selectedScreenshotModal.employee_name}</strong></div>
+          <div className="truncate"><span className="text-slate-400">Department:</span> <strong>{selectedScreenshotModal.department}</strong></div>
+          <div className="truncate"><span className="text-slate-400">App Captured:</span> <strong>{selectedScreenshotModal.captured_app}</strong></div>
+          <div className="truncate"><span className="text-slate-400">Timestamp:</span> <strong>{selectedScreenshotModal.time} ({selectedScreenshotModal.date})</strong></div>
+          <div className="truncate"><span className="text-slate-400">Device Name:</span> <strong>{selectedScreenshotModal.device_name}</strong></div>
+          <div className="truncate"><span className="text-slate-400">OS:</span> <strong>{selectedScreenshotModal.os}</strong></div>
+          <div className="truncate"><span className="text-slate-400">IP Address:</span> <strong>{selectedScreenshotModal.ip_address}</strong></div>
+          <div className="truncate"><span className="text-slate-400">Compressed Size:</span> <strong>{selectedScreenshotModal.size}</strong></div>
         </div>
 
-        <div className="flex justify-between items-center pt-2">
+        <div className="flex flex-col sm:flex-row gap-2 sm:gap-0 justify-between items-stretch sm:items-center pt-2">
           <a
             href={selectedScreenshotModal.screenshot_url}
             target="_blank"
             rel="noreferrer"
             download
-            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 text-white font-semibold hover:bg-blue-700 transition-colors"
+            className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 text-white font-semibold hover:bg-blue-700 transition-colors cursor-pointer text-center"
           >
-            <FaDownload className="h-3.5 w-3.5" /> Download Screenshot
+            <FaDownload className="h-3.5 w-3.5" /> <span>Download Screenshot</span>
           </a>
 
           <button
             onClick={() => setSelectedScreenshotModal(null)}
-            className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 font-semibold"
+            className="px-4 py-2.5 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 font-semibold cursor-pointer text-center"
           >
             Close Preview
           </button>
