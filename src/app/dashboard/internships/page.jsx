@@ -33,6 +33,11 @@ import {
   FaLock,
   FaKey,
   FaShieldAlt,
+  FaTasks,
+  FaPlay,
+  FaPause,
+  FaClock,
+  FaCalendarAlt,
 } from "react-icons/fa";
 
 export default function InternshipsPage() {
@@ -41,6 +46,9 @@ export default function InternshipsPage() {
   const [submitting, setSubmitting] = useState(false);
   const [filterMode, setFilterMode] = useState("All");
   const [role, setRole] = useState("admin");
+  const [currentUserEmail, setCurrentUserEmail] = useState("");
+  const [currentUserName, setCurrentUserName] = useState("");
+  const [myTasks, setMyTasks] = useState([]);
 
   // Kebab Context Menu State
   const [activeKebabId, setActiveKebabId] = useState(null);
@@ -155,12 +163,101 @@ export default function InternshipsPage() {
   });
 
   useEffect(() => {
-    setRole(localStorage.getItem("user_role") || "admin");
-    const handleRoleChange = () => setRole(localStorage.getItem("user_role") || "admin");
-    window.addEventListener("roleChanged", handleRoleChange);
+    const savedRole = localStorage.getItem("user_role") || "admin";
+    const savedEmail = (localStorage.getItem("current_user_email") || "").toLowerCase().trim();
+    const savedName = localStorage.getItem("current_user_name") || "";
+
+    setRole(savedRole);
+    setCurrentUserEmail(savedEmail);
+    setCurrentUserName(savedName);
+
     fetchInterns();
-    return () => window.removeEventListener("roleChanged", handleRoleChange);
+    fetchMyTasks(savedEmail, savedName);
+
+    const handleRoleChange = () => {
+      const r = localStorage.getItem("user_role") || "admin";
+      const em = (localStorage.getItem("current_user_email") || "").toLowerCase().trim();
+      const nm = localStorage.getItem("current_user_name") || "";
+      setRole(r);
+      setCurrentUserEmail(em);
+      setCurrentUserName(nm);
+      fetchMyTasks(em, nm);
+    };
+
+    window.addEventListener("roleChanged", handleRoleChange);
+    window.addEventListener("dataChanged", () => fetchMyTasks(savedEmail, savedName));
+
+    return () => {
+      window.removeEventListener("roleChanged", handleRoleChange);
+      window.removeEventListener("dataChanged", () => fetchMyTasks(savedEmail, savedName));
+    };
   }, []);
+
+  const fetchMyTasks = async (email, name) => {
+    try {
+      const allTasks = await dbFetch("daily_tasks").catch(() => []);
+      const cleanEmail = (email || "").toLowerCase().trim();
+      const cleanName = (name || "").toLowerCase().trim();
+
+      const userTasks = (allTasks || []).filter((t) => {
+        const tEmail = (t.assigned_to_email || t.assignedToEmail || t.email || "").toLowerCase().trim();
+        const tName = (t.assigned_to_name || t.assignedTo || "").toLowerCase().trim();
+        const targetAud = (t.targetAudience || "").toLowerCase();
+
+        return (
+          (cleanEmail && (tEmail === cleanEmail || tEmail.includes(cleanEmail) || cleanEmail.includes(tEmail))) ||
+          (cleanName && (tName.includes(cleanName) || cleanName.includes(tName))) ||
+          targetAud.includes("all remote & onsite interns") ||
+          targetAud.includes("all interns")
+        );
+      });
+      setMyTasks(userTasks);
+    } catch (e) {
+      console.error("Error fetching intern tasks:", e);
+    }
+  };
+
+  // Live Timer Interval for Active Tasks
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setMyTasks((prevTasks) =>
+        prevTasks.map((t) =>
+          t.isTimerRunning
+            ? { ...t, timerSeconds: (t.timerSeconds || t.total_working_seconds || 0) + 1 }
+            : t
+        )
+      );
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const formatTaskTimer = (sec = 0) => {
+    const hrs = Math.floor(sec / 3600);
+    const mins = Math.floor((sec % 3600) / 60);
+    const secs = sec % 60;
+    return `${hrs > 0 ? hrs + "h " : ""}${mins}m ${secs}s`;
+  };
+
+  const handleStartTask = async (task) => {
+    const updated = myTasks.map(t => t.id === task.id ? { ...t, isTimerRunning: true, status: "In Progress" } : t);
+    setMyTasks(updated);
+    await dbSaveRecord("daily_tasks", { ...task, isTimerRunning: true, status: "In Progress" }).catch(() => {});
+    showToast("Task Started ▶️", `Stopwatch running for '${task.task || task.task_title}'.`, "info");
+  };
+
+  const handlePauseTask = async (task) => {
+    const updated = myTasks.map(t => t.id === task.id ? { ...t, isTimerRunning: false, status: "Paused" } : t);
+    setMyTasks(updated);
+    await dbSaveRecord("daily_tasks", { ...task, isTimerRunning: false, status: "Paused" }).catch(() => {});
+    showToast("Task Paused ⏸️", `Stopwatch paused for '${task.task || task.task_title}'.`, "info");
+  };
+
+  const handleCompleteTask = async (task) => {
+    const updated = myTasks.map(t => t.id === task.id ? { ...t, isTimerRunning: false, status: "Completed" } : t);
+    setMyTasks(updated);
+    await dbSaveRecord("daily_tasks", { ...task, isTimerRunning: false, status: "Completed" }).catch(() => {});
+    showToast("Task Completed 🎉", `Great job! Task marked as completed.`, "success");
+  };
 
   const handleDomainSelect = (e) => {
     const selectedTitle = e.target.value;
@@ -408,6 +505,125 @@ export default function InternshipsPage() {
           </div>
         </Link>
       </div>
+
+      {/* === MY ASSIGNED TASKS & ACTIVE WORKSTREAM (FOR INTERNS) === */}
+      {(role === "intern" || myTasks.length > 0) && (
+        <div className="rounded-2xl border border-blue-200 bg-white p-6 shadow-sm space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
+            <div className="space-y-0.5">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-[#2563EB] bg-[#EFF6FF] px-2.5 py-0.5 rounded-full border border-blue-200">
+                Internship Workstream Hub
+              </span>
+              <h2 className="text-base font-bold text-[#0F172A] mt-1 flex items-center gap-2">
+                <FaTasks className="text-[#2563EB]" />
+                <span>My Assigned Daily Tasks ({myTasks.length})</span>
+              </h2>
+            </div>
+            <span className="text-xs font-semibold text-slate-500">
+              {myTasks.filter(t => t.status === "Completed").length} / {myTasks.length} Completed
+            </span>
+          </div>
+
+          {myTasks.length === 0 ? (
+            <div className="text-center py-8 bg-slate-50 rounded-xl border border-dashed border-slate-200 space-y-2">
+              <FaTasks className="text-2xl text-slate-400 mx-auto" />
+              <p className="text-xs font-bold text-slate-700">No active tasks assigned yet</p>
+              <p className="text-[11px] text-slate-500">When Admin assigns a task to your account, it will appear here immediately with live working stopwatch timer.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {myTasks.map((task) => (
+                <div
+                  key={task.id}
+                  className={`p-4 rounded-xl border transition-all flex flex-col justify-between space-y-3 ${
+                    task.status === "Completed"
+                      ? "bg-emerald-50/50 border-emerald-200"
+                      : task.isTimerRunning
+                      ? "bg-blue-50/60 border-blue-300 ring-2 ring-blue-500/20"
+                      : "bg-[#F8FAFC] border-slate-200"
+                  }`}
+                >
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-white text-blue-700 border border-blue-200">
+                        {task.category || "Development"}
+                      </span>
+                      <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full border ${
+                        task.status === "Completed"
+                          ? "bg-emerald-100 text-emerald-800 border-emerald-300"
+                          : task.status === "In Progress"
+                          ? "bg-blue-100 text-blue-800 border-blue-300"
+                          : "bg-amber-100 text-amber-800 border-amber-300"
+                      }`}>
+                        {task.status || "Pending"}
+                      </span>
+                    </div>
+
+                    <h4 className="font-bold text-slate-900 text-sm">
+                      {task.task || task.task_title || "Assigned Task Deliverable"}
+                    </h4>
+
+                    <div className="flex items-center gap-3 text-[11px] text-slate-500">
+                      <span className="flex items-center gap-1">
+                        <FaClock className="text-slate-400" /> Due: {task.dueDate || task.due_date || "Today"}
+                      </span>
+                      <span className="font-semibold text-blue-600">
+                        Priority: {task.priority || "High"}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Stopwatch Duration & Control Actions */}
+                  <div className="pt-2 border-t border-slate-200/60 flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5 font-mono font-bold text-xs text-slate-800">
+                      <span className={`w-2 h-2 rounded-full ${task.isTimerRunning ? 'bg-emerald-500 animate-ping' : 'bg-slate-300'}`} />
+                      <span>{formatTaskTimer(task.timerSeconds || task.total_working_seconds || 0)}</span>
+                    </div>
+
+                    <div className="flex items-center gap-1.5">
+                      {task.status !== "Completed" && (
+                        <>
+                          {task.isTimerRunning ? (
+                            <button
+                              type="button"
+                              onClick={() => handlePauseTask(task)}
+                              className="px-2.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs flex items-center gap-1 cursor-pointer transition-colors shadow-xs"
+                            >
+                              <FaPause className="text-[10px]" /> <span>Pause</span>
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleStartTask(task)}
+                              className="px-2.5 py-1.5 rounded-lg bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold text-xs flex items-center gap-1 cursor-pointer transition-colors shadow-xs"
+                            >
+                              <FaPlay className="text-[10px]" /> <span>Start</span>
+                            </button>
+                          )}
+
+                          <button
+                            type="button"
+                            onClick={() => handleCompleteTask(task)}
+                            className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1 cursor-pointer transition-colors shadow-xs"
+                          >
+                            <FaCheckCircle className="text-[10px]" /> <span>Complete</span>
+                          </button>
+                        </>
+                      )}
+
+                      {task.status === "Completed" && (
+                        <span className="text-xs font-bold text-emerald-700 flex items-center gap-1">
+                          <FaCheckCircle /> Finished
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* 6. MAIN BALANCED GRID (40% Left Form / 60% Right Intern Directory) */}
       <div className="grid gap-6 lg:grid-cols-12">
