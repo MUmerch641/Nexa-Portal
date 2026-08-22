@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
+import Link from "next/link";
 import { dbFetch, dbSaveRecord, dbSaveList } from "@/lib/dbPersistence";
 import Modal from "@/components/Modal";
 import { showToast } from "@/components/Toast";
@@ -20,7 +21,8 @@ import {
   FaUserTimes,
   FaBriefcase,
   FaFileAlt,
-  FaLaptopCode
+  FaLaptopCode,
+  FaArrowLeft
 } from "react-icons/fa";
 
 import {
@@ -32,6 +34,7 @@ import {
 export default function EmployeeDedicatedDashboardPage() {
   const [employeeEmail, setEmployeeEmail] = useState("");
   const [employeeName, setEmployeeName] = useState("");
+  const [isAdminUser, setIsAdminUser] = useState(false);
 
   // Attendance State
   const [todayAttendance, setTodayAttendance] = useState(null);
@@ -367,10 +370,39 @@ export default function EmployeeDedicatedDashboardPage() {
   const completedTasksCount = useMemo(() => myTasks.filter((t) => t.status === "Completed").length, [myTasks]);
   const pendingLeavesCount = useMemo(() => myLeaves.filter((l) => l.status === "Pending").length, [myLeaves]);
 
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const currentRole = localStorage.getItem("user_role") || "";
+      const currentEmail = (localStorage.getItem("current_user_email") || "").toLowerCase().trim();
+      const isAdmin = currentRole === "admin" || currentRole === "hr" || currentRole === "manager" || currentEmail === "admin@gmail.com";
+      setIsAdminUser(isAdmin);
+    }
+  }, []);
+
   return (
     <div className="space-[#F8FAFC] space-y-6 max-w-7xl mx-auto">
       {/* Modal Notification */}
       <Modal isOpen={modal.isOpen} title={modal.title} message={modal.message} type={modal.type} onClose={closeModal} />
+
+      {/* ADMIN PREVIEW BANNER */}
+      {isAdminUser && (
+        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200/80 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+          <div className="flex items-center gap-3">
+            <span className="text-2xl">🛡️</span>
+            <div>
+              <p className="text-xs font-bold text-slate-900">Admin View: Staff / Employee Portal</p>
+              <p className="text-[11px] text-slate-500">You are previewing the staff portal interface. Click below to return anytime.</p>
+            </div>
+          </div>
+          <Link
+            href="/dashboard"
+            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition-all shadow-sm self-start sm:self-auto cursor-pointer"
+          >
+            <FaArrowLeft className="text-[10px]" />
+            <span>Return to Admin Dashboard</span>
+          </Link>
+        </div>
+      )}
 
       {/* HEADER BANNER */}
       <div className="bg-white rounded-2xl p-6 border border-[#E2E8F0] shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -390,6 +422,16 @@ export default function EmployeeDedicatedDashboardPage() {
         </div>
 
         <div className="flex items-center gap-3">
+          {isAdminUser && (
+            <Link
+              href="/dashboard"
+              className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all border border-slate-200"
+            >
+              <FaArrowLeft className="text-xs text-blue-600" />
+              <span>Admin Dashboard</span>
+            </Link>
+          )}
+
           <div className="bg-[#F8FAFC] border border-[#E2E8F0] px-4 py-2 rounded-xl text-right">
             <span className="block text-[10px] font-semibold text-[#64748B] uppercase">Network Verification</span>
             <span className="text-xs font-bold text-[#2563EB] flex items-center gap-1.5 justify-end">

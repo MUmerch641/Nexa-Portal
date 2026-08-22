@@ -322,6 +322,16 @@ export default function Navbar({ onMenuClick, isSidebarOpen = true }) {
             Software House Management
           </h1>
         </div>
+
+        {isAdminRole && pathname !== "/dashboard" && (
+          <Link
+            href="/dashboard"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white border border-blue-200 text-xs font-bold transition-all shadow-xs"
+            title="Return to Main Admin Dashboard"
+          >
+            <span>← Back to Admin</span>
+          </Link>
+        )}
       </div>
 
       {/* Center: Global Search Bar (Ctrl + K) */}
