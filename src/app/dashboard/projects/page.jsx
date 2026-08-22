@@ -123,7 +123,16 @@ export default function ProjectsPage() {
           };
         });
 
-        const combined = [...employeesFormatted, ...studentsFormatted, ...internsFormatted].filter(u => u.name && u.email);
+        const rawCombined = [...employeesFormatted, ...studentsFormatted, ...internsFormatted].filter(u => u.name && u.email);
+        const seenKeys = new Set();
+        const combined = [];
+        for (const item of rawCombined) {
+          const key = `${item.email}_${item.roleGroup}`;
+          if (!seenKeys.has(key)) {
+            seenKeys.add(key);
+            combined.push(item);
+          }
+        }
         setAssigneeDirectory(combined);
 
         if (combined.length > 0) {
@@ -921,32 +930,32 @@ export default function ProjectsPage() {
                     className="w-full p-2.5 rounded-xl border border-slate-200 font-bold text-blue-700 outline-none focus:border-blue-600 bg-white"
                   >
                     <optgroup label="👨‍💼 Employees & Paid Staff">
-                      {assigneeDirectory.filter(a => a.roleGroup === "Staff / Employees").map(emp => (
-                        <option key={emp.email} value={emp.email}>
+                      {assigneeDirectory.filter(a => a.roleGroup === "Staff / Employees").map((emp, idx) => (
+                        <option key={`emp-${emp.id || emp.email}-${idx}`} value={emp.email}>
                           {emp.name} — {emp.detail} ({emp.email})
                         </option>
                       ))}
                     </optgroup>
 
                     <optgroup label="🌐 Remote Students">
-                      {assigneeDirectory.filter(a => a.roleGroup === "Remote Students").map(st => (
-                        <option key={st.email} value={st.email}>
+                      {assigneeDirectory.filter(a => a.roleGroup === "Remote Students").map((st, idx) => (
+                        <option key={`rem-st-${st.id || st.email}-${idx}`} value={st.email}>
                           🌐 {st.name} — {st.detail} ({st.email})
                         </option>
                       ))}
                     </optgroup>
 
                     <optgroup label="🏫 On-Site Students">
-                      {assigneeDirectory.filter(a => a.roleGroup === "On-Site Students").map(st => (
-                        <option key={st.email} value={st.email}>
+                      {assigneeDirectory.filter(a => a.roleGroup === "On-Site Students").map((st, idx) => (
+                        <option key={`ons-st-${st.id || st.email}-${idx}`} value={st.email}>
                           🏫 {st.name} — {st.detail} ({st.email})
                         </option>
                       ))}
                     </optgroup>
 
                     <optgroup label="💼 Remote & On-Site Interns">
-                      {assigneeDirectory.filter(a => a.roleGroup.includes("Intern")).map(intItem => (
-                        <option key={intItem.email} value={intItem.email}>
+                      {assigneeDirectory.filter(a => a.roleGroup.includes("Intern")).map((intItem, idx) => (
+                        <option key={`int-${intItem.id || intItem.email}-${idx}`} value={intItem.email}>
                           💼 {intItem.name} — {intItem.badge} ({intItem.email})
                         </option>
                       ))}
