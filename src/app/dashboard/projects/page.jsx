@@ -55,9 +55,9 @@ export default function ProjectsPage() {
   const [newTaskForm, setNewTaskForm] = useState({
     task: "",
     category: "Development",
-    targetType: "individual_student",
-    assignedToName: "Ali Hassan (Student)",
-    assignedToEmail: "student@gmail.com",
+    targetType: "individual", // "individual" | "all_employees" | "all_students" | "all_interns"
+    assignedToName: "",
+    assignedToEmail: "",
     priority: "High",
     dueDate: new Date().toISOString().split("T")[0]
   });
@@ -67,19 +67,8 @@ export default function ProjectsPage() {
   const [isHeaderKebabOpen, setIsHeaderKebabOpen] = useState(false);
   const [confirmModal, setConfirmModal] = useState({ isOpen: false, type: "", taskId: "", title: "", loading: false });
 
-  // Directories
-  const [studentDirectory, setStudentDirectory] = useState([
-    { name: "Ali Hassan", email: "student@gmail.com", batch: "Batch #14 (MERN Tech)" },
-    { name: "Muhammad Rahim Bugti", email: "rahim.student@gmail.com", batch: "Batch #14 (MERN Tech)" },
-    { name: "Hamza Ahmed", email: "hamza.student@gmail.com", batch: "Batch #15 (Python Tech)" },
-    { name: "Usman Tariq", email: "usman.student@gmail.com", batch: "Batch #15 (Python Tech)" },
-  ]);
-
-  const [employeeDirectory, setEmployeeDirectory] = useState([
-    { name: "Sara Khan", email: "sara.design@gmail.com", dept: "UI/UX Design" },
-    { name: "Muhammad Ali", email: "ali.staff@gmail.com", dept: "Web Development" },
-    { name: "Muhammad Rahim Bugti", email: "rahim.staff@gmail.com", dept: "Senior Full-Stack Developer" },
-  ]);
+  // Dynamic Multi-Role Assignee Directory
+  const [assigneeDirectory, setAssigneeDirectory] = useState([]);
 
   const [modal, setModal] = useState({ isOpen: false, title: "", message: "", type: "info" });
 
@@ -91,6 +80,65 @@ export default function ProjectsPage() {
 
     dbFetch("daily_tasks", []).then(tasks => setDailyTasks(tasks || []));
     dbFetch("projects").then(projs => setProjects(projs || []));
+
+    // Load full organization directory (Employees, Remote Students, Interns)
+    const loadDirectories = async () => {
+      try {
+        const [dbEmployees, dbStudents, dbInterns] = await Promise.all([
+          dbFetch("employees").catch(() => []),
+          dbFetch("students").catch(() => []),
+          dbFetch("interns").catch(() => [])
+        ]);
+
+        const employeesFormatted = (dbEmployees || []).map(e => ({
+          id: e.id || e.email,
+          name: e.full_name || e.name,
+          email: (e.email || "").toLowerCase().trim(),
+          roleGroup: "Staff / Employees",
+          badge: "👨‍💼 Employee",
+          detail: e.department || e.designation || "Staff"
+        }));
+
+        const studentsFormatted = (dbStudents || []).map(s => {
+          const isRemote = (s.track_type || "").includes("Remote") || (s.course_name || "").includes("Remote");
+          return {
+            id: s.id || s.email,
+            name: s.full_name || s.student_name,
+            email: (s.email || "").toLowerCase().trim(),
+            roleGroup: isRemote ? "Remote Students" : "On-Site Students",
+            badge: isRemote ? "🌐 Remote Student" : "🏫 On-Site Student",
+            detail: s.course_name || s.tech_domain || "Course Student"
+          };
+        });
+
+        const internsFormatted = (dbInterns || []).map(i => {
+          const isRemote = (i.internship_mode || "").includes("Remote");
+          return {
+            id: i.id || i.email,
+            name: i.full_name,
+            email: (i.email || "").toLowerCase().trim(),
+            roleGroup: isRemote ? "Remote Internships" : "On-Site Internships",
+            badge: isRemote ? "💼 Remote Intern" : "🏢 On-Site Intern",
+            detail: i.course_name || i.tech_domain || "Internship"
+          };
+        });
+
+        const combined = [...employeesFormatted, ...studentsFormatted, ...internsFormatted].filter(u => u.name && u.email);
+        setAssigneeDirectory(combined);
+
+        if (combined.length > 0) {
+          setNewTaskForm(prev => ({
+            ...prev,
+            assignedToEmail: prev.assignedToEmail || combined[0].email,
+            assignedToName: prev.assignedToName || combined[0].name
+          }));
+        }
+      } catch (e) {
+        console.error("Error loading directories for task assign:", e);
+      }
+    };
+
+    loadDirectories();
   }, []);
 
   const saveTasksState = (newList) => {
@@ -190,58 +238,110 @@ export default function ProjectsPage() {
 
   const handleCreateDailyTask = async (e) => {
     e.preventDefault();
-    if (!newTaskForm.task.trim()) return;
+    if (!newTaskForm.task.trim()) {
+      showToast("Validation Error ⚠️", "Please enter task description.", "error");
+      return;
+    }
 
     let newTasksToInsert = [];
 
-    if (newTaskForm.targetType === "all_students") {
-      newTasksToInsert = studentDirectory.map((st) => ({
+    if (newTaskForm.targetType === "all_employees") {
+      const emps = assigneeDirectory.filter(a => a.roleGroup === "Staff / Employees");
+      newTasksToInsert = emps.map((emp) => ({
         id: "dt-" + Date.now() + "-" + Math.random().toString(36).substring(2, 6),
+        task_title: newTaskForm.task,
         task: newTaskForm.task,
-        assignedTo: `${st.name} (${st.batch})`,
-        email: st.email.toLowerCase().trim(),
-        targetAudience: "All Enrolled Students",
-        status: "Pending",
-        timerSeconds: 0,
-        isTimerRunning: false,
-        category: newTaskForm.category,
-        priority: newTaskForm.priority,
-        dueDate: newTaskForm.dueDate
-      }));
-    } else if (newTaskForm.targetType === "all_employees") {
-      newTasksToInsert = employeeDirectory.map((emp) => ({
-        id: "dt-" + Date.now() + "-" + Math.random().toString(36).substring(2, 6),
-        task: newTaskForm.task,
-        assignedTo: `${emp.name} (${emp.dept})`,
+        assigned_to_name: emp.name,
+        assignedTo: `${emp.name} (${emp.badge})`,
+        assigned_to_email: emp.email.toLowerCase().trim(),
         email: emp.email.toLowerCase().trim(),
         targetAudience: "All Paid Staff Employees",
         status: "Pending",
         timerSeconds: 0,
+        total_working_seconds: 0,
         isTimerRunning: false,
         category: newTaskForm.category,
         priority: newTaskForm.priority,
-        dueDate: newTaskForm.dueDate
+        due_date: newTaskForm.dueDate,
+        dueDate: newTaskForm.dueDate,
+        created_at: new Date().toISOString()
+      }));
+    } else if (newTaskForm.targetType === "all_students") {
+      const stList = assigneeDirectory.filter(a => a.roleGroup.includes("Student"));
+      newTasksToInsert = stList.map((st) => ({
+        id: "dt-" + Date.now() + "-" + Math.random().toString(36).substring(2, 6),
+        task_title: newTaskForm.task,
+        task: newTaskForm.task,
+        assigned_to_name: st.name,
+        assignedTo: `${st.name} (${st.badge})`,
+        assigned_to_email: st.email.toLowerCase().trim(),
+        email: st.email.toLowerCase().trim(),
+        targetAudience: "All Enrolled Students",
+        status: "Pending",
+        timerSeconds: 0,
+        total_working_seconds: 0,
+        isTimerRunning: false,
+        category: newTaskForm.category,
+        priority: newTaskForm.priority,
+        due_date: newTaskForm.dueDate,
+        dueDate: newTaskForm.dueDate,
+        created_at: new Date().toISOString()
+      }));
+    } else if (newTaskForm.targetType === "all_interns") {
+      const inList = assigneeDirectory.filter(a => a.roleGroup.includes("Intern"));
+      newTasksToInsert = inList.map((inItem) => ({
+        id: "dt-" + Date.now() + "-" + Math.random().toString(36).substring(2, 6),
+        task_title: newTaskForm.task,
+        task: newTaskForm.task,
+        assigned_to_name: inItem.name,
+        assignedTo: `${inItem.name} (${inItem.badge})`,
+        assigned_to_email: inItem.email.toLowerCase().trim(),
+        email: inItem.email.toLowerCase().trim(),
+        targetAudience: "All Remote & Onsite Interns",
+        status: "Pending",
+        timerSeconds: 0,
+        total_working_seconds: 0,
+        isTimerRunning: false,
+        category: newTaskForm.category,
+        priority: newTaskForm.priority,
+        due_date: newTaskForm.dueDate,
+        dueDate: newTaskForm.dueDate,
+        created_at: new Date().toISOString()
       }));
     } else {
+      const selectedUser = assigneeDirectory.find(a => a.email.toLowerCase() === newTaskForm.assignedToEmail.toLowerCase());
+      const userName = selectedUser ? selectedUser.name : (newTaskForm.assignedToName || "Assigned User");
+      const userBadge = selectedUser ? selectedUser.badge : "Team Member";
+
       newTasksToInsert = [
         {
-          id: "dt-" + Date.now(),
+          id: "dt-" + Date.now() + "-" + Math.random().toString(36).substring(2, 6),
+          task_title: newTaskForm.task,
           task: newTaskForm.task,
-          assignedTo: newTaskForm.assignedToName,
+          assigned_to_name: userName,
+          assignedTo: `${userName} (${userBadge})`,
+          assigned_to_email: newTaskForm.assignedToEmail.toLowerCase().trim(),
           email: newTaskForm.assignedToEmail.toLowerCase().trim(),
-          targetAudience: newTaskForm.targetType === "individual_student" ? "Individual Student" : "Individual Staff",
+          targetAudience: userBadge,
           status: "Pending",
           timerSeconds: 0,
+          total_working_seconds: 0,
           isTimerRunning: false,
           category: newTaskForm.category,
           priority: newTaskForm.priority,
-          dueDate: newTaskForm.dueDate
-        },
+          due_date: newTaskForm.dueDate,
+          dueDate: newTaskForm.dueDate,
+          created_at: new Date().toISOString()
+        }
       ];
     }
 
     const updated = [...newTasksToInsert, ...dailyTasks];
     saveTasksState(updated);
+
+    for (const t of newTasksToInsert) {
+      await dbSaveRecord("daily_tasks", t).catch(() => {});
+    }
 
     if (typeof window !== "undefined") {
       window.dispatchEvent(new Event("dataChanged"));
@@ -251,13 +351,18 @@ export default function ProjectsPage() {
     setNewTaskForm({
       task: "",
       category: "Development",
-      targetType: "individual_student",
-      assignedToName: "Ali Hassan (Student)",
-      assignedToEmail: "student@gmail.com",
+      targetType: "individual",
+      assignedToName: "",
+      assignedToEmail: assigneeDirectory[0]?.email || "",
       priority: "High",
       dueDate: new Date().toISOString().split("T")[0]
     });
-    showToast("Task Assigned 📋", `Assigned '${newTaskForm.task}' to ${newTasksToInsert.length} user(s).`, "success");
+
+    showToast(
+      "Task Assigned 🎉",
+      `Task assigned specifically to ${newTasksToInsert.length === 1 ? newTasksToInsert[0].assignedTo : `${newTasksToInsert.length} user(s)`}.`,
+      "success"
+    );
   };
 
   const formatTimer = (totalSec = 0) => {
@@ -782,6 +887,73 @@ export default function ProjectsPage() {
                   className="w-full p-2.5 rounded-xl border border-[#E2E8F0] font-semibold text-[#0F172A] outline-none focus:border-[#2563EB]"
                 />
               </div>
+
+              {/* Assignee Target Scope */}
+              <div className="space-y-1">
+                <label className="font-semibold text-slate-700">Assign Target Scope *</label>
+                <select
+                  value={newTaskForm.targetType}
+                  onChange={(e) => setNewTaskForm({ ...newTaskForm, targetType: e.target.value })}
+                  className="w-full p-2.5 rounded-xl border border-slate-200 font-bold text-slate-900 outline-none focus:border-blue-600 bg-white"
+                >
+                  <option value="individual">👤 Select Specific Person (Employee / Student / Intern)</option>
+                  <option value="all_employees">👨‍💼 Assign to All Employees / Staff ({assigneeDirectory.filter(a => a.roleGroup === 'Staff / Employees').length})</option>
+                  <option value="all_students">🌐 Assign to All Enrolled Students ({assigneeDirectory.filter(a => a.roleGroup.includes('Student')).length})</option>
+                  <option value="all_interns">💼 Assign to All Interns ({assigneeDirectory.filter(a => a.roleGroup.includes('Intern')).length})</option>
+                </select>
+              </div>
+
+              {/* Individual Person Selector */}
+              {newTaskForm.targetType === "individual" && (
+                <div className="space-y-1">
+                  <label className="font-semibold text-slate-700">Select Assignee (Employee / Student / Intern) *</label>
+                  <select
+                    value={newTaskForm.assignedToEmail}
+                    onChange={(e) => {
+                      const selected = assigneeDirectory.find(a => a.email.toLowerCase() === e.target.value.toLowerCase());
+                      setNewTaskForm({
+                        ...newTaskForm,
+                        assignedToEmail: e.target.value,
+                        assignedToName: selected ? selected.name : ""
+                      });
+                    }}
+                    required
+                    className="w-full p-2.5 rounded-xl border border-slate-200 font-bold text-blue-700 outline-none focus:border-blue-600 bg-white"
+                  >
+                    <optgroup label="👨‍💼 Employees & Paid Staff">
+                      {assigneeDirectory.filter(a => a.roleGroup === "Staff / Employees").map(emp => (
+                        <option key={emp.email} value={emp.email}>
+                          {emp.name} — {emp.detail} ({emp.email})
+                        </option>
+                      ))}
+                    </optgroup>
+
+                    <optgroup label="🌐 Remote Students">
+                      {assigneeDirectory.filter(a => a.roleGroup === "Remote Students").map(st => (
+                        <option key={st.email} value={st.email}>
+                          🌐 {st.name} — {st.detail} ({st.email})
+                        </option>
+                      ))}
+                    </optgroup>
+
+                    <optgroup label="🏫 On-Site Students">
+                      {assigneeDirectory.filter(a => a.roleGroup === "On-Site Students").map(st => (
+                        <option key={st.email} value={st.email}>
+                          🏫 {st.name} — {st.detail} ({st.email})
+                        </option>
+                      ))}
+                    </optgroup>
+
+                    <optgroup label="💼 Remote & On-Site Interns">
+                      {assigneeDirectory.filter(a => a.roleGroup.includes("Intern")).map(intItem => (
+                        <option key={intItem.email} value={intItem.email}>
+                          💼 {intItem.name} — {intItem.badge} ({intItem.email})
+                        </option>
+                      ))}
+                    </optgroup>
+                  </select>
+                </div>
+              )}
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">

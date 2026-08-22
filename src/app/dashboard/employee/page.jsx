@@ -177,13 +177,16 @@ export default function EmployeeDedicatedDashboardPage() {
     // 2. Fetch My Assigned Tasks
     try {
       const allTasks = await dbFetch("daily_tasks").catch(() => []);
+      const cleanEmail = email.toLowerCase().trim();
       const assigned = (allTasks || []).filter((t) => {
-        const tEmail = (t.assignedToEmail || t.assigned_to_email || "").toLowerCase().trim();
-        const tName = (t.assignedTo || t.assigned_to || t.author || "").toLowerCase();
+        const tEmail = (t.assigned_to_email || t.assignedToEmail || t.email || "").toLowerCase().trim();
+        const targetAud = (t.targetAudience || "").toLowerCase();
         return (
-          tEmail === email ||
-          (email && tEmail.includes(email)) ||
-          (employeeName && tName.includes(employeeName.toLowerCase()))
+          tEmail === cleanEmail ||
+          (cleanEmail && tEmail.includes(cleanEmail)) ||
+          targetAud.includes("all paid staff") ||
+          targetAud.includes("all staff") ||
+          targetAud.includes("all employees")
         );
       });
       setMyTasks(assigned);

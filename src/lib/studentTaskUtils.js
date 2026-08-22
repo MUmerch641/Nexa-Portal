@@ -72,7 +72,19 @@ export const SAMPLE_MCQ_EXAM = {
 export async function getDailyTasks(assignedEmail = "") {
   const allTasks = await dbFetch("daily_tasks", INITIAL_STUDENT_TASKS);
   if (!assignedEmail) return allTasks;
-  return allTasks.filter((t) => !t.assigned_to_email || t.assigned_to_email.toLowerCase() === assignedEmail.toLowerCase());
+  const cleanEmail = assignedEmail.toLowerCase().trim();
+  return allTasks.filter((t) => {
+    const tEmail = (t.assigned_to_email || t.assignedToEmail || t.email || "").toLowerCase().trim();
+    const targetAud = (t.targetAudience || "").toLowerCase();
+    return (
+      tEmail === cleanEmail ||
+      (cleanEmail && tEmail.includes(cleanEmail)) ||
+      targetAud.includes("all enrolled students") ||
+      targetAud.includes("all students") ||
+      targetAud.includes("all remote & onsite interns") ||
+      targetAud.includes("all interns")
+    );
+  });
 }
 
 /**
