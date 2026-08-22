@@ -36,6 +36,7 @@ import {
   FaEllipsisV
 } from "react-icons/fa";
 
+import { dbFetch, dbSaveRecord } from "@/lib/dbPersistence";
 import {
   getRemoteWorkSessions,
   getScreenshotLogs,
