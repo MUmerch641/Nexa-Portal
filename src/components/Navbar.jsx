@@ -746,6 +746,8 @@ export default function Navbar({ onMenuClick, isSidebarOpen = true }) {
             </div>
           </div>
         </div>
+      )}
+
       {/* LEAVE DETAILS & APPROVAL MODAL FROM NOTIFICATION BELL */}
       {selectedLeaveModal && (
         <Modal
