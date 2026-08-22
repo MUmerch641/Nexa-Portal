@@ -142,38 +142,34 @@ export default function RemoteMonitoringPage() {
       setWorkTimelines(timelinesData || []);
 
       // Load registered students, interns, and employees
-      if (typeof window !== "undefined") {
-        const savedStudents = localStorage.getItem("persistent_courses");
-        const studentList = savedStudents ? JSON.parse(savedStudents) : [];
+      const [dbStudents, dbInterns, dbEmployees] = await Promise.all([
+        dbFetch("students").catch(() => []),
+        dbFetch("interns").catch(() => []),
+        dbFetch("employees").catch(() => [])
+      ]);
 
-        const savedInterns = localStorage.getItem("persistent_interns");
-        const internList = savedInterns ? JSON.parse(savedInterns) : [];
-
-        const savedEmployees = localStorage.getItem("persistent_employees");
-        const empList = savedEmployees ? JSON.parse(savedEmployees) : [];
-
-        const userMap = new Map();
-        [...studentList, ...internList, ...empList].forEach((u) => {
-          const name = u.full_name || u.name || u.student_name || u.email;
-          if (name && !userMap.has(name)) {
-            userMap.set(name, {
-              id: u.id || u.email || `u-${Math.random()}`,
-              name: name,
-              department: u.course_name || u.department || u.designation || u.internship_mode || "Software Engineering",
-              email: u.email || "",
-            });
-          }
-        });
-
-        const allUsersList = Array.from(userMap.values());
-        setRegisteredUsers(allUsersList);
-
-        if (allUsersList.length > 0) {
-          const firstUser = allUsersList[0];
-          setEmployeeName(firstUser.name);
-          setDepartment(firstUser.department);
-          setEmployeeId(firstUser.id);
+      const userMap = new Map();
+      [...(dbStudents || []), ...(dbInterns || []), ...(dbEmployees || [])].forEach((u) => {
+        const name = u.full_name || u.name || u.student_name || u.email;
+        if (name && !userMap.has(name)) {
+          userMap.set(name, {
+            id: u.id || u.email || `u-${Math.random()}`,
+            name: name,
+            department: u.course_name || u.tech_domain || u.department || u.designation || u.internship_mode || "Software Engineering",
+            email: u.email || "",
+            role: u.role || (u.internship_mode ? "Remote Intern" : "Remote Student")
+          });
         }
+      });
+
+      const allUsersList = Array.from(userMap.values());
+      setRegisteredUsers(allUsersList);
+
+      if (allUsersList.length > 0 && !employeeName) {
+        const firstUser = allUsersList[0];
+        setEmployeeName(firstUser.name);
+        setDepartment(firstUser.department);
+        setEmployeeId(firstUser.id);
       }
     } catch (error) {
       console.error("Error loading remote monitoring data:", error);

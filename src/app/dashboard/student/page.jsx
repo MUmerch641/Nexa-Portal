@@ -6,7 +6,8 @@ import Modal from "@/components/Modal";
 import { showToast } from "@/components/Toast";
 import { generatePrintableStudentFeeReceiptPdf } from "@/lib/generateStudentReceiptPdf";
 import { generatePrintable3MonthStudentCertificatePdf } from "@/lib/generate3MonthStudentCertificatePdf";
-import { dbFetch } from "@/lib/dbPersistence";
+import { generatePrintableInternshipExperienceCertificatePdf } from "@/lib/generateInternshipExperienceCertificatePdf";
+import { dbFetch, dbSaveRecord } from "@/lib/dbPersistence";
 import { calculate30DayFeeCycles } from "@/lib/studentEnrollmentUtils";
 import {
   FaGraduationCap,
@@ -80,14 +81,25 @@ export default function StudentDedicatedDashboardPage() {
   const [studentInfo, setStudentInfo] = useState({
     name: "Enrolled Student",
     email: "",
+    phone: "0300-1234567",
     enrollmentNo: "ENR-2026-101",
     course: "Full Stack MERN Web Development",
+    techDomain: "Full Stack Software Engineering",
+    trackType: "Remote Student",
     batch: "Batch #14 (Morning Tech)",
     instructor: "Lead Industry Instructor",
-    currentWeek: "Week #1 of 12 (Orientation & Course Setup)",
-    progress: 0,
+    currentWeek: "Week #1 of 12 (Orientation & Setup)",
+    startDate: "2026-06-01",
+    endDate: "2026-09-01",
+    progress: 45,
     attendance: 95,
+    certificateType: "course", // or "internship"
   });
+
+  // Remote Monitoring Workstation Live Session State
+  const [remoteSessionActive, setRemoteSessionActive] = useState(false);
+  const [remoteSessionSeconds, setRemoteSessionSeconds] = useState(0);
+  const [remoteFocusApp, setRemoteFocusApp] = useState("VS Code (Development)");
 
   const [feeStatus, setFeeStatus] = useState({
     dueDate: "2026-08-08",
@@ -141,20 +153,35 @@ export default function StudentDedicatedDashboardPage() {
 
     async function fetchStudentData() {
       const allStudents = await dbFetch("students").catch(() => []);
-      const matched = (allStudents || []).find(
+      let matched = (allStudents || []).find(
         (s) => (s.email || "").trim().toLowerCase() === savedEmail
       );
+      let isInternRole = false;
+
+      if (!matched) {
+        const allInterns = await dbFetch("interns").catch(() => []);
+        matched = (allInterns || []).find(
+          (i) => (i.email || "").trim().toLowerCase() === savedEmail
+        );
+        if (matched) isInternRole = true;
+      }
 
       if (matched) {
-        const courseTitle = matched.course_name || matched.course || "Full Stack MERN Web Development";
+        const courseTitle = matched.course_name || matched.course || matched.tech_domain || "Full Stack MERN Web Development";
+        const isRemote = matched.is_remote || (matched.internship_mode || "").includes("Remote") || (matched.course_name || "").includes("Remote") || (matched.batch || "").includes("Remote");
+        const trackType = isInternRole 
+          ? (isRemote ? "Remote Internship" : "On-Site Internship")
+          : (isRemote ? "Remote Student" : "On-Site Student");
+        const certType = isInternRole ? "internship" : "course";
+        const startDate = matched.start_date || matched.enrollment_date || "2026-06-01";
+        const endDate = matched.end_date || matched.completion_date || "2026-09-01";
 
         // Calculate dynamic learning week based on start date
-        const startDate = matched.start_date || matched.enrollment_date
-          ? new Date(matched.start_date || matched.enrollment_date)
-          : new Date();
-        const diffTime = Math.max(0, new Date().getTime() - startDate.getTime());
+        const sDate = new Date(startDate);
+        const diffTime = Math.max(0, new Date().getTime() - sDate.getTime());
         const diffDays = Math.floor(diffTime / (1000 * 3600 * 24));
         const weekNum = Math.min(12, Math.max(1, Math.floor(diffDays / 7) + 1));
+        const progressPct = matched.progress !== undefined ? Number(matched.progress) : Math.min(100, Math.round((diffDays / 90) * 100));
 
         // Dynamic Instructor Assignment
         let assignedInstructor = matched.instructor || "";
@@ -187,20 +214,23 @@ export default function StudentDedicatedDashboardPage() {
           "CI/CD Pipelines & Cloud Deployment",
           "Final Capstone Presentation & Graduation",
         ];
-        const topic = weekTopics[weekNum - 1] || "Specialized Course Modules";
+        const topic = weekTopics[weekNum - 1] || "Production Application Engineering";
         const dynamicWeekString = `Week #${weekNum} of 12 (${topic})`;
 
         // Calculate student's actual attendance rate & set history
         const masterLogs = await dbFetch("attendance").catch(() => []);
         const studentLogs = (masterLogs || []).filter(
-          (l) => (l.user_id || l.user_email || "").toLowerCase().trim() === savedEmail
+          (l) => (l.user_id || l.user_email || l.user_name || "").toLowerCase().trim() === savedEmail ||
+                 (l.user_name || "").toLowerCase().trim() === (matched.full_name || matched.student_name || "").toLowerCase().trim()
         );
         setStudentAttendanceHistory(studentLogs);
 
         let studentAttendanceRate = matched.attendance !== undefined ? Number(matched.attendance) : 100;
         if (studentLogs.length > 0) {
           const presentCount = studentLogs.filter(
-            (l) => (l.attendance_status || "").toLowerCase().includes("present") || (l.attendance_status || "").toLowerCase().includes("on time")
+            (l) => (l.attendance_status || "").toLowerCase().includes("present") || 
+                   (l.attendance_status || "").toLowerCase().includes("on time") ||
+                   (l.attendance_status || "").toLowerCase().includes("leave")
           ).length;
           studentAttendanceRate = Math.round((presentCount / studentLogs.length) * 100);
         }
@@ -209,7 +239,8 @@ export default function StudentDedicatedDashboardPage() {
         try {
           const allLeaves = await dbFetch("leaves").catch(() => []);
           const userLeaves = (allLeaves || []).filter(
-            (l) => (l.applicant_email || l.email || "").toLowerCase().trim() === savedEmail
+            (l) => (l.applicant_email || l.email || "").toLowerCase().trim() === savedEmail ||
+                   (l.applicant_name || l.employee_name || "").toLowerCase().trim() === (matched.full_name || matched.student_name || "").toLowerCase().trim()
           );
           setMyStudentLeaves(userLeaves);
         } catch (e) {}
@@ -241,12 +272,18 @@ export default function StudentDedicatedDashboardPage() {
 
         setStudentInfo((prev) => ({
           ...prev,
-          name: matched.full_name || matched.student_name || savedName || "Student",
+          name: matched.full_name || matched.student_name || savedName || "Student / Intern",
           email: matched.email || savedEmail,
+          phone: matched.phone || "0300-1234567",
           course: courseTitle,
-          batch: matched.batch || prev.batch,
-          enrollmentNo: matched.id || matched.student_id || prev.enrollmentNo,
-          progress: matched.progress !== undefined ? matched.progress : prev.progress,
+          techDomain: matched.tech_domain || courseTitle,
+          trackType: trackType,
+          certificateType: certType,
+          startDate: startDate,
+          endDate: endDate,
+          batch: matched.batch || (isInternRole ? "Internship Cohort #2026" : prev.batch),
+          enrollmentNo: matched.id || matched.student_id || matched.intern_id || prev.enrollmentNo,
+          progress: progressPct,
           attendance: studentAttendanceRate,
           instructor: assignedInstructor,
           currentWeek: dynamicWeekString,
@@ -279,7 +316,7 @@ export default function StudentDedicatedDashboardPage() {
           } else {
             const generated = calculate30DayFeeCycles({
               studentId: matched.id || matched.student_id,
-              enrollmentDate: matched.start_date || matched.enrollment_date,
+              enrollmentDate: startDate,
               totalFee: totalFee,
               submittedFee: paidFee,
               courseMonths: 3,
@@ -291,7 +328,7 @@ export default function StudentDedicatedDashboardPage() {
         setStudentInfo((prev) => ({
           ...prev,
           email: savedEmail,
-          name: savedName || "Enrolled Student",
+          name: savedName || "Enrolled Student / Intern",
         }));
       }
 
@@ -310,6 +347,41 @@ export default function StudentDedicatedDashboardPage() {
     }
   };
 
+  // Remote Monitoring Workstation Live Session Timer Effect
+  useEffect(() => {
+    let interval = null;
+    if (remoteSessionActive) {
+      interval = setInterval(() => {
+        setRemoteSessionSeconds((prev) => {
+          const nextSec = prev + 1;
+          // Synchronize with Admin Remote Monitoring session storage
+          try {
+            const activeSessions = JSON.parse(localStorage.getItem("software_house_remote_monitoring_sessions") || "[]");
+            const mySession = {
+              id: `sess-${studentInfo.email || 'user'}`,
+              user_name: studentInfo.name,
+              user_email: studentInfo.email,
+              user_role: studentInfo.trackType || "Remote Student",
+              tech_domain: studentInfo.techDomain,
+              status: "Active",
+              current_app: remoteFocusApp,
+              session_seconds: nextSec,
+              started_at: new Date(Date.now() - nextSec * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+              productivity_score: Math.min(98, Math.max(78, Math.round(86 + (nextSec % 8)))),
+              last_ping: new Date().toISOString()
+            };
+            const updated = [mySession, ...activeSessions.filter(s => s.user_email !== studentInfo.email)];
+            localStorage.setItem("software_house_remote_monitoring_sessions", JSON.stringify(updated));
+          } catch(e) {}
+          return nextSec;
+        });
+      }, 1000);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [remoteSessionActive, studentInfo, remoteFocusApp]);
+
   // Live Task Duration Timer Effect
   useEffect(() => {
     let timer = null;
@@ -322,6 +394,32 @@ export default function StudentDedicatedDashboardPage() {
       if (timer) clearInterval(timer);
     };
   }, [activeTaskTimerId]);
+
+  // Universal Download Certificate Handler (Student Diploma vs Internship Experience)
+  const handleUniversalCertificateDownload = () => {
+    const isIntern = studentInfo.certificateType === "internship" || studentInfo.trackType.toLowerCase().includes("intern");
+    if (isIntern) {
+      generatePrintableInternshipExperienceCertificatePdf({
+        intern_name: studentInfo.name,
+        tech_domain: studentInfo.techDomain || studentInfo.course,
+        internship_mode: studentInfo.trackType,
+        start_date: studentInfo.startDate,
+        end_date: studentInfo.endDate,
+        cert_id: `EXP-${studentInfo.enrollmentNo.replace(/[^a-zA-Z0-9]/g, '') || '2026-9901'}`
+      });
+      showToast("Experience Certificate Ready 🎓", "3-Month Internship Experience Certificate generated.", "success");
+    } else {
+      generatePrintable3MonthStudentCertificatePdf({
+        student_name: studentInfo.name,
+        course_name: studentInfo.course,
+        batch: studentInfo.batch,
+        start_date: studentInfo.startDate,
+        end_date: studentInfo.endDate,
+        cert_id: `CERT-${studentInfo.enrollmentNo.replace(/[^a-zA-Z0-9]/g, '') || '2026-9901'}`
+      });
+      showToast("Course Certificate Ready 🎓", "3-Month Course Completion Certificate generated.", "success");
+    }
+  };
 
   // Handle Start MCQ Exam
   const handleStartMcqExam = (exam) => {
@@ -579,55 +677,178 @@ export default function StudentDedicatedDashboardPage() {
 
   return (
     <div className="space-y-6 pb-12 font-sans bg-[#F8FAFC]">
-      {/* === STUDENT PROFILE HEADER BANNER === */}
-      <div className="rounded-2xl border border-blue-100 bg-white p-6 shadow-xs relative overflow-hidden">
-        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 relative z-10">
-          <div className="flex items-center gap-5">
-            <div className="h-16 w-16 rounded-2xl bg-blue-50 border border-blue-200 flex items-center justify-center text-[#2563EB] text-2xl font-black shadow-xs">
+      {/* === STUDENT / INTERN PROFILE HEADER BANNER === */}
+      <div className="rounded-3xl border border-blue-100 bg-white p-6 shadow-xs relative overflow-hidden space-y-5">
+        <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6 relative z-10">
+          <div className="flex items-start sm:items-center gap-4 sm:gap-5">
+            <div className="h-16 w-16 rounded-2xl bg-blue-600 text-white flex items-center justify-center text-2xl font-black shadow-md shrink-0">
               {studentInfo.name.charAt(0)}
             </div>
             <div className="space-y-1">
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <h1 className="text-xl font-bold text-[#0F172A] tracking-tight">{studentInfo.name}</h1>
-                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 whitespace-nowrap">
-                  Enrolled & Active
+                <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border uppercase flex items-center gap-1 ${
+                  studentInfo.trackType.includes("Remote")
+                    ? "bg-purple-50 text-purple-700 border-purple-200"
+                    : "bg-blue-50 text-blue-700 border-blue-200"
+                }`}>
+                  <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse"></span>
+                  {studentInfo.trackType}
+                </span>
+                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                  Active
                 </span>
               </div>
-              <p className="text-xs text-slate-600 font-medium">{studentInfo.course} • {studentInfo.batch}</p>
-              <p className="text-[11px] text-slate-400">Enrollment No: <span className="font-mono text-slate-800 font-semibold">{studentInfo.enrollmentNo}</span> | Email: {studentInfo.email}</p>
+              
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-600 font-medium">
+                <span className="text-[#2563EB] font-bold">{studentInfo.techDomain || studentInfo.course}</span>
+                <span>•</span>
+                <span>Phone: <strong className="text-slate-900">{studentInfo.phone || "0300-1234567"}</strong></span>
+                <span>•</span>
+                <span>Email: <strong className="text-slate-900">{studentInfo.email}</strong></span>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500 pt-0.5">
+                <span>Roll No: <span className="font-mono text-slate-800 font-semibold">{studentInfo.enrollmentNo}</span></span>
+                <span>•</span>
+                <span>3-Month Program: <strong>{studentInfo.startDate} to {studentInfo.endDate}</strong></span>
+                <span>•</span>
+                <span className="text-blue-600 font-semibold">{studentInfo.currentWeek}</span>
+              </div>
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap sm:flex-nowrap items-center gap-2.5 w-full lg:w-auto">
             <button
-              onClick={() => setCertificateModalOpen(true)}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs font-bold shadow-xs transition-all cursor-pointer whitespace-nowrap"
+              type="button"
+              onClick={handleUniversalCertificateDownload}
+              className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs font-bold shadow-xs transition-all cursor-pointer whitespace-nowrap"
             >
-              <FaAward className="h-4 w-4" /> View Certificate & QR
+              <FaAward className="h-4 w-4" /> 
+              <span>{studentInfo.trackType.includes("Intern") ? "Download Experience Certificate" : "Download Course Certificate"}</span>
             </button>
             <button
+              type="button"
               onClick={handlePrintReceipt}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-800 text-xs font-semibold transition-all cursor-pointer whitespace-nowrap"
+              className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-800 text-xs font-semibold transition-all cursor-pointer whitespace-nowrap"
             >
-              <FaPrint className="h-4 w-4" /> Fee Receipt PDF
+              <FaPrint className="h-4 w-4" /> Receipt PDF
             </button>
           </div>
         </div>
 
-        {/* Course Overall Progress Bar */}
-        <div className="mt-6 border-t border-slate-100 pt-5 space-y-2">
+        {/* 3-Month Program Overall Progress Bar */}
+        <div className="border-t border-slate-100 pt-4 space-y-2">
           <div className="flex justify-between items-center text-xs">
             <span className="text-slate-700 font-bold flex items-center gap-2">
-              <FaBookReader className="text-[#2563EB]" /> Overall Course Completion Progress
+              <FaBookReader className="text-[#2563EB]" /> 3-Month Curriculum & Milestone Progress
             </span>
             <span className="font-mono font-black text-[#2563EB] text-sm">{studentInfo.progress}% Completed</span>
           </div>
           <div className="w-full bg-slate-100 rounded-full h-3 overflow-hidden p-0.5 border border-slate-200">
             <div
-              className="bg-[#2563EB] h-full rounded-full transition-all duration-700 shadow-xs"
+              className="bg-gradient-to-r from-blue-600 to-indigo-600 h-full rounded-full transition-all duration-700 shadow-xs"
               style={{ width: `${studentInfo.progress}%` }}
             />
           </div>
+        </div>
+      </div>
+
+      {/* === REMOTE SCREEN MONITORING & LIVE WORKSTATION CARD === */}
+      <div className="p-6 rounded-3xl border border-purple-200 bg-white shadow-xs space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3.5">
+          <div className="space-y-0.5">
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-purple-700 bg-purple-50 px-2.5 py-0.5 rounded-full border border-purple-200 flex items-center gap-1">
+                <FaLaptopCode /> Remote Live Monitoring Station
+              </span>
+              <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border flex items-center gap-1 ${
+                remoteSessionActive
+                  ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                  : "bg-slate-100 text-slate-600 border-slate-200"
+              }`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${remoteSessionActive ? 'bg-emerald-600 animate-pulse' : 'bg-slate-400'}`}></span>
+                {remoteSessionActive ? "Monitored by Admin 🟢" : "Ready to Start ⚪"}
+              </span>
+            </div>
+            <h2 className="text-base font-bold text-[#0F172A] mt-1 flex items-center gap-2">
+              <FaDesktop className="text-purple-600" /> Remote Work & Screen Access Session
+            </h2>
+          </div>
+
+          <div className="text-left sm:text-right">
+            <span className="text-[10px] font-semibold text-slate-500 uppercase block">Active Session Time</span>
+            <span className="font-mono text-lg font-black text-purple-700">
+              {Math.floor(remoteSessionSeconds / 3600).toString().padStart(2, '0')}:
+              {Math.floor((remoteSessionSeconds % 3600) / 60).toString().padStart(2, '0')}:
+              {(remoteSessionSeconds % 60).toString().padStart(2, '0')}
+            </span>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+          <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-1">
+            <span className="text-[10px] font-semibold text-slate-500 uppercase">Working Domain / Field</span>
+            <p className="font-bold text-slate-900">{studentInfo.techDomain || "Software Engineering"}</p>
+          </div>
+
+          <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-1">
+            <span className="text-[10px] font-semibold text-slate-500 uppercase">Active Application</span>
+            <select
+              value={remoteFocusApp}
+              onChange={(e) => setRemoteFocusApp(e.target.value)}
+              className="w-full bg-white rounded-lg border border-slate-200 px-2 py-1 font-bold text-slate-900 text-xs outline-none focus:border-purple-600"
+            >
+              <option value="VS Code (Development)">VS Code (Development)</option>
+              <option value="Google Chrome (Research & Docs)">Google Chrome (Research & Docs)</option>
+              <option value="Figma (UI/UX Design)">Figma (UI/UX Design)</option>
+              <option value="Postman (API Testing)">Postman (API Testing)</option>
+              <option value="Python / Jupyter (AI Engineering)">Python / Jupyter (AI Engineering)</option>
+              <option value="Terminal / Git (DevOps)">Terminal / Git (DevOps)</option>
+            </select>
+          </div>
+
+          <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-1">
+            <span className="text-[10px] font-semibold text-slate-500 uppercase">Productivity Status</span>
+            <p className="font-bold text-emerald-600">92% Highly Productive</p>
+          </div>
+        </div>
+
+        {/* Remote Session Actions */}
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
+          <p className="text-[11px] text-slate-500 italic">
+            🛡️ Admin can monitor active tasks, productivity metrics, and screen samples during your session.
+          </p>
+
+          <button
+            type="button"
+            onClick={() => {
+              if (remoteSessionActive) {
+                setRemoteSessionActive(false);
+                showToast("Work Session Ended ⚪", `Session duration: ${Math.floor(remoteSessionSeconds / 60)} mins logged.`, "info");
+              } else {
+                setRemoteSessionActive(true);
+                showToast("Remote Session Started 🟢", "Session active and synced to Admin Monitoring.", "success");
+              }
+            }}
+            className={`w-full sm:w-auto px-6 py-2.5 rounded-xl font-bold text-xs shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer ${
+              remoteSessionActive
+                ? "bg-rose-600 hover:bg-rose-700 text-white"
+                : "bg-purple-600 hover:bg-purple-700 text-white"
+            }`}
+          >
+            {remoteSessionActive ? (
+              <>
+                <FaStop />
+                <span>Stop Remote Session</span>
+              </>
+            ) : (
+              <>
+                <FaPlay />
+                <span>Start Monitored Remote Session</span>
+              </>
+            )}
+          </button>
         </div>
       </div>
 

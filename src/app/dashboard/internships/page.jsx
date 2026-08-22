@@ -8,6 +8,7 @@ import { showToast } from "@/components/Toast";
 import ScrollableTabs from "@/components/ScrollableTabs";
 import Link from "next/link";
 import { registerInternWithCredentials } from "@/lib/studentEnrollmentUtils";
+import { generatePrintableInternshipExperienceCertificatePdf } from "@/lib/generateInternshipExperienceCertificatePdf";
 import {
   FaLaptopCode,
   FaUserPlus,
@@ -702,18 +703,22 @@ export default function InternshipsPage() {
                               Log Work Progress
                             </button>
 
-                            {isCompleted && (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setCertificateModal({ isOpen: true, intern: st });
-                                  setActiveKebabId(null);
-                                }}
-                                className="w-full text-left px-3 py-1.5 rounded-lg hover:bg-[#EFF6FF] text-[#0F172A] hover:text-[#2563EB] font-semibold transition-colors"
-                              >
-                                Certificate Details
-                              </button>
-                            )}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                generatePrintableInternshipExperienceCertificatePdf({
+                                  intern_name: st.full_name,
+                                  tech_domain: st.course_name,
+                                  internship_mode: st.internship_mode,
+                                  start_date: st.start_date,
+                                  end_date: st.end_date,
+                                });
+                                setActiveKebabId(null);
+                              }}
+                              className="w-full text-left px-3 py-1.5 rounded-lg hover:bg-[#EFF6FF] text-[#2563EB] font-bold transition-colors flex items-center gap-1.5"
+                            >
+                              <FaAward className="text-xs" /> Issue Experience Letter
+                            </button>
 
                             <div className="border-t border-[#E2E8F0] my-1" />
 

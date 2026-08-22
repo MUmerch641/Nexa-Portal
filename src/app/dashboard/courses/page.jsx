@@ -157,7 +157,10 @@ export default function CoursesPage() {
     cnic: "",
     email: "",
     assigned_password: "studentpassword123",
+    confirm_password: "studentpassword123",
     phone: "",
+    track_type: "Remote Student",
+    tech_domain: "Full Stack MERN Web Development",
     batch: "Batch #14 (Morning Tech)",
     guardian_name: "",
     guardian_phone: "",
@@ -674,6 +677,42 @@ export default function CoursesPage() {
                     placeholder="03009998877"
                     className="w-full rounded-xl border border-[#E2E8F0] px-3 py-2 text-xs text-[#0F172A] outline-none focus:border-[#2563EB] font-mono"
                   />
+                </div>
+              </div>
+
+              {/* Row: Track Mode & Tech Domain Selection */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold uppercase text-[#0F172A] mb-1">
+                    Enrollment Track / Mode *
+                  </label>
+                  <select
+                    name="track_type"
+                    value={form.track_type || "Remote Student"}
+                    onChange={handleChange}
+                    className="w-full rounded-xl border border-[#E2E8F0] px-3 py-2 text-xs text-[#0F172A] outline-none focus:border-[#2563EB] bg-white font-bold text-blue-700"
+                  >
+                    <option value="Remote Student">🌐 Remote Student (Online & Screen Monitored)</option>
+                    <option value="On-Site Student">🏫 On-Site Student (Campus)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold uppercase text-[#0F172A] mb-1">
+                    Tech Domain / Role
+                  </label>
+                  <select
+                    name="tech_domain"
+                    value={form.tech_domain || "Full Stack MERN Web Development"}
+                    onChange={handleChange}
+                    className="w-full rounded-xl border border-[#E2E8F0] px-3 py-2 text-xs text-[#0F172A] outline-none focus:border-[#2563EB] bg-white"
+                  >
+                    <option value="Full Stack MERN Web Development">Full Stack MERN Web Development</option>
+                    <option value="Frontend Web Development (React / Next.js)">Frontend Web Development (React / Next.js)</option>
+                    <option value="UI/UX & Product Design">UI/UX & Product Design</option>
+                    <option value="AI & Machine Learning (Python)">AI & Machine Learning (Python)</option>
+                    <option value="Mobile App Development (Flutter)">Mobile App Development (Flutter)</option>
+                    <option value="Cybersecurity & Cloud Computing">Cybersecurity & Cloud Computing</option>
+                  </select>
                 </div>
               </div>
 
