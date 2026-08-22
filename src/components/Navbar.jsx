@@ -552,7 +552,7 @@ export default function Navbar({ onMenuClick, isSidebarOpen = true }) {
                 </button>
               </div>
 
-              <div className="max-h-80 overflow-y-auto space-y-2 pr-1 text-xs">
+              <div className="max-h-80 overflow-y-auto space-y-2.5 pr-1 text-xs">
                 {/* 1. Leaves Section */}
                 {(activeNotifCategory === "all" || activeNotifCategory === "leaves") && activeLeaves.map((l) => {
                   const applicantName = l.applicant_name || l.employee_name || "Staff / Student";
@@ -565,12 +565,9 @@ export default function Navbar({ onMenuClick, isSidebarOpen = true }) {
                   return (
                     <div
                       key={l.id}
-                      onClick={() => {
-                        setSelectedLeaveModal(l);
-                        setShowNotifications(false);
-                      }}
-                      className="p-3 rounded-xl bg-[#F8FAFC] hover:bg-[#EFF6FF] border border-[#E2E8F0] hover:border-[#2563EB]/40 space-y-1.5 transition-all cursor-pointer group"
+                      className="p-3.5 rounded-2xl bg-[#F8FAFC] hover:bg-[#F1F5F9] border border-[#E2E8F0] space-y-2.5 transition-all shadow-xs"
                     >
+                      {/* Top info */}
                       <div className="flex items-center justify-between font-bold text-[#0F172A] text-xs">
                         <div className="flex items-center gap-1.5 truncate">
                           {isStudent ? (
@@ -578,7 +575,7 @@ export default function Navbar({ onMenuClick, isSidebarOpen = true }) {
                           ) : (
                             <FaUserTie className="text-[#2563EB] shrink-0 text-xs" />
                           )}
-                          <span className="truncate group-hover:text-[#2563EB] transition-colors">{applicantName}</span>
+                          <span className="truncate text-slate-900 font-bold">{applicantName}</span>
                           <span className="text-[9px] px-1.5 py-0.2 rounded font-semibold bg-[#E2E8F0] text-[#475569]">
                             {isStudent ? "Student" : "Staff"}
                           </span>
@@ -588,22 +585,47 @@ export default function Navbar({ onMenuClick, isSidebarOpen = true }) {
                         </span>
                       </div>
 
-                      <div className="flex items-center gap-1.5 text-[11px] text-[#2563EB] font-medium">
+                      <div className="flex items-center gap-1.5 text-[11px] text-[#2563EB] font-semibold">
                         <FaCalendarAlt className="text-[10px] text-[#64748B]" />
                         <span>{startDate} to {endDate}</span>
                       </div>
 
-                      <p className="text-[11px] text-[#64748B] leading-snug line-clamp-2 italic">
+                      <p className="text-[11px] text-[#475569] leading-snug line-clamp-2 italic bg-white p-2 rounded-lg border border-[#E2E8F0]">
                         "{reason}"
                       </p>
 
-                      <div className="flex items-center justify-between text-[10px] pt-1 border-t border-[#E2E8F0]/60">
-                        <span className="text-amber-700 font-semibold flex items-center gap-1">
-                          <FaClock className="text-[9px]" /> Pending HR Review
-                        </span>
-                        <span className="text-[#2563EB] font-bold group-hover:underline flex items-center gap-0.5">
-                          Review Details & Action →
-                        </span>
+                      {/* Action buttons row */}
+                      <div className="flex items-center gap-1.5 pt-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedLeaveModal(l);
+                            setShowNotifications(false);
+                          }}
+                          className="flex-1 flex items-center justify-center gap-1 py-1.5 px-2 rounded-xl bg-blue-50 hover:bg-blue-600 text-blue-600 hover:text-white font-bold text-[10px] border border-blue-200 transition-all cursor-pointer shadow-xs"
+                        >
+                          <span>🔍 View Details</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleApproveLeave(l.id)}
+                          className="flex items-center justify-center gap-1 py-1.5 px-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] transition-all cursor-pointer shadow-xs"
+                          title="Approve Leave"
+                        >
+                          <FaCheck className="text-[9px]" />
+                          <span>Approve</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleRejectLeave(l.id)}
+                          className="flex items-center justify-center gap-1 py-1.5 px-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-[10px] transition-all cursor-pointer shadow-xs"
+                          title="Reject Leave"
+                        >
+                          <FaTimes className="text-[9px]" />
+                          <span>Reject</span>
+                        </button>
                       </div>
                     </div>
                   );
@@ -613,20 +635,25 @@ export default function Navbar({ onMenuClick, isSidebarOpen = true }) {
                 {(activeNotifCategory === "all" || activeNotifCategory === "complaints") && activeComplaints.map((c) => (
                   <div
                     key={c.id}
-                    onClick={() => {
-                      setSelectedComplaintModal(c);
-                      setShowNotifications(false);
-                    }}
-                    className="p-3 rounded-xl bg-[#F8FAFC] hover:bg-[#EFF6FF] border border-[#E2E8F0] hover:border-[#2563EB]/40 space-y-1.5 transition-all cursor-pointer group"
+                    className="p-3.5 rounded-2xl bg-[#F8FAFC] hover:bg-[#F1F5F9] border border-[#E2E8F0] space-y-2 transition-all shadow-xs"
                   >
                     <div className="flex items-center justify-between font-bold text-[#0F172A] text-xs">
-                      <span className="group-hover:text-[#2563EB] transition-colors">{c.submitted_by || "Anonymous"}</span>
+                      <span className="text-slate-900">{c.submitted_by || "Anonymous"}</span>
                       <span className="text-[9px] bg-[#EFF6FF] text-[#2563EB] px-2 py-0.5 rounded-full font-bold">{c.category || "Complaint"}</span>
                     </div>
-                    <p className="text-[11px] text-[#64748B] leading-snug line-clamp-2">"{c.title || c.description}"</p>
+                    <p className="text-[11px] text-[#475569] leading-snug line-clamp-2 bg-white p-2 rounded-lg border border-[#E2E8F0]">"{c.title || c.description}"</p>
                     <div className="flex items-center justify-between text-[10px] pt-1 border-t border-[#E2E8F0]/60">
                       <span className="text-amber-700 font-semibold">{c.status || "Pending"}</span>
-                      <span className="text-[#2563EB] font-bold group-hover:underline">View Ticket →</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedComplaintModal(c);
+                          setShowNotifications(false);
+                        }}
+                        className="text-[#2563EB] font-bold hover:underline cursor-pointer"
+                      >
+                        View Ticket →
+                      </button>
                     </div>
                   </div>
                 ))}
