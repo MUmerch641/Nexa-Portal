@@ -41,7 +41,9 @@ export function cleanPayloadForDb(record, table = "") {
   const invalidColumns = [
     "cnic", "internship_mode", "resources_url", "screen_access_url",
     "start_date", "end_date", "daily_logs", "work_mode", "is_remote",
-    "course_mode", "reminder_sent", "assigned_password", "enrollment_mode"
+    "course_mode", "reminder_sent", "assigned_password", "enrollment_mode",
+    "auth_user_id", "blood_group", "guardian_phone", "emergency_phone",
+    "total_fee", "course_fee", "submitted_fee", "fee_paid", "remaining_fee"
   ];
 
   Object.keys(record).forEach((key) => {
@@ -50,8 +52,8 @@ export function cleanPayloadForDb(record, table = "") {
     if (typeof value === "function" || typeof value === "symbol") return;
     if (value && typeof value === "object" && !Array.isArray(value) && !(value instanceof Date)) return;
 
-    // If ID is a custom frontend string like "emp-178540..." or "s-123", strip it so PostgreSQL auto-assigns integer ID
-    if (key === "id" && typeof value === "string" && isNaN(Number(value))) {
+    // If ID is a custom frontend string like "emp-178540..." or "s-123", strip it so PostgreSQL auto-assigns integer/uuid ID
+    if (key === "id" && typeof value === "string" && isNaN(Number(value)) && !value.includes("-")) {
       return;
     }
 
@@ -62,6 +64,21 @@ export function cleanPayloadForDb(record, table = "") {
 
     cleaned[key] = value;
   });
+
+  if (table === "employees") {
+    if (record.password || record.assigned_password) {
+      cleaned.user_id = `auth:${record.password || record.assigned_password}`;
+    }
+  }
+
+  if (table === "students") {
+    cleaned.enrollment_no = record.enrollment_no || record.student_id || record.id || `s-${Date.now()}`;
+    cleaned.course_name = record.course_name || record.course || "Full Stack MERN Web Development";
+    cleaned.admission_date = record.admission_date || record.enrollment_date || record.start_date || new Date().toISOString().split("T")[0];
+    if (record.password || record.assigned_password) {
+      cleaned.emergency_contact = `auth:${record.password || record.assigned_password}`;
+    }
+  }
 
   return cleaned;
 }
