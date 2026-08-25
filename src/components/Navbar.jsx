@@ -689,17 +689,21 @@ export default function Navbar({ onMenuClick, isSidebarOpen = true }) {
         </div>
 
         {/* Profile Avatar Badge */}
-        <div className="flex items-center gap-2 pl-2 border-l border-[#E2E8F0]">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#EFF6FF] text-[#2563EB] text-xs font-bold border border-[#2563EB]/20">
+        <Link
+          href={role === "student" ? "/dashboard/student" : role === "employee" ? "/dashboard/employee" : "/dashboard/settings"}
+          className="flex items-center gap-2 pl-2 border-l border-[#E2E8F0] hover:opacity-85 transition-opacity cursor-pointer group"
+          title="Click to view My Profile"
+        >
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#EFF6FF] text-[#2563EB] text-xs font-bold border border-[#2563EB]/20 group-hover:scale-105 transition-transform">
             {getUserInitials(userName, userEmail)}
           </div>
           <div className="text-left hidden xl:block">
-            <p className="text-xs font-bold text-[#0F172A] leading-tight">
+            <p className="text-xs font-bold text-[#0F172A] leading-tight group-hover:text-[#2563EB] transition-colors">
               {userName || userEmail.split("@")[0] || "User"}
             </p>
             <p className="text-[10px] text-[#64748B] uppercase font-medium tracking-wider">{role}</p>
           </div>
-        </div>
+        </Link>
 
         {/* Sign Out Button */}
         <button

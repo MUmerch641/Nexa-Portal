@@ -35,7 +35,8 @@ import {
   FaChartLine,
   FaFilter,
   FaSearch,
-  FaTimes
+  FaTimes,
+  FaVideo
 } from "react-icons/fa";
 
 export default function DashboardPage() {
@@ -511,7 +512,7 @@ export default function DashboardPage() {
         </div>
 
         {/* Quick Action Buttons (White Cards, #E2E8F0 border, #2563EB Icon & Text, hover #EFF6FF) */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3 pt-1">
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3 pt-1">
           <button
             type="button"
             onClick={() => setActiveQuickActionModal("employee")}
@@ -545,6 +546,14 @@ export default function DashboardPage() {
           >
             <FaTasks className="text-sm text-[#2563EB]" />
             <span>Assign Task</span>
+          </Link>
+
+          <Link
+            href="/dashboard/meetings"
+            className="flex items-center justify-center gap-2 p-3 rounded-xl bg-white hover:bg-[#EFF6FF] text-[#2563EB] border border-[#E2E8F0] text-xs font-semibold transition-colors cursor-pointer group"
+          >
+            <FaVideo className="text-sm text-[#2563EB]" />
+            <span>Meeting Hub</span>
           </Link>
 
           <button

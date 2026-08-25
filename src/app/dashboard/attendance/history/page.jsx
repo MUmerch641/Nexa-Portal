@@ -244,8 +244,11 @@ export default function AttendanceHistory() {
                   const userName = item.user_name || item.employees?.full_name || item.user_email || item.user_id || "Employee";
                   const dateStr = item.attendance_date || item.date || (item.timestamp ? item.timestamp.split("T")[0] : "N/A");
                   const clockIn = item.check_in_time || item.check_in || "N/A";
-                  const clockOut = item.check_out_time || item.check_out || "—";
-                  const workHours = item.total_work_hours || "In Progress";
+                  const hasRealClockOut = (item.check_out_time && item.check_out_time !== "Not Checked Out" && item.check_out_time !== "--:--") || (item.check_out && item.check_out !== "Not Checked Out" && item.check_out !== "--:--");
+                  const clockOut = hasRealClockOut
+                    ? (item.check_out_time && item.check_out_time !== "Not Checked Out" ? item.check_out_time : item.check_out)
+                    : (clockIn !== "N/A" ? "Not Checked Out" : "—");
+                  const workHours = item.total_work_hours || (hasRealClockOut ? "Completed" : "In Progress");
                   const roleLabel = (item.user_role === "student" || item.user_role === "course_student") ? "Student" : "Employee";
                   const recordId = item.id || item.attendance_id;
 
@@ -270,7 +273,9 @@ export default function AttendanceHistory() {
                       </td>
 
                       <td className="py-3.5 px-4 font-mono text-[#2563EB] font-semibold">{clockIn}</td>
-                      <td className="py-3.5 px-4 font-mono text-[#64748B]">{clockOut}</td>
+                      <td className={`py-3.5 px-4 font-mono ${clockOut === "Not Checked Out" ? "text-amber-600 font-semibold" : "text-[#64748B]"}`}>
+                        {clockOut}
+                      </td>
                       <td className="py-3.5 px-4 font-mono font-semibold text-[#0F172A]">{workHours}</td>
 
                       <td className="py-3.5 px-4 text-right">

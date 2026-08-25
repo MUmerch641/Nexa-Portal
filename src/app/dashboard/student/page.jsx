@@ -40,7 +40,14 @@ import {
   FaSearch,
   FaRegLightbulb,
   FaUserTimes,
-  FaPaperPlane
+  FaPaperPlane,
+  FaVideo,
+  FaLink,
+  FaUser,
+  FaIdCard,
+  FaPhoneAlt,
+  FaEnvelope,
+  FaTimes
 } from "react-icons/fa";
 
 import {
@@ -78,6 +85,8 @@ const formatSafeDueDate = (rawDate) => {
 
 export default function StudentDedicatedDashboardPage() {
   const [role, setRole] = useState("student");
+  const [myStudentMeetings, setMyStudentMeetings] = useState([]);
+  const [profileDetailModalOpen, setProfileDetailModalOpen] = useState(false);
   const [studentInfo, setStudentInfo] = useState({
     name: "Enrolled Student",
     email: "",
@@ -336,10 +345,36 @@ export default function StudentDedicatedDashboardPage() {
         }));
       }
 
+      // Fetch Scheduled Meetings & Live Sessions targeted for this student
+      try {
+        const allMeetings = await dbFetch("meetings").catch(() => []);
+        const sEmail = (savedEmail || "").toLowerCase().trim();
+        const sName = (matched?.full_name || matched?.student_name || savedName || "").toLowerCase().trim();
+        const targetedMeetings = (allMeetings || []).filter((m) => {
+          if (!m) return false;
+          const targetType = (m.target_type || "").toLowerCase();
+          const targetKey = (m.target_key || "").toLowerCase();
+          return (
+            targetType === "all" ||
+            targetType === "all_students" ||
+            (sEmail && targetKey.includes(sEmail)) ||
+            (sName && targetKey.includes(sName)) ||
+            (m.participants || []).some(p => (p.email || "").toLowerCase().trim() === sEmail)
+          );
+        });
+        setMyStudentMeetings(targetedMeetings);
+      } catch (e) {}
+
       loadStudentTasks(savedEmail);
-    }
+    };
 
     fetchStudentData();
+
+    const handleStorage = () => {
+      fetchStudentData();
+    };
+    window.addEventListener("storage", handleStorage);
+    return () => window.removeEventListener("storage", handleStorage);
   }, []);
 
   const loadStudentTasks = async (email) => {
@@ -496,7 +531,7 @@ export default function StudentDedicatedDashboardPage() {
       user_role: "student",
       type: "check_in",
       check_in_time: timeStr,
-      check_out_time: null,
+      check_out_time: "Not Checked Out",
       attendance_status: "Present (On Time)",
       attendance_date: now.toISOString().split("T")[0],
       timestamp: now.toISOString(),
@@ -521,7 +556,8 @@ export default function StudentDedicatedDashboardPage() {
       showToast("Check-In Required 🛑", "You must check in first before checking out.", "error");
       return;
     }
-    if (todayAttendance?.check_out_time) {
+    const isAlreadyCheckedOut = todayAttendance?.check_out_time && todayAttendance.check_out_time !== "Not Checked Out" && todayAttendance.check_out_time !== "--:--";
+    if (isAlreadyCheckedOut) {
       showToast("Already Checked Out ℹ️", `Checked out today at ${todayAttendance.check_out_time}.`, "info");
       return;
     }
@@ -681,16 +717,22 @@ export default function StudentDedicatedDashboardPage() {
 
   return (
     <div className="space-y-6 pb-12 font-sans bg-[#F8FAFC]">
-      {/* === STUDENT / INTERN PROFILE HEADER BANNER === */}
+      {/* === STUDENT / INTERN PROFILE HEADER BANNER (Clean & Minimalist) === */}
       <div className="rounded-3xl border border-blue-100 bg-white p-6 shadow-xs relative overflow-hidden space-y-5">
-        <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6 relative z-10">
-          <div className="flex items-start sm:items-center gap-4 sm:gap-5">
-            <div className="h-16 w-16 rounded-2xl bg-blue-600 text-white flex items-center justify-center text-2xl font-black shadow-md shrink-0">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6 relative z-10">
+          <div
+            onClick={() => setProfileDetailModalOpen(true)}
+            className="flex items-center gap-4 cursor-pointer group hover:opacity-95 transition-all"
+            title="Click to view complete student profile details & documents"
+          >
+            <div className="h-16 w-16 rounded-2xl bg-blue-600 group-hover:bg-blue-700 text-white flex items-center justify-center text-2xl font-black shadow-md shrink-0 transition-transform group-hover:scale-105">
               {studentInfo.name.charAt(0)}
             </div>
             <div className="space-y-1">
               <div className="flex flex-wrap items-center gap-2">
-                <h1 className="text-xl font-bold text-[#0F172A] tracking-tight">{studentInfo.name}</h1>
+                <h1 className="text-xl font-bold text-[#0F172A] tracking-tight group-hover:text-blue-600 transition-colors">
+                  {studentInfo.name}
+                </h1>
                 <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border uppercase flex items-center gap-1 ${
                   studentInfo.trackType.includes("Remote")
                     ? "bg-purple-50 text-purple-700 border-purple-200"
@@ -703,40 +745,20 @@ export default function StudentDedicatedDashboardPage() {
                   Active
                 </span>
               </div>
-              
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-600 font-medium">
-                <span className="text-[#2563EB] font-bold">{studentInfo.techDomain || studentInfo.course}</span>
-                <span>•</span>
-                <span>Phone: <strong className="text-slate-900">{studentInfo.phone || "0300-1234567"}</strong></span>
-                <span>•</span>
-                <span>Email: <strong className="text-slate-900">{studentInfo.email}</strong></span>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500 pt-0.5">
-                <span>Roll No: <span className="font-mono text-slate-800 font-semibold">{studentInfo.enrollmentNo}</span></span>
-                <span>•</span>
-                <span>3-Month Program: <strong>{studentInfo.startDate} to {studentInfo.endDate}</strong></span>
-                <span>•</span>
-                <span className="text-blue-600 font-semibold">{studentInfo.currentWeek}</span>
-              </div>
+              <p className="text-xs text-[#2563EB] font-bold">
+                {studentInfo.course}
+              </p>
             </div>
           </div>
 
-          <div className="flex flex-wrap sm:flex-nowrap items-center gap-2.5 w-full lg:w-auto">
+          <div className="w-full sm:w-auto">
             <button
               type="button"
-              onClick={handleUniversalCertificateDownload}
-              className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs font-bold shadow-xs transition-all cursor-pointer whitespace-nowrap"
+              onClick={() => setProfileDetailModalOpen(true)}
+              className="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs font-bold shadow-xs transition-all cursor-pointer whitespace-nowrap"
             >
-              <FaAward className="h-4 w-4" /> 
-              <span>{studentInfo.trackType.includes("Intern") ? "Download Experience Certificate" : "Download Course Certificate"}</span>
-            </button>
-            <button
-              type="button"
-              onClick={handlePrintReceipt}
-              className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-800 text-xs font-semibold transition-all cursor-pointer whitespace-nowrap"
-            >
-              <FaPrint className="h-4 w-4" /> Receipt PDF
+              <FaUser className="h-3.5 w-3.5" />
+              <span>View Full Profile & Documents</span>
             </button>
           </div>
         </div>
@@ -757,6 +779,70 @@ export default function StudentDedicatedDashboardPage() {
           </div>
         </div>
       </div>
+
+      {/* === SCHEDULED LIVE SESSIONS & VIDEO MEETINGS (High-Priority Student Alert) === */}
+      {myStudentMeetings.length > 0 && (
+        <div className="p-6 rounded-3xl border border-blue-200 bg-gradient-to-r from-blue-50/80 via-white to-blue-50/50 shadow-xs space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-blue-100 pb-3">
+            <div className="space-y-0.5">
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-blue-700 bg-blue-100 px-2.5 py-0.5 rounded-full border border-blue-300 flex items-center gap-1">
+                  <FaVideo className="text-[10px]" /> Live Video Session Alert
+                </span>
+                <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                  {myStudentMeetings.length} Scheduled
+                </span>
+              </div>
+              <h2 className="text-base font-bold text-[#0F172A] mt-1 flex items-center gap-2">
+                <span>Official Live Meetings & Viva Sessions</span>
+              </h2>
+            </div>
+            <span className="text-xs text-blue-700 font-semibold">
+              Assigned by Management / Instructor
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+            {myStudentMeetings.map((m) => (
+              <div
+                key={m.id}
+                className="p-4 rounded-2xl bg-white border border-blue-200 shadow-xs space-y-2.5 flex flex-col justify-between"
+              >
+                <div className="space-y-1.5">
+                  <div className="flex items-start justify-between gap-2">
+                    <h3 className="font-bold text-[#0F172A] text-sm">{m.title}</h3>
+                    <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 shrink-0">
+                      {m.platform || "Google Meet"}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-3 text-xs text-slate-600">
+                    <span className="font-semibold text-blue-700 flex items-center gap-1">
+                      <FaClock className="text-[10px]" /> {m.date} • {m.time}
+                    </span>
+                    <span>•</span>
+                    <span>Host: <strong className="text-slate-900">{m.host}</strong></span>
+                  </div>
+                  {m.target_audience_label && (
+                    <p className="text-[10px] text-slate-500">
+                      Target: <span className="font-semibold text-slate-700">{m.target_audience_label}</span>
+                    </p>
+                  )}
+                </div>
+
+                <a
+                  href={m.meetUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full py-2.5 px-4 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold text-xs transition-colors shadow-xs flex items-center justify-center gap-2 cursor-pointer text-center"
+                >
+                  <FaVideo />
+                  <span>Join Live Video Session Now 🚀</span>
+                </a>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* === REMOTE SCREEN MONITORING & LIVE WORKSTATION CARD === */}
       <div className="p-6 rounded-3xl border border-purple-200 bg-white shadow-xs space-y-4">
@@ -889,13 +975,13 @@ export default function StudentDedicatedDashboardPage() {
             </div>
 
             <span className={`text-[10px] font-bold uppercase px-3 py-1 rounded-full border ${
-              todayAttendance?.check_out_time
+              todayAttendance?.check_out_time && todayAttendance.check_out_time !== "Not Checked Out" && todayAttendance.check_out_time !== "--:--"
                 ? "bg-emerald-50 text-emerald-700 border-emerald-200"
                 : todayAttendance?.check_in_time
                 ? "bg-blue-50 text-blue-700 border-blue-200"
                 : "bg-amber-50 text-amber-700 border-amber-200"
             }`}>
-              {todayAttendance?.check_out_time
+              {todayAttendance?.check_out_time && todayAttendance.check_out_time !== "Not Checked Out" && todayAttendance.check_out_time !== "--:--"
                 ? "Session Completed 🟢"
                 : todayAttendance?.check_in_time
                 ? "Checked In 🔵"
@@ -914,7 +1000,11 @@ export default function StudentDedicatedDashboardPage() {
             <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-1">
               <span className="text-[10px] font-semibold text-slate-500 uppercase">Check-Out Time</span>
               <p className="text-base font-mono font-bold text-slate-900">
-                {todayAttendance?.check_out_time || "--:--"}
+                {todayAttendance?.check_out_time && todayAttendance.check_out_time !== "Not Checked Out" && todayAttendance.check_out_time !== "--:--"
+                  ? todayAttendance.check_out_time
+                  : todayAttendance?.check_in_time
+                  ? "Not Checked Out"
+                  : "--:--"}
               </p>
             </div>
           </div>
@@ -938,15 +1028,24 @@ export default function StudentDedicatedDashboardPage() {
             <button
               type="button"
               onClick={handleStudentCheckOut}
-              disabled={markingAttendance || !todayAttendance?.check_in_time || Boolean(todayAttendance?.check_out_time)}
+              disabled={
+                markingAttendance ||
+                !todayAttendance?.check_in_time ||
+                Boolean(todayAttendance?.check_out_time && todayAttendance.check_out_time !== "Not Checked Out" && todayAttendance.check_out_time !== "--:--")
+              }
               className={`py-3 rounded-xl font-bold text-xs shadow-xs transition-colors flex items-center justify-center gap-2 cursor-pointer ${
-                !todayAttendance?.check_in_time || todayAttendance?.check_out_time
+                !todayAttendance?.check_in_time ||
+                (todayAttendance?.check_out_time && todayAttendance.check_out_time !== "Not Checked Out" && todayAttendance.check_out_time !== "--:--")
                   ? "bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed"
                   : "bg-rose-600 hover:bg-rose-700 text-white"
               }`}
             >
               <FaUserTimes />
-              <span>{todayAttendance?.check_out_time ? "Checked Out 🔴" : "Check Out"}</span>
+              <span>
+                {todayAttendance?.check_out_time && todayAttendance.check_out_time !== "Not Checked Out" && todayAttendance.check_out_time !== "--:--"
+                  ? "Checked Out 🔴"
+                  : "Check Out"}
+              </span>
             </button>
           </div>
         </div>
@@ -986,17 +1085,22 @@ export default function StudentDedicatedDashboardPage() {
                       {rec.check_in_time || "--:--"}
                     </td>
                     <td className="py-2.5 px-3 font-mono font-medium text-rose-700">
-                      {rec.check_out_time || "--:--"}
+                      {rec.check_out_time && rec.check_out_time !== "Not Checked Out" && rec.check_out_time !== "--:--"
+                        ? rec.check_out_time
+                        : (rec.check_in_time ? "Not Checked Out" : "--:--")}
                     </td>
                     <td className="py-2.5 px-3">
                       <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border uppercase ${
-                        (rec.attendance_status || "").toLowerCase().includes("completed") || (rec.attendance_status || "").toLowerCase().includes("present")
+                        (rec.attendance_status || "").toLowerCase().includes("completed") ||
+                        (rec.check_out_time && rec.check_out_time !== "Not Checked Out" && rec.check_out_time !== "--:--")
                           ? "bg-emerald-50 text-emerald-700 border-emerald-200"
                           : (rec.attendance_status || "").toLowerCase().includes("late")
                           ? "bg-amber-50 text-amber-700 border-amber-200"
                           : "bg-slate-100 text-slate-600 border-slate-200"
                       }`}>
-                        {rec.attendance_status || "Present"}
+                        {rec.check_out_time && rec.check_out_time !== "Not Checked Out" && rec.check_out_time !== "--:--"
+                          ? "Completed"
+                          : rec.attendance_status || "Present"}
                       </span>
                     </td>
                   </tr>
@@ -1008,111 +1112,132 @@ export default function StudentDedicatedDashboardPage() {
       </div>
 
       {/* === STUDENT LEAVE APPLICATION SECTION === */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* APPLY FOR LEAVE FORM */}
-        <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-xs space-y-4">
-          <div className="border-b border-slate-100 pb-3">
-            <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
-              <FaPaperPlane className="text-[#2563EB]" /> Apply for Leave
-            </h2>
+      {isAdminUser ? (
+        <div className="rounded-3xl border border-blue-200 bg-white p-6 shadow-xs space-y-4">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+            <div>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-[#2563EB] bg-[#EFF6FF] px-2.5 py-0.5 rounded-full border border-blue-200">
+                Admin Supervisory Control
+              </span>
+              <h2 className="text-base font-bold text-slate-900 mt-1 flex items-center gap-2">
+                <FaPaperPlane className="text-[#2563EB]" /> Student & Intern Leave Management
+              </h2>
+            </div>
+            <Link href="/dashboard/leaves" className="text-xs font-bold text-blue-600 hover:underline">
+              Review All Leave Applications →
+            </Link>
           </div>
-
-          <form onSubmit={handleStudentLeaveSubmit} className="space-y-3">
-            <div>
-              <label className="block text-xs font-semibold text-slate-800 uppercase mb-1">Leave Type *</label>
-              <select
-                value={studentLeaveForm.leave_type}
-                onChange={(e) => setStudentLeaveForm({ ...studentLeaveForm, leave_type: e.target.value })}
-                className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs text-slate-900 bg-white outline-none focus:border-[#2563EB]"
-              >
-                <option value="Casual Leave">Casual Leave</option>
-                <option value="Sick Leave">Sick Leave</option>
-                <option value="Emergency Leave">Emergency Leave</option>
-                <option value="Exam / University Leave">Exam / University Leave</option>
-              </select>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-semibold text-slate-800 uppercase mb-1">Start Date</label>
-                <input
-                  type="date"
-                  value={studentLeaveForm.start_date}
-                  onChange={(e) => setStudentLeaveForm({ ...studentLeaveForm, start_date: e.target.value })}
-                  className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs text-slate-900 outline-none focus:border-[#2563EB]"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-800 uppercase mb-1">End Date</label>
-                <input
-                  type="date"
-                  value={studentLeaveForm.end_date}
-                  onChange={(e) => setStudentLeaveForm({ ...studentLeaveForm, end_date: e.target.value })}
-                  className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs text-slate-900 outline-none focus:border-[#2563EB]"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-800 uppercase mb-1">Reason *</label>
-              <textarea
-                rows={2}
-                value={studentLeaveForm.reason}
-                onChange={(e) => setStudentLeaveForm({ ...studentLeaveForm, reason: e.target.value })}
-                placeholder="State reason for your leave application..."
-                required
-                className="w-full rounded-xl border border-slate-200 p-3 text-xs text-slate-900 outline-none focus:border-[#2563EB]"
-              />
-            </div>
-
-            <button
-              type="submit"
-              disabled={submittingStudentLeave}
-              className="w-full py-2.5 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold text-xs transition-colors shadow-xs cursor-pointer"
-            >
-              {submittingStudentLeave ? "Submitting..." : "Submit Leave Application"}
-            </button>
-          </form>
+          <p className="text-xs text-slate-500">
+            🛡️ Enrolled students and interns submit leave applications from their dedicated accounts. All applications are reviewed by Admin in the Leave Approvals Desk.
+          </p>
         </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* APPLY FOR LEAVE FORM (STUDENT ONLY) */}
+          <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-xs space-y-4">
+            <div className="border-b border-slate-100 pb-3">
+              <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <FaPaperPlane className="text-[#2563EB]" /> Apply for Leave
+              </h2>
+            </div>
 
-        {/* MY LEAVE APPLICATIONS HISTORY */}
-        <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-xs space-y-4">
-          <div className="border-b border-slate-100 pb-3 flex justify-between items-center">
-            <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
-              <FaClock className="text-[#2563EB]" /> My Leave Applications
-            </h2>
-            <span className="text-xs font-bold text-[#2563EB] bg-[#EFF6FF] px-2.5 py-0.5 rounded-full border border-blue-200">
-              {myStudentLeaves.length} Submitted
-            </span>
-          </div>
+            <form onSubmit={handleStudentLeaveSubmit} className="space-y-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-800 uppercase mb-1">Leave Type *</label>
+                <select
+                  value={studentLeaveForm.leave_type}
+                  onChange={(e) => setStudentLeaveForm({ ...studentLeaveForm, leave_type: e.target.value })}
+                  className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs text-slate-900 bg-white outline-none focus:border-[#2563EB]"
+                >
+                  <option value="Casual Leave">Casual Leave</option>
+                  <option value="Sick Leave">Sick Leave</option>
+                  <option value="Emergency Leave">Emergency Leave</option>
+                  <option value="Exam / University Leave">Exam / University Leave</option>
+                </select>
+              </div>
 
-          {myStudentLeaves.length === 0 ? (
-            <p className="text-xs text-slate-500 italic text-center py-4">No leave applications submitted yet.</p>
-          ) : (
-            <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
-              {myStudentLeaves.map((l) => (
-                <div key={l.id} className="p-3.5 rounded-xl border border-slate-200 bg-slate-50 flex items-center justify-between text-xs">
-                  <div>
-                    <p className="font-bold text-slate-900">{l.leave_type}</p>
-                    <p className="text-[10px] text-slate-500">{l.start_date} to {l.end_date}</p>
-                    <p className="text-[11px] text-slate-600 mt-1">{l.reason}</p>
-                  </div>
-                  <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full border uppercase shrink-0 ${
-                    (l.status || "").toLowerCase() === "approved"
-                      ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                      : (l.status || "").toLowerCase() === "rejected"
-                      ? "bg-rose-50 text-rose-700 border-rose-200"
-                      : "bg-amber-50 text-amber-700 border-amber-200"
-                  }`}>
-                    {l.status || "Pending"}
-                  </span>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-800 uppercase mb-1">Start Date</label>
+                  <input
+                    type="date"
+                    value={studentLeaveForm.start_date}
+                    onChange={(e) => setStudentLeaveForm({ ...studentLeaveForm, start_date: e.target.value })}
+                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs text-slate-900 outline-none focus:border-[#2563EB]"
+                  />
                 </div>
-              ))}
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-800 uppercase mb-1">End Date</label>
+                  <input
+                    type="date"
+                    value={studentLeaveForm.end_date}
+                    onChange={(e) => setStudentLeaveForm({ ...studentLeaveForm, end_date: e.target.value })}
+                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs text-slate-900 outline-none focus:border-[#2563EB]"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-800 uppercase mb-1">Reason *</label>
+                <textarea
+                  rows={2}
+                  value={studentLeaveForm.reason}
+                  onChange={(e) => setStudentLeaveForm({ ...studentLeaveForm, reason: e.target.value })}
+                  placeholder="State reason for your leave application..."
+                  required
+                  className="w-full rounded-xl border border-slate-200 p-3 text-xs text-slate-900 outline-none focus:border-[#2563EB]"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={submittingStudentLeave}
+                className="w-full py-2.5 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold text-xs transition-colors shadow-xs cursor-pointer"
+              >
+                {submittingStudentLeave ? "Submitting..." : "Submit Leave Application"}
+              </button>
+            </form>
+          </div>
+
+          {/* MY LEAVE APPLICATIONS HISTORY (STUDENT ONLY) */}
+          <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-xs space-y-4">
+            <div className="border-b border-slate-100 pb-3 flex justify-between items-center">
+              <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <FaClock className="text-[#2563EB]" /> My Leave Applications
+              </h2>
+              <span className="text-xs font-bold text-[#2563EB] bg-[#EFF6FF] px-2.5 py-0.5 rounded-full border border-blue-200">
+                {myStudentLeaves.length} Submitted
+              </span>
             </div>
-          )}
+
+            {myStudentLeaves.length === 0 ? (
+              <p className="text-xs text-slate-500 italic text-center py-4">No leave applications submitted yet.</p>
+            ) : (
+              <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
+                {myStudentLeaves.map((l) => (
+                  <div key={l.id} className="p-3.5 rounded-xl border border-slate-200 bg-slate-50 flex items-center justify-between text-xs">
+                    <div>
+                      <p className="font-bold text-slate-900">{l.leave_type}</p>
+                      <p className="text-[10px] text-slate-500">{l.start_date} to {l.end_date}</p>
+                      <p className="text-[11px] text-slate-600 mt-1">{l.reason}</p>
+                    </div>
+                    <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full border uppercase shrink-0 ${
+                      (l.status || "").toLowerCase() === "approved"
+                        ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                        : (l.status || "").toLowerCase() === "rejected"
+                        ? "bg-rose-50 text-rose-700 border-rose-200"
+                        : "bg-amber-50 text-amber-700 border-amber-200"
+                    }`}>
+                      {l.status || "Pending"}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* === DASHBOARD STATS GRID === */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -1562,6 +1687,152 @@ export default function StudentDedicatedDashboardPage() {
             </div>
           </div>
         </Modal>
+      )}
+
+      {/* === STUDENT FULL PROFILE DETAILS MODAL === */}
+      {profileDetailModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4 overflow-y-auto">
+          <div className="bg-white rounded-3xl max-w-2xl w-full p-6 shadow-2xl space-y-5 border border-slate-200 text-left animate-in fade-in zoom-in-95 duration-150 my-8 max-h-[90vh] overflow-y-auto">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3.5">
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-blue-700 bg-blue-50 px-2.5 py-0.5 rounded-full border border-blue-200">
+                  Student Profile Record
+                </span>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                  Active Enrollment 🟢
+                </span>
+              </div>
+              <button
+                onClick={() => setProfileDetailModalOpen(false)}
+                className="text-slate-400 hover:text-slate-700 w-8 h-8 rounded-full hover:bg-slate-100 flex items-center justify-center font-bold text-lg cursor-pointer transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Profile Identity Card */}
+            <div className="p-5 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-700 text-white flex flex-col sm:flex-row items-center sm:items-start gap-4 relative overflow-hidden shadow-sm">
+              <div className="h-20 w-20 rounded-2xl bg-white/20 backdrop-blur-md text-white flex items-center justify-center text-3xl font-black border-2 border-white/30 shrink-0 shadow-inner">
+                {studentInfo.name.charAt(0)}
+              </div>
+              <div className="space-y-1 text-center sm:text-left flex-1">
+                <h2 className="text-xl font-bold tracking-tight text-white">{studentInfo.name}</h2>
+                <p className="text-xs text-blue-100 font-medium">{studentInfo.course}</p>
+                <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 pt-1">
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-white/20 text-white border border-white/30 backdrop-blur-sm">
+                    {studentInfo.trackType}
+                  </span>
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-white text-blue-900">
+                    Roll No: {studentInfo.enrollmentNo}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Structured Details Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+              {/* Card 1: Academic Track */}
+              <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-1">
+                <span className="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-1">
+                  <FaGraduationCap className="text-blue-600" /> Course / Tech Domain
+                </span>
+                <p className="font-bold text-slate-900 text-xs">{studentInfo.course}</p>
+                <p className="text-[10px] text-slate-500">{studentInfo.techDomain || "Software Engineering"}</p>
+              </div>
+
+              {/* Card 2: Roll Number */}
+              <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-1">
+                <span className="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-1">
+                  <FaIdCard className="text-blue-600" /> Official Roll Number
+                </span>
+                <p className="font-mono font-bold text-blue-700 text-xs">{studentInfo.enrollmentNo}</p>
+                <p className="text-[10px] text-slate-500">{studentInfo.batch || "Cohort Batch #14"}</p>
+              </div>
+
+              {/* Card 3: Phone Number */}
+              <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-1">
+                <span className="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-1">
+                  <FaPhoneAlt className="text-blue-600" /> Contact Phone
+                </span>
+                <p className="font-bold text-slate-900 text-xs">{studentInfo.phone || "0300-1234567"}</p>
+                <p className="text-[10px] text-emerald-600 font-semibold">Verified Student Number ✓</p>
+              </div>
+
+              {/* Card 4: Email Address */}
+              <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-1">
+                <span className="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-1">
+                  <FaEnvelope className="text-blue-600" /> Registered Email
+                </span>
+                <p className="font-bold text-slate-900 text-xs truncate">{studentInfo.email}</p>
+                <p className="text-[10px] text-slate-500">Portal Login ID</p>
+              </div>
+
+              {/* Card 5: Program Duration */}
+              <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-1">
+                <span className="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-1">
+                  <FaCalendarAlt className="text-blue-600" /> 3-Month Program Timeline
+                </span>
+                <p className="font-bold text-slate-900 text-xs">{studentInfo.startDate} to {studentInfo.endDate}</p>
+                <p className="text-[10px] text-blue-600 font-semibold">{studentInfo.currentWeek}</p>
+              </div>
+
+              {/* Card 6: Assigned Instructor */}
+              <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-1">
+                <span className="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-1">
+                  <FaChalkboardTeacher className="text-blue-600" /> Assigned Lead Instructor
+                </span>
+                <p className="font-bold text-slate-900 text-xs">{studentInfo.instructor || "Lead Industry Trainer"}</p>
+                <p className="text-[10px] text-slate-500">Academic Supervisor</p>
+              </div>
+            </div>
+
+            {/* Attendance & Fee Snapshot */}
+            <div className="grid grid-cols-2 gap-3 pt-1 text-xs">
+              <div className="p-3.5 rounded-xl bg-blue-50/70 border border-blue-200 space-y-1">
+                <span className="text-[10px] font-bold text-blue-700 uppercase">Live Attendance Rate</span>
+                <p className="text-base font-black text-blue-900">{studentInfo.attendance || 100}%</p>
+                <p className="text-[10px] text-blue-600">Verified System Attendance</p>
+              </div>
+
+              <div className="p-3.5 rounded-xl bg-emerald-50/70 border border-emerald-200 space-y-1">
+                <span className="text-[10px] font-bold text-emerald-700 uppercase">Fee Account Status</span>
+                <p className="text-base font-black text-emerald-900">
+                  {feeStatus.remainingBalance === 0 ? "Fully Paid (Rs. " + (feeStatus.paidAmount || 25000) + ")" : "Due: Rs. " + feeStatus.remainingBalance}
+                </p>
+                <p className="text-[10px] text-emerald-700 font-semibold">Receipt: {feeStatus.receiptNo || "REC-2026-9018"}</p>
+              </div>
+            </div>
+
+            {/* Footer Action Buttons */}
+            <div className="flex flex-wrap items-center justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={handlePrintReceipt}
+                className="px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <FaPrint className="text-xs" /> Print Fee Receipt
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setProfileDetailModalOpen(false);
+                  handleUniversalCertificateDownload();
+                }}
+                className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-all shadow-xs cursor-pointer flex items-center gap-1.5"
+              >
+                <FaAward className="text-xs" /> Download Certificate
+              </button>
+              <button
+                type="button"
+                onClick={() => setProfileDetailModalOpen(false)}
+                className="px-4 py-2.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold transition-all cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

@@ -111,26 +111,31 @@ export default function LoginPage() {
     setErrors({ email: "", password: "" });
     setLoading(true);
 
-    // Check if account has been deactivated by Admin
-    let persistentEmps = [];
-    try {
-      const p = localStorage.getItem("persistent_employees");
-      if (p) persistentEmps = JSON.parse(p);
-    } catch (e) {}
+    // Check if account has been deactivated by Admin (Only for non-admin staff accounts)
+    const emailLower = trimmedEmail.toLowerCase();
+    const isAdminAccount = emailLower === "admin@gmail.com" || emailLower.includes("admin") || selectedRole === "admin";
 
-    const matchedEmpRecord = persistentEmps.find(
-      (emp) => (emp.email || "").trim().toLowerCase() === email.trim().toLowerCase()
-    );
+    if (!isAdminAccount) {
+      let persistentEmps = [];
+      try {
+        const p = localStorage.getItem("persistent_employees");
+        if (p) persistentEmps = JSON.parse(p);
+      } catch (e) {}
 
-    if (matchedEmpRecord && (matchedEmpRecord.status === "inactive" || matchedEmpRecord.status === "deactivated")) {
-      setLoading(false);
-      showToast("Account Deactivated 🛑", "Your account has been deactivated by Admin. Access denied.", "error");
-      showAlert(
-        "Account Deactivated 🛑",
-        "Your employee account has been deactivated by Management. You cannot log into the system portal. Please contact HR or System Administrator.",
-        "error"
+      const matchedEmpRecord = persistentEmps.find(
+        (emp) => (emp.email || "").trim().toLowerCase() === emailLower
       );
-      return;
+
+      if (matchedEmpRecord && (matchedEmpRecord.status === "inactive" || matchedEmpRecord.status === "deactivated")) {
+        setLoading(false);
+        showToast("Account Deactivated 🛑", "Your account has been deactivated by Admin. Access denied.", "error");
+        showAlert(
+          "Account Deactivated 🛑",
+          `The employee account (${matchedEmpRecord.full_name || emailLower}) has been deactivated in the Staff Directory. Please contact your System Administrator to reactivate your access.`,
+          "error"
+        );
+        return;
+      }
     }
 
     // Normal Login Flow: Strict authentication against registered accounts

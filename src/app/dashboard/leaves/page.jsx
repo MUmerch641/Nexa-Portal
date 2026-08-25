@@ -46,7 +46,8 @@ const StatusBadge = ({ status }) => {
 };
 
 export default function LeavesPage() {
-  const [role, setRole] = useState("employee");
+  const [role, setRole] = useState("admin");
+  const [isAdmin, setIsAdmin] = useState(true);
   const [user, setUser] = useState(null);
   const [leaves, setLeaves] = useState([]);
   const formFirstInputRef = useRef(null);
@@ -96,8 +97,12 @@ export default function LeavesPage() {
   ];
 
   useEffect(() => {
-    const storedRole = localStorage.getItem("user_role") || "admin";
+    const storedRole = (localStorage.getItem("user_role") || "admin").toLowerCase().trim();
+    const currentEmail = (localStorage.getItem("current_user_email") || "").toLowerCase().trim();
+    const adminCheck = storedRole === "admin" || storedRole === "hr" || storedRole === "manager" || currentEmail.includes("admin") || currentEmail === "admin@gmail.com";
+    
     setRole(storedRole);
+    setIsAdmin(adminCheck);
 
     const fetchSession = async () => {
       const { data: { session } } = await supabase.auth.getSession();
@@ -273,34 +278,44 @@ export default function LeavesPage() {
         </div>
       </div>
 
-      {/* 1. TOP SUMMARY STATUS CARDS (Requirement #1 - Improved Vertical Padding & Flex Alignment) */}
+      {/* 1. TOP SUMMARY STATUS CARDS */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {/* Card 1: Approved */}
         <div className="bg-white rounded-2xl p-5 border border-[#E2E8F0] shadow-sm space-y-2">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-[#EFF6FF] text-[#2563EB] border border-[#2563EB]/20 flex items-center justify-center text-xs shrink-0">
-              <FaCheckCircle />
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-[#EFF6FF] text-[#2563EB] border border-[#2563EB]/20 flex items-center justify-center text-xs shrink-0">
+                <FaCheckCircle />
+              </div>
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-[#2563EB]">Approved Leaves</p>
+                <h3 className="text-sm font-bold text-[#0F172A]">Salary Exempt</h3>
+              </div>
             </div>
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-wider text-[#2563EB]">Approved Leave Status</p>
-              <h3 className="text-sm font-bold text-[#0F172A]">Salary Exempt (No Cut)</h3>
-            </div>
+            <span className="text-lg font-black text-[#2563EB]">
+              {visibleLeaves.filter(l => (l.status || "").toLowerCase() === "approved").length}
+            </span>
           </div>
           <p className="text-xs text-[#64748B] leading-relaxed pt-1">
-            Approved leaves incur 0 salary deduction according to software house HR policy.
+            Approved leaves incur 0 salary deduction according to HR policy.
           </p>
         </div>
 
         {/* Card 2: Rejected */}
         <div className="bg-white rounded-2xl p-5 border border-[#E2E8F0] shadow-sm space-y-2">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-[#FEE2E2] text-[#991B1B] border border-[#EF4444]/20 flex items-center justify-center text-xs shrink-0">
-              <FaTimesCircle />
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-[#FEE2E2] text-[#991B1B] border border-[#EF4444]/20 flex items-center justify-center text-xs shrink-0">
+                <FaTimesCircle />
+              </div>
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-[#991B1B]">Rejected Leaves</p>
+                <h3 className="text-sm font-bold text-[#0F172A]">Salary Cut Applied</h3>
+              </div>
             </div>
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-wider text-[#991B1B]">Rejected Leave Status</p>
-              <h3 className="text-sm font-bold text-[#0F172A]">Salary Cut Applied</h3>
-            </div>
+            <span className="text-lg font-black text-[#991B1B]">
+              {visibleLeaves.filter(l => (l.status || "").toLowerCase() === "rejected").length}
+            </span>
           </div>
           <p className="text-xs text-[#64748B] leading-relaxed pt-1">
             Unapproved or rejected absences incur standard daily salary deduction.
@@ -309,114 +324,121 @@ export default function LeavesPage() {
 
         {/* Card 3: Pending */}
         <div className="bg-white rounded-2xl p-5 border border-[#E2E8F0] shadow-sm space-y-2">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-[#FEF3C7] text-[#92400E] border border-[#F59E0B]/20 flex items-center justify-center text-xs shrink-0">
-              <FaClock />
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-[#FEF3C7] text-[#92400E] border border-[#F59E0B]/20 flex items-center justify-center text-xs shrink-0">
+                <FaClock />
+              </div>
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-[#92400E]">Pending Review</p>
+                <h3 className="text-sm font-bold text-[#0F172A]">Awaiting HR Decision</h3>
+              </div>
             </div>
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-wider text-[#92400E]">Pending Review</p>
-              <h3 className="text-sm font-bold text-[#0F172A]">Awaiting HR Decision</h3>
-            </div>
+            <span className="text-lg font-black text-[#92400E]">
+              {visibleLeaves.filter(l => (l.status || "").toLowerCase() === "pending").length}
+            </span>
           </div>
           <p className="text-xs text-[#64748B] leading-relaxed pt-1">
-            Requests currently under evaluation by the Admin/HR approval committee.
+            Requests currently awaiting review and decision by Admin.
           </p>
         </div>
       </div>
 
-      {/* 2. APPLY FOR LEAVE FORM (Requirement #2 - Fixed Textarea Min-Height & Right-Aligned Prominent CTA) */}
-      <div className="bg-white rounded-2xl p-6 border border-[#E2E8F0] shadow-sm space-y-5">
-        <div className="border-b border-[#E2E8F0] pb-3">
-          <h2 className="text-base font-bold text-[#0F172A] flex items-center gap-2">
-            <FaCalendarPlus className="text-[#2563EB]" />
-            <span>Apply for Leave Request</span>
-          </h2>
-          <p className="text-xs text-[#64748B]">Fill in the leave application details for approval.</p>
-        </div>
+      {/* 2. APPLY FOR LEAVE FORM (ONLY FOR STAFF / STUDENTS - HIDDEN ON ADMIN PANEL) */}
+      {!isAdmin && (
+        <div className="bg-white rounded-2xl p-6 border border-[#E2E8F0] shadow-sm space-y-5">
+          <div className="border-b border-[#E2E8F0] pb-3">
+            <h2 className="text-base font-bold text-[#0F172A] flex items-center gap-2">
+              <FaCalendarPlus className="text-[#2563EB]" />
+              <span>Apply for Leave Request</span>
+            </h2>
+            <p className="text-xs text-[#64748B]">Fill in the leave application details for approval.</p>
+          </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-semibold text-[#0F172A] uppercase mb-1">Applicant Name *</label>
-              <input
-                ref={formFirstInputRef}
-                type="text"
-                name="applicantName"
-                value={form.applicantName}
-                onChange={handleInputChange}
-                required
-                placeholder="Enter your full name"
-                className="w-full rounded-xl border border-[#E2E8F0] px-3.5 py-2.5 text-xs text-[#0F172A] outline-none focus:border-[#2563EB] font-medium bg-white"
-              />
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-semibold text-[#0F172A] uppercase mb-1">Applicant Name *</label>
+                <input
+                  ref={formFirstInputRef}
+                  type="text"
+                  name="applicantName"
+                  value={form.applicantName}
+                  onChange={handleInputChange}
+                  required
+                  placeholder="Enter your full name"
+                  className="w-full rounded-xl border border-[#E2E8F0] px-3.5 py-2.5 text-xs text-[#0F172A] outline-none focus:border-[#2563EB] font-medium bg-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-[#0F172A] uppercase mb-1">Leave Type *</label>
+                <select
+                  name="type"
+                  value={form.type}
+                  onChange={handleInputChange}
+                  required
+                  className="w-full rounded-xl border border-[#E2E8F0] px-3.5 py-2.5 text-xs text-[#0F172A] outline-none focus:border-[#2563EB] font-medium bg-white"
+                >
+                  <option value="Emergency Leave">Emergency Leave</option>
+                  <option value="Sick Leave">Sick Leave</option>
+                  <option value="Annual Leave">Annual Leave</option>
+                  <option value="Casual Leave">Casual Leave</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-semibold text-[#0F172A] uppercase mb-1">Start Date *</label>
+                <input
+                  type="date"
+                  name="startDate"
+                  value={form.startDate}
+                  onChange={handleInputChange}
+                  required
+                  className="w-full rounded-xl border border-[#E2E8F0] px-3.5 py-2.5 text-xs text-[#0F172A] outline-none focus:border-[#2563EB] font-medium bg-white"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-[#0F172A] uppercase mb-1">End Date *</label>
+                <input
+                  type="date"
+                  name="endDate"
+                  value={form.endDate}
+                  onChange={handleInputChange}
+                  required
+                  className="w-full rounded-xl border border-[#E2E8F0] px-3.5 py-2.5 text-xs text-[#0F172A] outline-none focus:border-[#2563EB] font-medium bg-white"
+                />
+              </div>
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-[#0F172A] uppercase mb-1">Leave Type *</label>
-              <select
-                name="type"
-                value={form.type}
+              <label className="block text-xs font-semibold text-[#0F172A] uppercase mb-1">Reason & Details *</label>
+              <textarea
+                name="reason"
+                value={form.reason}
                 onChange={handleInputChange}
                 required
-                className="w-full rounded-xl border border-[#E2E8F0] px-3.5 py-2.5 text-xs text-[#0F172A] outline-none focus:border-[#2563EB] font-medium bg-white"
+                rows={3}
+                placeholder="State the detailed reason for your leave request..."
+                className="w-full rounded-xl border border-[#E2E8F0] px-3.5 py-2.5 text-xs text-[#0F172A] outline-none focus:border-[#2563EB] font-medium bg-white min-h-[100px] resize-y"
+              />
+            </div>
+
+            {/* Right-Aligned Prominent Primary CTA Button */}
+            <div className="flex justify-end pt-2 border-t border-[#E2E8F0]">
+              <button
+                type="submit"
+                className="w-full sm:w-auto bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold px-6 py-3 rounded-xl text-xs transition-colors shadow-xs flex items-center justify-center gap-2 cursor-pointer"
               >
-                <option value="Emergency Leave">Emergency Leave</option>
-                <option value="Sick Leave">Sick Leave</option>
-                <option value="Annual Leave">Annual Leave</option>
-                <option value="Casual Leave">Casual Leave</option>
-              </select>
+                <span>Submit Leave Request</span>
+                <FaArrowRight className="text-xs" />
+              </button>
             </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-semibold text-[#0F172A] uppercase mb-1">Start Date *</label>
-              <input
-                type="date"
-                name="startDate"
-                value={form.startDate}
-                onChange={handleInputChange}
-                required
-                className="w-full rounded-xl border border-[#E2E8F0] px-3.5 py-2.5 text-xs text-[#0F172A] outline-none focus:border-[#2563EB] font-medium bg-white"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-[#0F172A] uppercase mb-1">End Date *</label>
-              <input
-                type="date"
-                name="endDate"
-                value={form.endDate}
-                onChange={handleInputChange}
-                required
-                className="w-full rounded-xl border border-[#E2E8F0] px-3.5 py-2.5 text-xs text-[#0F172A] outline-none focus:border-[#2563EB] font-medium bg-white"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-[#0F172A] uppercase mb-1">Reason & Details *</label>
-            <textarea
-              name="reason"
-              value={form.reason}
-              onChange={handleInputChange}
-              required
-              rows={3}
-              placeholder="State the detailed reason for your leave request..."
-              className="w-full rounded-xl border border-[#E2E8F0] px-3.5 py-2.5 text-xs text-[#0F172A] outline-none focus:border-[#2563EB] font-medium bg-white min-h-[100px] resize-y"
-            />
-          </div>
-
-          {/* Right-Aligned Prominent Primary CTA Button */}
-          <div className="flex justify-end pt-2 border-t border-[#E2E8F0]">
-            <button
-              type="submit"
-              className="w-full sm:w-auto bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold px-6 py-3 rounded-xl text-xs transition-colors shadow-xs flex items-center justify-center gap-2 cursor-pointer"
-            >
-              <span>Submit Leave Request</span>
-              <FaArrowRight className="text-xs" />
-            </button>
-          </div>
-        </form>
-      </div>
+          </form>
+        </div>
+      )}
 
       {/* 3. LEAVE APPLICATIONS TABLE & MODERN EMPTY STATE (Requirement #3) */}
       <div className="bg-white rounded-2xl p-6 border border-[#E2E8F0] shadow-sm space-y-4">
@@ -442,14 +464,16 @@ export default function LeavesPage() {
                 You're all caught up! Submitted leave requests will appear here once they are created.
               </p>
             </div>
-            <button
-              type="button"
-              onClick={focusForm}
-              className="mt-2 bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold text-xs px-4 py-2 rounded-xl transition-colors cursor-pointer flex items-center gap-1.5 shadow-xs"
-            >
-              <FaCalendarPlus className="text-xs" />
-              <span>Apply for Leave</span>
-            </button>
+            {!isAdmin && (
+              <button
+                type="button"
+                onClick={focusForm}
+                className="mt-2 bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold text-xs px-4 py-2 rounded-xl transition-colors cursor-pointer flex items-center gap-1.5 shadow-xs"
+              >
+                <FaCalendarPlus className="text-xs" />
+                <span>Apply for Leave</span>
+              </button>
+            )}
           </div>
         ) : (
           <div className="overflow-x-auto rounded-xl border border-[#E2E8F0]">

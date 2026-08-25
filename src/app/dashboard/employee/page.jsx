@@ -22,7 +22,10 @@ import {
   FaBriefcase,
   FaFileAlt,
   FaLaptopCode,
-  FaArrowLeft
+  FaArrowLeft,
+  FaVideo,
+  FaLink,
+  FaUsers
 } from "react-icons/fa";
 
 import {
@@ -46,8 +49,9 @@ export default function EmployeeDedicatedDashboardPage() {
   // Tasks State
   const [myTasks, setMyTasks] = useState([]);
   
-  // Announcements State
+  // Announcements & Meetings State
   const [announcements, setAnnouncements] = useState([]);
+  const [myMeetings, setMyMeetings] = useState([]);
 
   // Dynamic MCQ Exams State
   const [assignedExams, setAssignedExams] = useState([]);
@@ -92,6 +96,12 @@ export default function EmployeeDedicatedDashboardPage() {
     setEmployeeName(savedName);
 
     fetchEmployeeDashboardData(savedEmail, isAdmin);
+
+    const handleStorageChange = () => {
+      fetchEmployeeDashboardData(savedEmail, isAdmin);
+    };
+    window.addEventListener("storage", handleStorageChange);
+    return () => window.removeEventListener("storage", handleStorageChange);
   }, []);
 
   const fetchEmployeeDashboardData = async (email, isAdmin = false) => {
@@ -115,9 +125,10 @@ export default function EmployeeDedicatedDashboardPage() {
           let checkIn = "--:--";
           let checkOut = "--:--";
           if (matchLog) {
-            status = matchLog.attendance_status || (matchLog.check_out_time ? "Completed" : "Present");
+            const hasCheckedOut = matchLog.check_out_time && matchLog.check_out_time !== "Not Checked Out" && matchLog.check_out_time !== "--:--";
+            status = matchLog.attendance_status || (hasCheckedOut ? "Completed" : "Present");
             checkIn = matchLog.check_in_time || "--:--";
-            checkOut = matchLog.check_out_time || "--:--";
+            checkOut = hasCheckedOut ? matchLog.check_out_time : (matchLog.check_in_time ? "Not Checked Out" : "--:--");
           }
           return {
             id: emp.id || empEmail,
@@ -214,6 +225,24 @@ export default function EmployeeDedicatedDashboardPage() {
       setAssignedExams(examsList || []);
       setExamAttempts(attemptsList || []);
     } catch (e) {}
+
+    // 6. Fetch Scheduled Meetings targeted for this employee
+    try {
+      const allMeetings = await dbFetch("meetings").catch(() => []);
+      const cleanEmail = email.toLowerCase().trim();
+      const targetedMeetings = (allMeetings || []).filter((m) => {
+        if (!m) return false;
+        const targetType = (m.target_type || "").toLowerCase();
+        const targetKey = (m.target_key || "").toLowerCase();
+        return (
+          targetType === "all" ||
+          targetType === "all_employees" ||
+          targetKey.includes(cleanEmail) ||
+          (m.participants || []).some(p => (p.email || "").toLowerCase().trim() === cleanEmail)
+        );
+      });
+      setMyMeetings(targetedMeetings);
+    } catch (e) {}
   };
 
   // Handle Start MCQ Exam
@@ -286,7 +315,7 @@ export default function EmployeeDedicatedDashboardPage() {
       user_role: "employee",
       type: "check_in",
       check_in_time: timeStr,
-      check_out_time: null,
+      check_out_time: "Not Checked Out",
       attendance_status: "Present (On Time)",
       attendance_date: now.toISOString().split("T")[0],
       timestamp: now.toISOString(),
@@ -313,7 +342,8 @@ export default function EmployeeDedicatedDashboardPage() {
       showToast("Check-In Required 🛑", "You must check in first before checking out.", "error");
       return;
     }
-    if (todayAttendance?.check_out_time) {
+    const isAlreadyCheckedOut = todayAttendance?.check_out_time && todayAttendance.check_out_time !== "Not Checked Out" && todayAttendance.check_out_time !== "--:--";
+    if (isAlreadyCheckedOut) {
       showToast("Already Checked Out ℹ️", `Checked out today at ${todayAttendance.check_out_time}.`, "info");
       return;
     }
@@ -503,10 +533,18 @@ export default function EmployeeDedicatedDashboardPage() {
             <FaCalendarCheck className="text-emerald-500" />
           </div>
           <p className="text-lg font-bold text-[#0F172A]">
-            {todayAttendance ? "Checked In" : "Not Marked"}
+            {todayAttendance?.check_out_time && todayAttendance.check_out_time !== "Not Checked Out" && todayAttendance.check_out_time !== "--:--"
+              ? "Completed"
+              : todayAttendance?.check_in_time
+              ? "Checked In"
+              : "Not Marked"}
           </p>
           <p className="text-xs text-[#64748B]">
-            {todayAttendance ? `In: ${todayAttendance.check_in_time || "Today"}` : "Action required"}
+            {todayAttendance?.check_out_time && todayAttendance.check_out_time !== "Not Checked Out" && todayAttendance.check_out_time !== "--:--"
+              ? `Out: ${todayAttendance.check_out_time}`
+              : todayAttendance?.check_in_time
+              ? `In: ${todayAttendance.check_in_time} (Not Checked Out)`
+              : "Action required"}
           </p>
         </div>
 
@@ -537,57 +575,56 @@ export default function EmployeeDedicatedDashboardPage() {
           <p className="text-xs text-[#64748B]">Awaiting Admin review</p>
         </div>
       </div>
-
-      {/* MAIN TWO-COLUMN DASHBOARD CONTENT */}
+      {/* SECTION 1: TOP 2-COLUMN BALANCED ROW (Attendance Control on Left, Announcements & Leave Desk on Right) */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* LEFT COLUMN (7 COLS): Attendance Card & My Tasks */}
-        <div className="lg:col-span-7 space-y-6">
-          {/* TODAY'S ATTENDANCE CARD */}
+        {/* LEFT COLUMN (7 COLS): Attendance Clocking / Admin Supervisory View */}
+        <div className="lg:col-span-7">
           {isAdminUser ? (
-            <div className="bg-white p-6 rounded-2xl border border-[#E2E8F0] border-l-4 border-l-[#2563EB] shadow-sm space-y-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#E2E8F0] pb-3">
-                <div className="space-y-0.5">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-[#2563EB] bg-[#EFF6FF] px-2.5 py-0.5 rounded-full border border-[#2563EB]/20">
-                    Admin Supervisory View
+            <div className="bg-white p-6 rounded-2xl border border-[#E2E8F0] shadow-sm space-y-4 h-full flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between border-b border-[#E2E8F0] pb-3">
+                  <div>
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-[#2563EB] bg-[#EFF6FF] px-2.5 py-0.5 rounded-full border border-[#2563EB]/20">
+                      Admin Supervisory View
+                    </span>
+                    <h2 className="text-sm font-bold text-[#0F172A] mt-1 flex items-center gap-2">
+                      <FaUserCheck className="text-[#2563EB]" />
+                      <span>Employees Today&apos;s Attendance Status</span>
+                    </h2>
+                  </div>
+                  <span className="text-xs font-bold text-slate-700 bg-slate-100 px-2.5 py-1 rounded-full border border-slate-200">
+                    {orgEmployeesAttendance.filter((e) => e.status !== "Absent").length} / {orgEmployeesAttendance.length} Present
                   </span>
-                  <h2 className="text-sm font-bold text-[#0F172A] flex items-center gap-2 mt-1">
-                    <FaCalendarCheck className="text-[#2563EB]" />
-                    <span>Employees Today&apos;s Attendance Status</span>
-                  </h2>
                 </div>
-                <span className="text-xs font-semibold text-slate-500">
-                  {orgEmployeesAttendance.filter(e => e.status.toLowerCase().includes("present") || e.status.toLowerCase().includes("on time")).length} / {orgEmployeesAttendance.length} Present
-                </span>
-              </div>
 
-              {/* Employees Attendance List */}
-              <div className="divide-y divide-slate-100 max-h-72 overflow-y-auto">
-                {orgEmployeesAttendance.length === 0 ? (
-                  <p className="text-xs text-slate-400 text-center py-6">No employee records found.</p>
-                ) : (
-                  orgEmployeesAttendance.map((emp) => (
-                    <div key={emp.id} className="py-2.5 flex items-center justify-between gap-3 text-xs">
-                      <div>
-                        <p className="font-bold text-slate-900">{emp.name}</p>
-                        <p className="text-[11px] text-slate-500">{emp.department} • In: {emp.checkIn} | Out: {emp.checkOut}</p>
+                <div className="divide-y divide-slate-100 max-h-72 overflow-y-auto mt-2 pr-1">
+                  {orgEmployeesAttendance.length === 0 ? (
+                    <p className="text-xs text-slate-400 italic py-6 text-center">No employee records configured.</p>
+                  ) : (
+                    orgEmployeesAttendance.map((emp) => (
+                      <div key={emp.id} className="py-2.5 flex items-center justify-between text-xs">
+                        <div>
+                          <p className="font-bold text-[#0F172A]">{emp.name}</p>
+                          <p className="text-[10px] text-slate-500 font-mono">
+                            {emp.role} • In: {emp.in} | Out: {emp.out}
+                          </p>
+                        </div>
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border uppercase ${
+                          emp.status === "Present"
+                            ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                            : emp.status === "Late"
+                            ? "bg-amber-50 text-amber-700 border-amber-200"
+                            : "bg-rose-50 text-rose-700 border-rose-200"
+                        }`}>
+                          {emp.status}
+                        </span>
                       </div>
-                      <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
-                        emp.status.toLowerCase().includes("present") || emp.status.toLowerCase().includes("on time")
-                          ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                          : emp.status.toLowerCase().includes("leave")
-                          ? "bg-purple-50 text-purple-700 border-purple-200"
-                          : emp.status.toLowerCase().includes("late")
-                          ? "bg-amber-50 text-amber-700 border-amber-200"
-                          : "bg-rose-50 text-rose-700 border-rose-200"
-                      }`}>
-                        {emp.status}
-                      </span>
-                    </div>
-                  ))
-                )}
+                    ))
+                  )}
+                </div>
               </div>
 
-              <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+              <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
                 <span>🛡️ Employees clock in from their personal devices.</span>
                 <Link href="/dashboard/attendance" className="text-blue-600 font-bold hover:underline">
                   Full Master Hub →
@@ -595,45 +632,51 @@ export default function EmployeeDedicatedDashboardPage() {
               </div>
             </div>
           ) : (
-            <div className="bg-white p-6 rounded-2xl border border-[#E2E8F0] shadow-sm space-y-4">
-              <div className="flex items-center justify-between border-b border-[#E2E8F0] pb-3">
-                <h2 className="text-sm font-bold text-[#0F172A] flex items-center gap-2">
-                  <FaCalendarCheck className="text-[#2563EB]" />
-                  <span>Today&apos;s Attendance Control</span>
-                </h2>
-                <span className={`text-[10px] font-bold uppercase px-2.5 py-1 rounded-full border ${
-                  todayAttendance?.check_out_time
-                    ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                    : todayAttendance?.check_in_time
-                    ? "bg-blue-50 text-blue-700 border-blue-200"
-                    : "bg-amber-50 text-amber-700 border-amber-200"
-                }`}>
-                  {todayAttendance?.check_out_time
-                    ? "Completed"
-                    : todayAttendance?.check_in_time
-                    ? "Checked In"
-                    : "Not Checked In"}
-                </span>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="p-4 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-1">
-                  <span className="text-[10px] font-semibold text-[#64748B] uppercase">Check-In Time</span>
-                  <p className="text-base font-mono font-bold text-[#0F172A]">
-                    {todayAttendance?.check_in_time || "--:--"}
-                  </p>
+            <div className="bg-white p-6 rounded-2xl border border-[#E2E8F0] shadow-sm space-y-4 h-full flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between border-b border-[#E2E8F0] pb-3">
+                  <h2 className="text-sm font-bold text-[#0F172A] flex items-center gap-2">
+                    <FaCalendarCheck className="text-[#2563EB]" />
+                    <span>Today&apos;s Attendance Control</span>
+                  </h2>
+                  <span className={`text-[10px] font-bold uppercase px-2.5 py-1 rounded-full border ${
+                    todayAttendance?.check_out_time && todayAttendance.check_out_time !== "Not Checked Out" && todayAttendance.check_out_time !== "--:--"
+                      ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                      : todayAttendance?.check_in_time
+                      ? "bg-blue-50 text-blue-700 border-blue-200"
+                      : "bg-amber-50 text-amber-700 border-amber-200"
+                  }`}>
+                    {todayAttendance?.check_out_time && todayAttendance.check_out_time !== "Not Checked Out" && todayAttendance.check_out_time !== "--:--"
+                      ? "Completed"
+                      : todayAttendance?.check_in_time
+                      ? "Checked In"
+                      : "Not Checked In"}
+                  </span>
                 </div>
 
-                <div className="p-4 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-1">
-                  <span className="text-[10px] font-semibold text-[#64748B] uppercase">Check-Out Time</span>
-                  <p className="text-base font-mono font-bold text-[#0F172A]">
-                    {todayAttendance?.check_out_time || "--:--"}
-                  </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-3">
+                  <div className="p-4 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-1">
+                    <span className="text-[10px] font-semibold text-[#64748B] uppercase">Check-In Time</span>
+                    <p className="text-base font-mono font-bold text-[#0F172A]">
+                      {todayAttendance?.check_in_time || "--:--"}
+                    </p>
+                  </div>
+
+                  <div className="p-4 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-1">
+                    <span className="text-[10px] font-semibold text-[#64748B] uppercase">Check-Out Time</span>
+                    <p className="text-base font-mono font-bold text-[#0F172A]">
+                      {todayAttendance?.check_out_time && todayAttendance.check_out_time !== "Not Checked Out" && todayAttendance.check_out_time !== "--:--"
+                        ? todayAttendance.check_out_time
+                        : todayAttendance?.check_in_time
+                        ? "Not Checked Out"
+                        : "--:--"}
+                    </p>
+                  </div>
                 </div>
               </div>
 
               {/* Check-In / Check-Out Buttons for Employee */}
-              <div className="grid grid-cols-2 gap-3 pt-2">
+              <div className="grid grid-cols-2 gap-3 pt-4 border-t border-slate-100">
                 <button
                   type="button"
                   onClick={handleCheckIn}
@@ -651,237 +694,85 @@ export default function EmployeeDedicatedDashboardPage() {
                 <button
                   type="button"
                   onClick={handleCheckOut}
-                  disabled={markingAttendance || !todayAttendance?.check_in_time || Boolean(todayAttendance?.check_out_time)}
+                  disabled={
+                    markingAttendance ||
+                    !todayAttendance?.check_in_time ||
+                    Boolean(todayAttendance?.check_out_time && todayAttendance.check_out_time !== "Not Checked Out" && todayAttendance.check_out_time !== "--:--")
+                  }
                   className={`py-3 rounded-xl font-bold text-xs shadow-xs transition-colors flex items-center justify-center gap-2 cursor-pointer ${
-                    !todayAttendance?.check_in_time || todayAttendance?.check_out_time
+                    !todayAttendance?.check_in_time ||
+                    (todayAttendance?.check_out_time && todayAttendance.check_out_time !== "Not Checked Out" && todayAttendance.check_out_time !== "--:--"
                       ? "bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed"
-                      : "bg-rose-600 hover:bg-rose-700 text-white"
+                      : "bg-rose-600 hover:bg-rose-700 text-white")
                   }`}
                 >
                   <FaUserTimes />
-                  <span>{todayAttendance?.check_out_time ? "Checked Out 🔴" : "Check Out"}</span>
+                  <span>
+                    {todayAttendance?.check_out_time && todayAttendance.check_out_time !== "Not Checked Out" && todayAttendance.check_out_time !== "--:--"
+                      ? "Checked Out 🔴"
+                      : "Check Out"}
+                  </span>
                 </button>
               </div>
             </div>
           )}
+        </div>
 
-          {/* MY ATTENDANCE HISTORY TABLE */}
+        {/* RIGHT COLUMN (5 COLS): Meetings & Announcements & Leave Management */}
+        <div className="lg:col-span-5 space-y-6">
+          {/* SCHEDULED MEETINGS & VIDEO SYNC (High-Priority Real-Time Alert) */}
           <div className="bg-white p-6 rounded-2xl border border-[#E2E8F0] shadow-sm space-y-4">
             <div className="flex items-center justify-between border-b border-[#E2E8F0] pb-3">
               <h2 className="text-sm font-bold text-[#0F172A] flex items-center gap-2">
-                <FaCalendarCheck className="text-[#2563EB]" />
-                <span>My Attendance History</span>
+                <FaVideo className="text-[#2563EB]" />
+                <span>Scheduled Meetings & Video Sync</span>
               </h2>
-              <span className="text-xs font-bold text-[#2563EB] bg-[#EFF6FF] px-2.5 py-1 rounded-full border border-[#2563EB]/20">
-                {myAttendanceHistory.length} Logs
+              <span className="text-[10px] font-bold text-[#2563EB] bg-[#EFF6FF] px-2 py-0.5 rounded-full border border-[#2563EB]/20">
+                {myMeetings.length} Scheduled
               </span>
             </div>
 
-            {myAttendanceHistory.length === 0 ? (
-              <p className="text-xs text-[#64748B] italic text-center py-4">No attendance records found.</p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead>
-                    <tr className="border-b border-[#E2E8F0] text-[#64748B] uppercase text-[10px]">
-                      <th className="py-2.5 px-3">Date</th>
-                      <th className="py-2.5 px-3">Check-In</th>
-                      <th className="py-2.5 px-3">Check-Out</th>
-                      <th className="py-2.5 px-3">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-[#E2E8F0]">
-                    {myAttendanceHistory.map((rec) => (
-                      <tr key={rec.id || rec.timestamp} className="hover:bg-[#F8FAFC]">
-                        <td className="py-2.5 px-3 font-semibold text-[#0F172A]">
-                          {rec.attendance_date || rec.date || "Today"}
-                        </td>
-                        <td className="py-2.5 px-3 font-mono font-medium text-emerald-700">
-                          {rec.check_in_time || "--:--"}
-                        </td>
-                        <td className="py-2.5 px-3 font-mono font-medium text-rose-700">
-                          {rec.check_out_time || "--:--"}
-                        </td>
-                        <td className="py-2.5 px-3">
-                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border uppercase ${
-                            (rec.attendance_status || "").toLowerCase().includes("completed") || (rec.attendance_status || "").toLowerCase().includes("present")
-                              ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                              : (rec.attendance_status || "").toLowerCase().includes("late")
-                              ? "bg-amber-50 text-amber-700 border-amber-200"
-                              : "bg-slate-100 text-slate-600 border-slate-200"
-                          }`}>
-                            {rec.attendance_status || "Present"}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-
-          {/* ONLINE MCQ EXAM CARD SECTION */}
-          <div className="bg-white p-6 rounded-2xl border border-[#E2E8F0] shadow-sm space-y-4">
-            <div className="flex items-center justify-between border-b border-[#E2E8F0] pb-3">
-              <h2 className="text-sm font-bold text-[#0F172A] flex items-center gap-2">
-                <FaLaptopCode className="text-[#2563EB]" />
-                <span>Online MCQ Exam</span>
-              </h2>
-              <span className="text-xs font-bold text-[#2563EB] bg-[#EFF6FF] px-2.5 py-1 rounded-full border border-[#2563EB]/20">
-                {assignedExams.length} Assigned
-              </span>
-            </div>
-
-            {assignedExams.length === 0 ? (
-              <div className="p-6 text-center bg-[#F8FAFC] rounded-xl border border-[#E2E8F0] text-[#64748B] text-xs italic space-y-1">
-                <p className="font-bold text-[#0F172A]">Online MCQ Exam</p>
-                <p>No exam has been assigned to you yet.</p>
+            {myMeetings.length === 0 ? (
+              <div className="p-4 text-center bg-[#F8FAFC] rounded-xl border border-[#E2E8F0] text-[#64748B] text-xs italic space-y-1">
+                <p>No upcoming meetings scheduled for you.</p>
+                <p className="text-[10px] text-slate-400">When Admin schedules a session, it appears here with a direct join link.</p>
               </div>
             ) : (
-              <div className="space-y-4">
-                {assignedExams.map((exam) => {
-                  const attempt = examAttempts.find((a) => a.exam_id === exam.id);
-
-                  return (
-                    <div key={exam.id} className="p-4 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] space-y-3">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-[#0F172A]">{exam.title}</span>
-                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border uppercase ${
-                          attempt
-                            ? attempt.result === "PASSED"
-                              ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                              : "bg-rose-50 text-rose-700 border-rose-200"
-                            : "bg-blue-50 text-blue-700 border-blue-200"
-                        }`}>
-                          {attempt ? `Completed (${attempt.result})` : "Assigned"}
-                        </span>
-                      </div>
-
-                      <p className="text-xs text-[#64748B]">{exam.description || "Official evaluation test."}</p>
-
-                      <div className="text-[11px] text-[#64748B] flex justify-between bg-white p-2.5 rounded-lg border border-[#E2E8F0]">
-                        <span>Questions: <strong>{exam.questions?.length || 0}</strong></span>
-                        <span>Time Limit: <strong>{exam.time_limit || 10} Mins</strong></span>
-                        <span>Due: <strong>{exam.due_date || "Open"}</strong></span>
-                      </div>
-
-                      {attempt ? (
-                        <div className="space-y-2">
-                          <div className="flex items-center justify-between text-xs p-2 rounded-lg bg-emerald-50 text-emerald-800 font-bold border border-emerald-200">
-                            <span>Score: {attempt.score} ({attempt.percentage}%)</span>
-                            <span>{attempt.result}</span>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setActiveExam(exam);
-                              setLatestAttemptResult(attempt);
-                              setMcqModalOpen(true);
-                            }}
-                            className="w-full py-2.5 rounded-xl border border-[#2563EB] bg-[#EFF6FF] hover:bg-blue-100 text-[#2563EB] font-bold text-xs transition-colors cursor-pointer"
-                          >
-                            View Result
-                          </button>
-                        </div>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => handleStartMcqExam(exam)}
-                          className="w-full py-2.5 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold text-xs transition-colors shadow-xs cursor-pointer"
-                        >
-                          Start MCQ Exam Now
-                        </button>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          {/* MY ASSIGNED TASKS */}
-          <div className="bg-white p-6 rounded-2xl border border-[#E2E8F0] shadow-sm space-y-4">
-            <div className="flex items-center justify-between border-b border-[#E2E8F0] pb-3">
-              <h2 className="text-sm font-bold text-[#0F172A] flex items-center gap-2">
-                <FaTasks className="text-[#2563EB]" />
-                <span>My Assigned Tasks</span>
-              </h2>
-              <span className="text-xs font-bold text-[#2563EB] bg-[#EFF6FF] px-2.5 py-1 rounded-full border border-[#2563EB]/20">
-                {myTasks.length} Assigned
-              </span>
-            </div>
-
-            {myTasks.length === 0 ? (
-              <div className="p-8 text-center bg-[#F8FAFC] rounded-xl border border-[#E2E8F0] text-[#64748B] text-xs italic">
-                No tasks assigned to you currently. Check back later or notify Admin.
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {myTasks.map((t) => (
-                  <div key={t.id} className="p-4 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] space-y-2">
+              <div className="space-y-3 max-h-60 overflow-y-auto pr-1">
+                {myMeetings.map((m) => (
+                  <div key={m.id} className="p-3.5 rounded-xl border border-blue-200 bg-blue-50/50 space-y-2 relative overflow-hidden">
                     <div className="flex items-start justify-between gap-2">
                       <div>
-                        <h3 className="text-xs font-bold text-[#0F172A]">{t.task || t.task_title || "Assigned Work Item"}</h3>
-                        <p className="text-[11px] text-[#64748B] mt-0.5">{t.description || "Complete assigned project deliverables as per guidelines."}</p>
+                        <h4 className="text-xs font-bold text-[#0F172A]">{m.title}</h4>
+                        <p className="text-[10px] text-blue-700 font-semibold mt-0.5 flex items-center gap-1">
+                          <FaClock className="text-[9px]" /> {m.date} • {m.time}
+                        </p>
                       </div>
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md uppercase border shrink-0 ${
-                        t.status === "Completed"
-                          ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                          : t.status === "In Progress"
-                          ? "bg-blue-50 text-blue-700 border-blue-200"
-                          : "bg-amber-50 text-amber-700 border-amber-200"
-                      }`}>
-                        {t.status || "Pending"}
+                      <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-white text-blue-800 border border-blue-200 shrink-0">
+                        {m.platform || "Google Meet"}
                       </span>
                     </div>
 
-                    <div className="flex items-center justify-between text-[10px] text-[#64748B] pt-1 border-t border-[#E2E8F0]">
-                      <span>Due: <strong className="text-[#0F172A]">{t.dueDate || t.due_date || "Today"}</strong></span>
-                      <span>Priority: <strong className="text-[#2563EB]">{t.priority || "Normal"}</strong></span>
+                    <div className="flex items-center justify-between text-[10px] text-[#64748B] pt-1 border-t border-blue-100/80">
+                      <span>Host: <strong className="text-slate-900">{m.host}</strong></span>
+                      <span className="text-blue-600 font-medium">{m.target_audience_label || "Invited"}</span>
                     </div>
 
-                    {/* Task Actions */}
-                    <div className="flex items-center gap-2 pt-2">
-                      {t.status !== "In Progress" && t.status !== "Completed" && (
-                        <button
-                          type="button"
-                          onClick={() => handleUpdateTaskStatus(t.id, "In Progress")}
-                          className="px-3 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold text-[11px] flex items-center gap-1 transition-colors cursor-pointer"
-                        >
-                          <FaPlay className="text-[9px]" /> Start Task
-                        </button>
-                      )}
-
-                      {t.status === "In Progress" && (
-                        <button
-                          type="button"
-                          onClick={() => handleUpdateTaskStatus(t.id, "Pending")}
-                          className="px-3 py-1 rounded-lg bg-amber-500 hover:bg-amber-600 text-white font-semibold text-[11px] flex items-center gap-1 transition-colors cursor-pointer"
-                        >
-                          <FaPause className="text-[9px]" /> Pause
-                        </button>
-                      )}
-
-                      {t.status !== "Completed" && (
-                        <button
-                          type="button"
-                          onClick={() => handleUpdateTaskStatus(t.id, "Completed")}
-                          className="px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-[11px] flex items-center gap-1 transition-colors cursor-pointer"
-                        >
-                          <FaCheckCircle className="text-[9px]" /> Complete
-                        </button>
-                      )}
-                    </div>
+                    <a
+                      href={m.meetUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="w-full py-2 px-3 rounded-lg bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold text-[11px] transition-colors shadow-xs flex items-center justify-center gap-1.5 cursor-pointer block text-center"
+                    >
+                      <FaVideo className="text-[10px]" />
+                      <span>Join Video Meeting Now 🚀</span>
+                    </a>
                   </div>
                 ))}
               </div>
             )}
           </div>
-        </div>
 
-        {/* RIGHT COLUMN (5 COLS): Announcements & Leave Application */}
-        <div className="lg:col-span-5 space-y-6">
           {/* OFFICIAL ANNOUNCEMENTS */}
           <div className="bg-white p-6 rounded-2xl border border-[#E2E8F0] shadow-sm space-y-4">
             <div className="flex items-center justify-between border-b border-[#E2E8F0] pb-3">
@@ -895,18 +786,28 @@ export default function EmployeeDedicatedDashboardPage() {
             </div>
 
             {announcements.length === 0 ? (
-              <div className="p-6 text-center bg-[#F8FAFC] rounded-xl border border-[#E2E8F0] text-[#64748B] text-xs italic">
+              <div className="p-4 text-center bg-[#F8FAFC] rounded-xl border border-[#E2E8F0] text-[#64748B] text-xs italic">
                 No active announcements at the moment.
               </div>
             ) : (
-              <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
+              <div className="space-y-2.5 max-h-48 overflow-y-auto pr-1">
                 {announcements.map((a) => (
-                  <div key={a.id} className="p-3.5 rounded-xl border border-blue-100 bg-blue-50/40 space-y-1">
+                  <div key={a.id} className="p-3 rounded-xl border border-blue-100 bg-blue-50/40 space-y-1.5">
                     <div className="flex items-center justify-between">
                       <h4 className="text-xs font-bold text-[#0F172A]">{a.title}</h4>
                       <span className="text-[9px] font-semibold text-[#64748B]">{a.date || a.created_at || "Recent"}</span>
                     </div>
-                    <p className="text-[11px] text-[#64748B] leading-relaxed">{a.message || a.content}</p>
+                    <p className="text-[11px] text-[#64748B] leading-relaxed whitespace-pre-line">{a.message || a.content}</p>
+                    {a.meet_url && (
+                      <a
+                        href={a.meet_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-600 hover:text-blue-800 hover:underline pt-1"
+                      >
+                        <FaLink className="text-[9px]" /> Join Scheduled Meeting Link →
+                      </a>
+                    )}
                     <p className="text-[9px] text-[#2563EB] font-bold pt-0.5">Posted by: {a.posted_by || "Management"}</p>
                   </div>
                 ))}
@@ -914,102 +815,369 @@ export default function EmployeeDedicatedDashboardPage() {
             )}
           </div>
 
-          {/* APPLY FOR LEAVE FORM */}
-          <div className="bg-white p-6 rounded-2xl border border-[#E2E8F0] shadow-sm space-y-4">
-            <div className="border-b border-[#E2E8F0] pb-3">
-              <h2 className="text-sm font-bold text-[#0F172A] flex items-center gap-2">
-                <FaPaperPlane className="text-[#2563EB]" />
-                <span>Apply for Leave</span>
-              </h2>
-            </div>
-
-            <form onSubmit={handleLeaveSubmit} className="space-y-3">
-              <div>
-                <label className="block text-xs font-semibold text-[#0F172A] uppercase mb-1">Leave Type *</label>
-                <select
-                  value={leaveForm.leave_type}
-                  onChange={(e) => setLeaveForm({ ...leaveForm, leave_type: e.target.value })}
-                  className="w-full rounded-xl border border-[#E2E8F0] px-3 py-2 text-xs text-[#0F172A] bg-white outline-none focus:border-[#2563EB]"
+          {/* LEAVE MANAGEMENT SECTION */}
+          {isAdminUser ? (
+            <div className="bg-white p-6 rounded-2xl border border-[#E2E8F0] border-l-4 border-l-[#2563EB] shadow-sm space-y-3">
+              <div className="flex items-center justify-between border-b border-[#E2E8F0] pb-2">
+                <div>
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-[#2563EB] bg-[#EFF6FF] px-2.5 py-0.5 rounded-full border border-[#2563EB]/20">
+                    Admin Supervisory Control
+                  </span>
+                  <h2 className="text-xs font-bold text-[#0F172A] mt-1 flex items-center gap-1.5">
+                    <FaPaperPlane className="text-[#2563EB]" />
+                    <span>Organization Leave Desk</span>
+                  </h2>
+                </div>
+                <Link
+                  href="/dashboard/leaves"
+                  className="text-[11px] font-bold text-blue-600 hover:text-blue-700 hover:underline flex items-center gap-1"
                 >
-                  <option value="Casual Leave">Casual Leave</option>
-                  <option value="Sick Leave">Sick Leave</option>
-                  <option value="Emergency Leave">Emergency Leave</option>
-                  <option value="Annual Leave">Annual Leave</option>
-                </select>
+                  <span>Approvals Desk</span>
+                  <FaArrowLeft className="rotate-180 text-[9px]" />
+                </Link>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-[#0F172A] uppercase mb-1">Start Date</label>
-                  <input
-                    type="date"
-                    value={leaveForm.start_date}
-                    onChange={(e) => setLeaveForm({ ...leaveForm, start_date: e.target.value })}
-                    className="w-full rounded-xl border border-[#E2E8F0] px-3 py-2 text-xs text-[#0F172A] outline-none focus:border-[#2563EB]"
-                  />
+              <div className="grid grid-cols-2 gap-2.5 pt-1">
+                <div className="p-2.5 rounded-xl bg-blue-50/60 border border-blue-100">
+                  <span className="text-[9px] font-bold text-blue-700 uppercase">Pending</span>
+                  <p className="text-lg font-black text-blue-800">{myLeaves.filter(l => (l.status || "").toLowerCase() === "pending").length}</p>
                 </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-[#0F172A] uppercase mb-1">End Date</label>
-                  <input
-                    type="date"
-                    value={leaveForm.end_date}
-                    onChange={(e) => setLeaveForm({ ...leaveForm, end_date: e.target.value })}
-                    className="w-full rounded-xl border border-[#E2E8F0] px-3 py-2 text-xs text-[#0F172A] outline-none focus:border-[#2563EB]"
-                  />
+                <div className="p-2.5 rounded-xl bg-emerald-50/60 border border-emerald-100">
+                  <span className="text-[9px] font-bold text-emerald-700 uppercase">Approved</span>
+                  <p className="text-lg font-black text-emerald-800">{myLeaves.filter(l => (l.status || "").toLowerCase() === "approved").length}</p>
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-[#0F172A] uppercase mb-1">Reason *</label>
-                <textarea
-                  rows={2}
-                  value={leaveForm.reason}
-                  onChange={(e) => setLeaveForm({ ...leaveForm, reason: e.target.value })}
-                  placeholder="State reason for leave request..."
-                  required
-                  className="w-full rounded-xl border border-[#E2E8F0] p-3 text-xs text-[#0F172A] outline-none focus:border-[#2563EB]"
-                />
-              </div>
-
-              <button
-                type="submit"
-                disabled={submittingLeave}
-                className="w-full py-2.5 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold text-xs transition-colors shadow-xs cursor-pointer"
+              <Link
+                href="/dashboard/leaves"
+                className="w-full py-2 px-3 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold text-xs transition-colors shadow-xs flex items-center justify-center gap-2 cursor-pointer"
               >
-                {submittingLeave ? "Submitting..." : "Submit Leave Request"}
-              </button>
-            </form>
+                <FaPaperPlane className="text-xs" />
+                <span>Review & Decide Leaves</span>
+              </Link>
+            </div>
+          ) : (
+            <>
+              {/* APPLY FOR LEAVE FORM (EMPLOYEE ONLY) */}
+              <div className="bg-white p-6 rounded-2xl border border-[#E2E8F0] shadow-sm space-y-4">
+                <div className="border-b border-[#E2E8F0] pb-3">
+                  <h2 className="text-sm font-bold text-[#0F172A] flex items-center gap-2">
+                    <FaPaperPlane className="text-[#2563EB]" />
+                    <span>Apply for Leave</span>
+                  </h2>
+                </div>
+
+                <form onSubmit={handleLeaveSubmit} className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-[#0F172A] uppercase mb-1">Leave Type *</label>
+                    <select
+                      value={leaveForm.leave_type}
+                      onChange={(e) => setLeaveForm({ ...leaveForm, leave_type: e.target.value })}
+                      className="w-full rounded-xl border border-[#E2E8F0] px-3 py-2 text-xs text-[#0F172A] bg-white outline-none focus:border-[#2563EB]"
+                    >
+                      <option value="Casual Leave">Casual Leave</option>
+                      <option value="Sick Leave">Sick Leave</option>
+                      <option value="Emergency Leave">Emergency Leave</option>
+                      <option value="Annual Leave">Annual Leave</option>
+                    </select>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-[#0F172A] uppercase mb-1">Start Date</label>
+                      <input
+                        type="date"
+                        value={leaveForm.start_date}
+                        onChange={(e) => setLeaveForm({ ...leaveForm, start_date: e.target.value })}
+                        className="w-full rounded-xl border border-[#E2E8F0] px-3 py-2 text-xs text-[#0F172A] outline-none focus:border-[#2563EB]"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-[#0F172A] uppercase mb-1">End Date</label>
+                      <input
+                        type="date"
+                        value={leaveForm.end_date}
+                        onChange={(e) => setLeaveForm({ ...leaveForm, end_date: e.target.value })}
+                        className="w-full rounded-xl border border-[#E2E8F0] px-3 py-2 text-xs text-[#0F172A] outline-none focus:border-[#2563EB]"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-[#0F172A] uppercase mb-1">Reason *</label>
+                    <textarea
+                      rows={2}
+                      value={leaveForm.reason}
+                      onChange={(e) => setLeaveForm({ ...leaveForm, reason: e.target.value })}
+                      placeholder="State reason for leave request..."
+                      required
+                      className="w-full rounded-xl border border-[#E2E8F0] p-3 text-xs text-[#0F172A] outline-none focus:border-[#2563EB]"
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={submittingLeave}
+                    className="w-full py-2.5 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold text-xs transition-colors shadow-xs cursor-pointer"
+                  >
+                    {submittingLeave ? "Submitting..." : "Submit Leave Request"}
+                  </button>
+                </form>
+              </div>
+
+              {/* MY LEAVE HISTORY FEED (EMPLOYEE ONLY) */}
+              <div className="bg-white p-6 rounded-2xl border border-[#E2E8F0] shadow-sm space-y-3">
+                <h3 className="text-xs font-bold text-[#0F172A] uppercase tracking-wider">My Leave Applications History</h3>
+                {myLeaves.length === 0 ? (
+                  <p className="text-xs text-[#64748B] italic">No leave applications submitted yet.</p>
+                ) : (
+                  <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                    {myLeaves.map((l) => (
+                      <div key={l.id} className="p-3 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] flex items-center justify-between text-xs">
+                        <div>
+                          <p className="font-bold text-[#0F172A]">{l.leave_type}</p>
+                          <p className="text-[10px] text-[#64748B]">{l.start_date} to {l.end_date}</p>
+                        </div>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border uppercase ${
+                          l.status === "Approved"
+                            ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                            : l.status === "Rejected"
+                            ? "bg-rose-50 text-rose-700 border-rose-200"
+                            : "bg-amber-50 text-amber-700 border-amber-200"
+                        }`}>
+                          {l.status || "Pending"}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* SECTION 2: MIDDLE 2-COLUMN BALANCED ROW (Online MCQ Exam on Left, My Assigned Tasks on Right) */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* ONLINE MCQ EXAM CARD SECTION */}
+        <div className="bg-white p-6 rounded-2xl border border-[#E2E8F0] shadow-sm space-y-4">
+          <div className="flex items-center justify-between border-b border-[#E2E8F0] pb-3">
+            <h2 className="text-sm font-bold text-[#0F172A] flex items-center gap-2">
+              <FaLaptopCode className="text-[#2563EB]" />
+              <span>Online MCQ Exam</span>
+            </h2>
+            <span className="text-xs font-bold text-[#2563EB] bg-[#EFF6FF] px-2.5 py-1 rounded-full border border-[#2563EB]/20">
+              {assignedExams.length} Assigned
+            </span>
           </div>
 
-          {/* MY LEAVE HISTORY FEED */}
-          <div className="bg-white p-6 rounded-2xl border border-[#E2E8F0] shadow-sm space-y-3">
-            <h3 className="text-xs font-bold text-[#0F172A] uppercase tracking-wider">My Leave Applications History</h3>
-            {myLeaves.length === 0 ? (
-              <p className="text-xs text-[#64748B] italic">No leave applications submitted yet.</p>
-            ) : (
-              <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-                {myLeaves.map((l) => (
-                  <div key={l.id} className="p-3 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] flex items-center justify-between text-xs">
-                    <div>
-                      <p className="font-bold text-[#0F172A]">{l.leave_type}</p>
-                      <p className="text-[10px] text-[#64748B]">{l.start_date} to {l.end_date}</p>
+          {assignedExams.length === 0 ? (
+            <div className="p-6 text-center bg-[#F8FAFC] rounded-xl border border-[#E2E8F0] text-[#64748B] text-xs italic space-y-1">
+              <p className="font-bold text-[#0F172A]">Online MCQ Exam</p>
+              <p>No exam has been assigned to you yet.</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {assignedExams.map((exam) => {
+                const attempt = examAttempts.find((a) => a.exam_id === exam.id);
+
+                return (
+                  <div key={exam.id} className="p-4 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-[#0F172A]">{exam.title}</span>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border uppercase ${
+                        attempt
+                          ? attempt.result === "PASSED"
+                            ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                            : "bg-rose-50 text-rose-700 border-rose-200"
+                          : "bg-blue-50 text-blue-700 border-blue-200"
+                      }`}>
+                        {attempt ? `Completed (${attempt.result})` : "Assigned"}
+                      </span>
                     </div>
-                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border uppercase ${
-                      l.status === "Approved"
+
+                    <p className="text-xs text-[#64748B]">{exam.description || "Official evaluation test."}</p>
+
+                    <div className="text-[11px] text-[#64748B] flex justify-between bg-white p-2.5 rounded-lg border border-[#E2E8F0]">
+                      <span>Questions: <strong>{exam.questions?.length || 0}</strong></span>
+                      <span>Time Limit: <strong>{exam.time_limit || 10} Mins</strong></span>
+                      <span>Due: <strong>{exam.due_date || "Open"}</strong></span>
+                    </div>
+
+                    {attempt ? (
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between text-xs p-2 rounded-lg bg-emerald-50 text-emerald-800 font-bold border border-emerald-200">
+                          <span>Score: {attempt.score} ({attempt.percentage}%)</span>
+                          <span>{attempt.result}</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveExam(exam);
+                            setLatestAttemptResult(attempt);
+                            setMcqModalOpen(true);
+                          }}
+                          className="w-full py-2.5 rounded-xl border border-[#2563EB] bg-[#EFF6FF] hover:bg-blue-100 text-[#2563EB] font-bold text-xs transition-colors cursor-pointer"
+                        >
+                          View Result
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => handleStartMcqExam(exam)}
+                        className="w-full py-2.5 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold text-xs transition-colors shadow-xs cursor-pointer"
+                      >
+                        Start MCQ Exam Now
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* MY ASSIGNED TASKS */}
+        <div className="bg-white p-6 rounded-2xl border border-[#E2E8F0] shadow-sm space-y-4">
+          <div className="flex items-center justify-between border-b border-[#E2E8F0] pb-3">
+            <h2 className="text-sm font-bold text-[#0F172A] flex items-center gap-2">
+              <FaTasks className="text-[#2563EB]" />
+              <span>My Assigned Tasks</span>
+            </h2>
+            <span className="text-xs font-bold text-[#2563EB] bg-[#EFF6FF] px-2.5 py-1 rounded-full border border-[#2563EB]/20">
+              {myTasks.length} Assigned
+            </span>
+          </div>
+
+          {myTasks.length === 0 ? (
+            <div className="p-8 text-center bg-[#F8FAFC] rounded-xl border border-[#E2E8F0] text-[#64748B] text-xs italic">
+              No tasks assigned to you currently. Check back later or notify Admin.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {myTasks.map((t) => (
+                <div key={t.id} className="p-4 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] space-y-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <h3 className="text-xs font-bold text-[#0F172A]">{t.task || t.task_title || "Assigned Work Item"}</h3>
+                      <p className="text-[11px] text-[#64748B] mt-0.5">{t.description || "Complete assigned project deliverables as per guidelines."}</p>
+                    </div>
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md uppercase border shrink-0 ${
+                      t.status === "Completed"
                         ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                        : l.status === "Rejected"
-                        ? "bg-rose-50 text-rose-700 border-rose-200"
+                        : t.status === "In Progress"
+                        ? "bg-blue-50 text-blue-700 border-blue-200"
                         : "bg-amber-50 text-amber-700 border-amber-200"
                     }`}>
-                      {l.status || "Pending"}
+                      {t.status || "Pending"}
                     </span>
                   </div>
-                ))}
-              </div>
-            )}
-          </div>
+
+                  <div className="flex items-center justify-between text-[10px] text-[#64748B] pt-1 border-t border-[#E2E8F0]">
+                    <span>Due: <strong className="text-[#0F172A]">{t.dueDate || t.due_date || "Today"}</strong></span>
+                    <span>Priority: <strong className="text-[#2563EB]">{t.priority || "Normal"}</strong></span>
+                  </div>
+
+                  {/* Task Actions */}
+                  <div className="flex items-center gap-2 pt-2">
+                    {t.status !== "In Progress" && t.status !== "Completed" && (
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateTaskStatus(t.id, "In Progress")}
+                        className="px-3 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold text-[11px] flex items-center gap-1 transition-colors cursor-pointer"
+                      >
+                        <FaPlay className="text-[9px]" /> Start Task
+                      </button>
+                    )}
+
+                    {t.status === "In Progress" && (
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateTaskStatus(t.id, "Pending")}
+                        className="px-3 py-1 rounded-lg bg-amber-500 hover:bg-amber-600 text-white font-semibold text-[11px] flex items-center gap-1 transition-colors cursor-pointer"
+                      >
+                        <FaPause className="text-[9px]" /> Pause
+                      </button>
+                    )}
+
+                    {t.status !== "Completed" && (
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateTaskStatus(t.id, "Completed")}
+                        className="px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-[11px] flex items-center gap-1 transition-colors cursor-pointer"
+                      >
+                        <FaCheckCircle className="text-[9px]" /> Complete
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
+      </div>
+
+      {/* SECTION 3: BOTTOM FULL-WIDTH ATTENDANCE HISTORY TABLE */}
+      <div className="bg-white p-6 rounded-2xl border border-[#E2E8F0] shadow-sm space-y-4">
+        <div className="flex items-center justify-between border-b border-[#E2E8F0] pb-3">
+          <h2 className="text-sm font-bold text-[#0F172A] flex items-center gap-2">
+            <FaCalendarCheck className="text-[#2563EB]" />
+            <span>My Attendance History</span>
+          </h2>
+          <span className="text-xs font-bold text-[#2563EB] bg-[#EFF6FF] px-2.5 py-1 rounded-full border border-[#2563EB]/20">
+            {myAttendanceHistory.length} Logs
+          </span>
+        </div>
+
+        {myAttendanceHistory.length === 0 ? (
+          <p className="text-xs text-[#64748B] italic text-center py-4">No attendance records found.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead>
+                <tr className="border-b border-[#E2E8F0] text-[#64748B] uppercase text-[10px]">
+                  <th className="py-2.5 px-3">Date</th>
+                  <th className="py-2.5 px-3">Check-In</th>
+                  <th className="py-2.5 px-3">Check-Out</th>
+                  <th className="py-2.5 px-3">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#E2E8F0]">
+                {myAttendanceHistory.map((rec) => (
+                  <tr key={rec.id || rec.timestamp} className="hover:bg-[#F8FAFC]">
+                    <td className="py-2.5 px-3 font-semibold text-[#0F172A]">
+                      {rec.attendance_date || rec.date || "Today"}
+                    </td>
+                    <td className="py-2.5 px-3 font-mono font-medium text-emerald-700">
+                      {rec.check_in_time || "--:--"}
+                    </td>
+                    <td className="py-2.5 px-3 font-mono font-medium text-rose-700">
+                      {rec.check_out_time && rec.check_out_time !== "Not Checked Out" && rec.check_out_time !== "--:--"
+                        ? rec.check_out_time
+                        : (rec.check_in_time ? "Not Checked Out" : "--:--")}
+                    </td>
+                    <td className="py-2.5 px-3">
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border uppercase ${
+                        (rec.attendance_status || "").toLowerCase().includes("completed") ||
+                        (rec.check_out_time && rec.check_out_time !== "Not Checked Out" && rec.check_out_time !== "--:--")
+                          ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                          : (rec.attendance_status || "").toLowerCase().includes("late")
+                          ? "bg-amber-50 text-amber-700 border-amber-200"
+                          : "bg-slate-100 text-slate-600 border-slate-200"
+                      }`}>
+                        {rec.check_out_time && rec.check_out_time !== "Not Checked Out" && rec.check_out_time !== "--:--"
+                          ? "Completed"
+                          : rec.attendance_status || "Present"}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {/* MCQ EXAM RUNNER MODAL */}
