@@ -245,8 +245,55 @@ export default function AttendancePage() {
       setTodayRecords(userLogs);
 
       try {
-        const masterSaved = localStorage.getItem("software_house_master_attendance_logs") || "[]";
-        setAllSystemLogs(JSON.parse(masterSaved));
+        const cloudLogs = await dbFetch("attendance", [], true).catch(() => []);
+        const masterSaved = localStorage.getItem("software_house_master_attendance_logs");
+        let localLogs = [];
+        if (masterSaved) {
+          try {
+            localLogs = JSON.parse(masterSaved);
+          } catch(e) {}
+        }
+
+        // Background sync local logs to cloud
+        if (Array.isArray(localLogs) && localLogs.length > 0) {
+          localLogs.forEach(log => {
+            if (log) {
+              const attDate = log.attendance_date || log.date || (log.timestamp ? log.timestamp.split("T")[0] : new Date().toISOString().split("T")[0]);
+              fetch("/api/persistence", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  table: "attendance",
+                  record: {
+                    user_email: log.user_email || log.email || log.employee_id,
+                    employee_id: log.user_email || log.email || log.employee_id,
+                    user_name: log.user_name || log.name,
+                    date: attDate,
+                    check_in: log.check_in_time || log.check_in,
+                    check_out: log.check_out_time || log.check_out,
+                    status: log.attendance_status || log.status || "Present",
+                    ip_address: log.public_ip || log.ip_address || "127.0.0.1"
+                  },
+                  action: "save"
+                })
+              }).catch(() => {});
+            }
+          });
+        }
+
+        // Deduplicate & Merge Cloud + Local Logs
+        const map = new Map();
+        [...(cloudLogs || []), ...(localLogs || [])].forEach(item => {
+          if (!item) return;
+          const userKey = (item.user_email || item.email || item.user_name || item.name || item.id || "").toLowerCase().trim();
+          const dateKey = item.attendance_date || item.date || "";
+          const timeKey = item.check_in_time || item.check_in || "";
+          const uniqueKey = `${userKey}_${dateKey}_${timeKey}`;
+          if (uniqueKey && !map.has(uniqueKey)) {
+            map.set(uniqueKey, item);
+          }
+        });
+        setAllSystemLogs(Array.from(map.values()));
       } catch(e) {}
 
       // Auto-verify Wi-Fi Network
