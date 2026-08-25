@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { showToast } from "@/components/Toast";
 import { supabase } from "@/lib/supabase";
+import { saveRegisteredAuthAccount } from "@/lib/studentEnrollmentUtils";
 import { FaLock, FaEnvelope, FaUser, FaBuilding, FaArrowRight, FaShieldAlt } from "react-icons/fa";
 
 export default function SignupPage() {
@@ -41,6 +42,15 @@ export default function SignupPage() {
 
       if (error) throw error;
 
+      // Save credentials to cloud database store so all devices can log in
+      await saveRegisteredAuthAccount({
+        authUserId: data?.user?.id || `usr_${Date.now()}`,
+        email: cleanEmail,
+        password: password,
+        role: role,
+        fullName: fullName.trim(),
+      }).catch(() => {});
+
       if (data.session) {
         localStorage.setItem("isLoggedIn", "true");
         localStorage.setItem("user_role", role);
@@ -59,7 +69,7 @@ export default function SignupPage() {
                 : "/dashboard";
         router.replace(destination);
       } else {
-        showToast("Account Created 📧", "Check your email to confirm the account, then sign in from any device.", "success");
+        showToast("Account Created 🎉", "Your account is active! You can now log in from any device.", "success");
         router.replace("/login");
       }
     } catch (error) {

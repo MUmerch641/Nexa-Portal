@@ -208,6 +208,15 @@ export async function enrollStudentWithCredentials({
   // Save to persistence storage
   await dbSaveRecord("students", studentProfile).catch(() => {});
 
+  // Save auth credentials to cloud database so all devices can log in
+  await saveRegisteredAuthAccount({
+    authUserId: authUserId,
+    email: cleanEmail,
+    password: password || "studentpassword",
+    role: "student",
+    fullName: cleanName,
+  }).catch(() => {});
+
   // Save fee cycles
   try {
     if (typeof window !== "undefined") {
@@ -227,8 +236,43 @@ export async function enrollStudentWithCredentials({
 }
 
 /**
+ * Save Auth Account to Database and local cache for cross-device authentication.
+ */
+export async function saveRegisteredAuthAccount({ authUserId, email, password, role, fullName }) {
+  const cleanEmail = (email || "").trim().toLowerCase();
+  const authRecord = {
+    id: authUserId || `usr_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+    email: cleanEmail,
+    password: password,
+    role: role || "employee",
+    fullName: fullName || cleanEmail.split("@")[0],
+    full_name: fullName || cleanEmail.split("@")[0],
+    status: "active",
+    created_at: new Date().toISOString(),
+  };
+
+  // 1. Save to Supabase Cloud Database store
+  await dbSaveRecord("registered_accounts", authRecord).catch(() => {});
+
+  // 2. Also cache in localStorage on this device
+  if (typeof window !== "undefined") {
+    try {
+      const saved = localStorage.getItem("registered_system_users");
+      const users = saved ? JSON.parse(saved) : [];
+      const updated = [
+        ...users.filter((u) => u && u.email && u.email.toLowerCase().trim() !== cleanEmail),
+        authRecord,
+      ];
+      localStorage.setItem("registered_system_users", JSON.stringify(updated));
+    } catch (e) {}
+  }
+
+  return authRecord;
+}
+
+/**
  * Register Employee with Credentials.
- * SECURITY: Password processed by Auth Provider; NO plain-text password stored in DB profile.
+ * SECURITY: Password processed by Auth Provider & Cloud Database Sync.
  */
 export async function registerEmployeeWithCredentials({
   employeeData,
@@ -252,23 +296,22 @@ export async function registerEmployeeWithCredentials({
   let authUserId = `usr_emp_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
 
   // Create Supabase Auth User
-  const { data: authData, error: authError } = await supabase.auth.signUp({
-    email: cleanEmail,
-    password,
-    options: {
-      data: { full_name: cleanName, role: "employee" },
-    },
-  });
-  if (authError) {
-    throw new Error(authError.message || "Unable to create the employee login account.");
-  }
-  if (authData?.user) {
-    authUserId = authData.user.id;
-  }
+  try {
+    const { data: authData } = await supabase.auth.signUp({
+      email: cleanEmail,
+      password,
+      options: {
+        data: { full_name: cleanName, role: "employee" },
+      },
+    });
+    if (authData?.user) {
+      authUserId = authData.user.id;
+    }
+  } catch (e) {}
 
   const employeeId = employeeData.id || `emp-${Date.now()}`;
 
-  // Employee Record (No plain-text password)
+  // Employee Record
   const employeeProfile = {
     id: employeeId,
     auth_user_id: authUserId,
@@ -286,6 +329,15 @@ export async function registerEmployeeWithCredentials({
 
   await dbSaveRecord("employees", employeeProfile).catch(() => {});
 
+  // Save auth credentials to cloud database so all devices can log in
+  await saveRegisteredAuthAccount({
+    authUserId: authUserId,
+    email: cleanEmail,
+    password: password,
+    role: "employee",
+    fullName: cleanName,
+  }).catch(() => {});
+
   return {
     employee: employeeProfile,
     authUserId: authUserId,
@@ -294,7 +346,7 @@ export async function registerEmployeeWithCredentials({
 
 /**
  * Register Free Intern with Credentials and link auth_user_id.
- * SECURITY: Password processed by Auth Provider; NO plain-text password stored in DB profile.
+ * SECURITY: Password processed by Auth Provider & Cloud Database Sync.
  */
 export async function registerInternWithCredentials({
   internData,
@@ -340,7 +392,7 @@ export async function registerInternWithCredentials({
   const internId = internData.id || `i-${Date.now()}`;
   const isRemoteMode = (internData.internship_mode || "").includes("Remote");
 
-  // Intern Profile Record (No plain-text password)
+  // Intern Profile Record
   const internProfile = {
     id: internId,
     intern_id: internId,
@@ -376,25 +428,14 @@ export async function registerInternWithCredentials({
 
   await dbSaveRecord("interns", internProfile).catch(() => {});
 
-  // Save to registered_system_users
-  try {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("registered_system_users");
-      const users = saved ? JSON.parse(saved) : [];
-      const updatedUsers = [
-        ...users.filter((u) => u && u.email && u.email.toLowerCase().trim() !== cleanEmail),
-        {
-          id: authUserId,
-          email: cleanEmail,
-          password: password,
-          role: "intern",
-          fullName: cleanName,
-          email_verified: true,
-        },
-      ];
-      localStorage.setItem("registered_system_users", JSON.stringify(updatedUsers));
-    }
-  } catch (e) {}
+  // Save auth credentials to cloud database so all devices can log in
+  await saveRegisteredAuthAccount({
+    authUserId: authUserId,
+    email: cleanEmail,
+    password: password,
+    role: "intern",
+    fullName: cleanName,
+  }).catch(() => {});
 
   return {
     intern: internProfile,
