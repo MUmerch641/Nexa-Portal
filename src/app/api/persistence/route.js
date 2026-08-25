@@ -14,6 +14,36 @@ const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY && !process.env.NE
 
 const supabase = createClient(supabaseUrl, supabaseKey);
 
+function convertTo24HourTime(timeStr) {
+  if (!timeStr || timeStr === "--:--" || String(timeStr).includes("Not Checked Out")) return null;
+  const str = String(timeStr).trim();
+  if (/^\d{2}:\d{2}(:\d{2})?$/.test(str)) return str.length === 5 ? `${str}:00` : str;
+  
+  const match = str.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)$/i);
+  if (!match) return null;
+  
+  let hours = parseInt(match[1], 10);
+  const minutes = match[2];
+  const seconds = match[3] || "00";
+  const modifier = match[4].toUpperCase();
+
+  if (modifier === "PM" && hours < 12) hours += 12;
+  if (modifier === "AM" && hours === 12) hours = 0;
+
+  return `${String(hours).padStart(2, "0")}:${minutes}:${seconds}`;
+}
+
+function convertTo12HourTime(timeStr) {
+  if (!timeStr || timeStr === "--:--" || timeStr === "Not Checked Out") return "Not Checked Out";
+  const parts = String(timeStr).split(":");
+  if (parts.length < 2) return timeStr;
+  let hours = parseInt(parts[0], 10);
+  const minutes = parts[1];
+  const modifier = hours >= 12 ? "PM" : "AM";
+  hours = hours % 12 || 12;
+  return `${String(hours).padStart(2, "0")}:${minutes} ${modifier}`;
+}
+
 export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url);
@@ -31,6 +61,36 @@ export async function GET(request) {
         data = fallback.data;
         error = null;
       }
+    }
+
+    // Bidirectional formatting for attendance
+    if (table === "attendance" && Array.isArray(data)) {
+      try {
+        const { data: allEmps } = await supabase.from("employees").select("id, full_name, email");
+        const empMap = new Map((allEmps || []).map(e => [e.id, e]));
+
+        data = data.map(item => {
+          const emp = empMap.get(item.employee_id);
+          const email = emp?.email || item.employee_id || "employee@example.com";
+          const name = emp?.full_name || "Employee Staff";
+          return {
+            id: item.id,
+            employee_id: email,
+            user_email: email,
+            email: email,
+            user_name: name,
+            name: name,
+            attendance_date: item.date,
+            date: item.date,
+            check_in_time: item.check_in ? convertTo12HourTime(item.check_in) : "--:--",
+            check_out_time: item.check_out ? convertTo12HourTime(item.check_out) : "Not Checked Out",
+            attendance_status: item.status || (item.check_out ? "Present (Completed)" : "Present (On Time)"),
+            status: item.status,
+            public_ip: item.ip_address || "127.0.0.1",
+            timestamp: `${item.date}T${item.check_in || "00:00:00"}`
+          };
+        });
+      } catch(e) {}
     }
 
     if (error) {
@@ -82,6 +142,45 @@ export async function POST(request) {
     }
 
     if (record) {
+      // Special schema normalization for Supabase 'attendance'
+      if (table === "attendance") {
+        const attDate = record.date || record.attendance_date || (record.timestamp ? record.timestamp.split("T")[0] : new Date().toISOString().split("T")[0]);
+        const checkInTime = convertTo24HourTime(record.check_in || record.check_in_time) || "09:00:00";
+        const checkOutTime = convertTo24HourTime(record.check_out || record.check_out_time);
+        
+        let empUuid = null;
+        const targetEmail = (record.employee_id || record.user_email || record.email || "").toLowerCase().trim();
+        if (targetEmail) {
+          const { data: empData } = await supabase.from("employees").select("id").eq("email", targetEmail).limit(1);
+          if (empData && empData[0]) {
+            empUuid = empData[0].id;
+          }
+        }
+
+        const attPayload = {
+          employee_id: empUuid,
+          date: attDate,
+          status: record.status || record.attendance_status || (checkOutTime ? "Present (Completed)" : "Present (On Time)"),
+          check_in: checkInTime,
+          check_out: checkOutTime,
+          ip_address: record.ip_address || record.public_ip || "127.0.0.1"
+        };
+
+        // Check if an attendance record for this date and employee already exists in Supabase
+        let existingQuery = supabase.from("attendance").select("id").eq("date", attDate);
+        if (empUuid) {
+          existingQuery = existingQuery.eq("employee_id", empUuid);
+        }
+        const { data: existingRows } = await existingQuery.limit(1);
+
+        if (existingRows && existingRows.length > 0) {
+          await supabase.from("attendance").update(attPayload).eq("id", existingRows[0].id);
+        } else {
+          await supabase.from("attendance").insert([attPayload]);
+        }
+        return NextResponse.json({ success: true });
+      }
+
       const cleaned = {};
       const invalidColumns = [
         "cnic", "internship_mode", "resources_url", "screen_access_url",
