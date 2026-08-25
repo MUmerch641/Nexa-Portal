@@ -527,10 +527,13 @@ export default function EmployeeDedicatedDashboardPage() {
 
       {/* SUMMARY METRICS CARDS GRID */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white p-5 rounded-2xl border border-[#E2E8F0] shadow-sm space-y-2">
+        <Link
+          href="/dashboard/attendance/history"
+          className="bg-white p-5 rounded-2xl border border-[#E2E8F0] shadow-sm space-y-2 hover:border-emerald-400 hover:shadow-md transition-all cursor-pointer group block"
+        >
           <div className="flex justify-between items-center text-xs text-[#64748B]">
-            <span>Today's Attendance</span>
-            <FaCalendarCheck className="text-emerald-500" />
+            <span className="font-semibold text-slate-700">Today's Attendance</span>
+            <FaCalendarCheck className="text-emerald-500 group-hover:scale-110 transition-transform" />
           </div>
           <p className="text-lg font-bold text-[#0F172A]">
             {todayAttendance?.check_out_time && todayAttendance.check_out_time !== "Not Checked Out" && todayAttendance.check_out_time !== "--:--"
@@ -539,41 +542,70 @@ export default function EmployeeDedicatedDashboardPage() {
               ? "Checked In"
               : "Not Marked"}
           </p>
-          <p className="text-xs text-[#64748B]">
-            {todayAttendance?.check_out_time && todayAttendance.check_out_time !== "Not Checked Out" && todayAttendance.check_out_time !== "--:--"
-              ? `Out: ${todayAttendance.check_out_time}`
-              : todayAttendance?.check_in_time
-              ? `In: ${todayAttendance.check_in_time} (Not Checked Out)`
-              : "Action required"}
-          </p>
-        </div>
+          <div className="flex items-center justify-between text-xs pt-1 border-t border-slate-100">
+            <span className="text-[#64748B]">
+              {todayAttendance?.check_out_time && todayAttendance.check_out_time !== "Not Checked Out" && todayAttendance.check_out_time !== "--:--"
+                ? `Out: ${todayAttendance.check_out_time}`
+                : todayAttendance?.check_in_time
+                ? `In: ${todayAttendance.check_in_time}`
+                : "Action required"}
+            </span>
+            <span className="text-[10px] font-bold text-emerald-600 group-hover:translate-x-0.5 transition-transform flex items-center gap-0.5">
+              History ↗
+            </span>
+          </div>
+        </Link>
 
-        <div className="bg-white p-5 rounded-2xl border border-[#E2E8F0] shadow-sm space-y-2">
+        <Link
+          href="/dashboard/tasks"
+          className="bg-white p-5 rounded-2xl border border-[#E2E8F0] shadow-sm space-y-2 hover:border-amber-400 hover:shadow-md transition-all cursor-pointer group block"
+        >
           <div className="flex justify-between items-center text-xs text-[#64748B]">
-            <span>My Pending Tasks</span>
-            <FaTasks className="text-amber-500" />
+            <span className="font-semibold text-slate-700">My Pending Tasks</span>
+            <FaTasks className="text-amber-500 group-hover:scale-110 transition-transform" />
           </div>
           <p className="text-2xl font-black text-[#0F172A]">{pendingTasksCount}</p>
-          <p className="text-xs text-[#64748B]">Tasks in progress / pending</p>
-        </div>
+          <div className="flex items-center justify-between text-xs pt-1 border-t border-slate-100">
+            <span className="text-[#64748B]">In progress / pending</span>
+            <span className="text-[10px] font-bold text-amber-600 group-hover:translate-x-0.5 transition-transform flex items-center gap-0.5">
+              Tasks ↗
+            </span>
+          </div>
+        </Link>
 
-        <div className="bg-white p-5 rounded-2xl border border-[#E2E8F0] shadow-sm space-y-2">
+        <Link
+          href="/dashboard/tasks"
+          className="bg-white p-5 rounded-2xl border border-[#E2E8F0] shadow-sm space-y-2 hover:border-emerald-400 hover:shadow-md transition-all cursor-pointer group block"
+        >
           <div className="flex justify-between items-center text-xs text-[#64748B]">
-            <span>Completed Tasks</span>
-            <FaCheckCircle className="text-emerald-500" />
+            <span className="font-semibold text-slate-700">Completed Tasks</span>
+            <FaCheckCircle className="text-emerald-500 group-hover:scale-110 transition-transform" />
           </div>
           <p className="text-2xl font-black text-[#0F172A]">{completedTasksCount}</p>
-          <p className="text-xs text-[#64748B]">Finished work items</p>
-        </div>
+          <div className="flex items-center justify-between text-xs pt-1 border-t border-slate-100">
+            <span className="text-[#64748B]">Finished work items</span>
+            <span className="text-[10px] font-bold text-emerald-600 group-hover:translate-x-0.5 transition-transform flex items-center gap-0.5">
+              Records ↗
+            </span>
+          </div>
+        </Link>
 
-        <div className="bg-white p-5 rounded-2xl border border-[#E2E8F0] shadow-sm space-y-2">
+        <Link
+          href="/dashboard/leaves"
+          className="bg-white p-5 rounded-2xl border border-[#E2E8F0] shadow-sm space-y-2 hover:border-blue-400 hover:shadow-md transition-all cursor-pointer group block"
+        >
           <div className="flex justify-between items-center text-xs text-[#64748B]">
-            <span>Pending Leaves</span>
-            <FaClock className="text-blue-500" />
+            <span className="font-semibold text-slate-700">Pending Leaves</span>
+            <FaClock className="text-blue-500 group-hover:scale-110 transition-transform" />
           </div>
           <p className="text-2xl font-black text-[#0F172A]">{pendingLeavesCount}</p>
-          <p className="text-xs text-[#64748B]">Awaiting Admin review</p>
-        </div>
+          <div className="flex items-center justify-between text-xs pt-1 border-t border-slate-100">
+            <span className="text-[#64748B]">Awaiting Admin review</span>
+            <span className="text-[10px] font-bold text-blue-600 group-hover:translate-x-0.5 transition-transform flex items-center gap-0.5">
+              Leave Desk ↗
+            </span>
+          </div>
+        </Link>
       </div>
       {/* SECTION 1: TOP 2-COLUMN BALANCED ROW (Attendance Control on Left, Announcements & Leave Desk on Right) */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -727,9 +759,14 @@ export default function EmployeeDedicatedDashboardPage() {
                 <FaVideo className="text-[#2563EB]" />
                 <span>Scheduled Meetings & Video Sync</span>
               </h2>
-              <span className="text-[10px] font-bold text-[#2563EB] bg-[#EFF6FF] px-2 py-0.5 rounded-full border border-[#2563EB]/20">
-                {myMeetings.length} Scheduled
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-bold text-[#2563EB] bg-[#EFF6FF] px-2 py-0.5 rounded-full border border-[#2563EB]/20">
+                  {myMeetings.length} Scheduled
+                </span>
+                <Link href="/dashboard/meetings" className="text-xs font-bold text-[#2563EB] hover:underline hidden sm:inline-block">
+                  Meetings Hub →
+                </Link>
+              </div>
             </div>
 
             {myMeetings.length === 0 ? (
@@ -780,9 +817,14 @@ export default function EmployeeDedicatedDashboardPage() {
                 <FaBullhorn className="text-[#2563EB]" />
                 <span>Company Announcements</span>
               </h2>
-              <span className="text-[10px] font-bold text-[#2563EB] bg-[#EFF6FF] px-2 py-0.5 rounded-full border border-[#2563EB]/20">
-                Notice Board
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-bold text-[#2563EB] bg-[#EFF6FF] px-2 py-0.5 rounded-full border border-[#2563EB]/20">
+                  Notice Board
+                </span>
+                <Link href="/dashboard" className="text-xs font-bold text-[#2563EB] hover:underline hidden sm:inline-block">
+                  Dashboard →
+                </Link>
+              </div>
             </div>
 
             {announcements.length === 0 ? (
@@ -1046,9 +1088,14 @@ export default function EmployeeDedicatedDashboardPage() {
               <FaTasks className="text-[#2563EB]" />
               <span>My Assigned Tasks</span>
             </h2>
-            <span className="text-xs font-bold text-[#2563EB] bg-[#EFF6FF] px-2.5 py-1 rounded-full border border-[#2563EB]/20">
-              {myTasks.length} Assigned
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-[#2563EB] bg-[#EFF6FF] px-2.5 py-1 rounded-full border border-[#2563EB]/20">
+                {myTasks.length} Assigned
+              </span>
+              <Link href="/dashboard/tasks" className="text-xs font-bold text-[#2563EB] hover:underline hidden sm:inline-block">
+                Task Manager →
+              </Link>
+            </div>
           </div>
 
           {myTasks.length === 0 ? (
@@ -1126,9 +1173,14 @@ export default function EmployeeDedicatedDashboardPage() {
             <FaCalendarCheck className="text-[#2563EB]" />
             <span>My Attendance History</span>
           </h2>
-          <span className="text-xs font-bold text-[#2563EB] bg-[#EFF6FF] px-2.5 py-1 rounded-full border border-[#2563EB]/20">
-            {myAttendanceHistory.length} Logs
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold text-[#2563EB] bg-[#EFF6FF] px-2.5 py-1 rounded-full border border-[#2563EB]/20">
+              {myAttendanceHistory.length} Logs
+            </span>
+            <Link href="/dashboard/attendance/history" className="text-xs font-bold text-[#2563EB] hover:underline hidden sm:inline-block">
+              Full Attendance Hub →
+            </Link>
+          </div>
         </div>
 
         {myAttendanceHistory.length === 0 ? (
