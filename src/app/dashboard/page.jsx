@@ -600,10 +600,13 @@ export default function DashboardPage() {
       {/* 2. STATISTIC CARDS GRID (Bg #FFFFFF, Border #E2E8F0, Radius 16px, Padding 24px, Light Shadow) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Stat 1: Total Staff */}
-        <div className="bg-white rounded-2xl p-6 border border-[#E2E8F0] shadow-sm space-y-2 group">
+        <Link
+          href="/dashboard/employees"
+          className="bg-white rounded-2xl p-6 border border-[#E2E8F0] shadow-sm space-y-2 hover:border-blue-400 hover:shadow-md transition-all cursor-pointer group block"
+        >
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-[#64748B] uppercase tracking-wider">Total Staff</span>
-            <div className="p-2.5 rounded-xl bg-[#EFF6FF] text-[#2563EB]">
+            <div className="p-2.5 rounded-xl bg-[#EFF6FF] text-[#2563EB] group-hover:scale-110 transition-transform">
               <FaUsers className="text-base" />
             </div>
           </div>
@@ -613,14 +616,22 @@ export default function DashboardPage() {
               Active Roster
             </span>
           </div>
-          <p className="text-xs text-[#64748B]">Paid Staff & Engineers</p>
-        </div>
+          <div className="flex items-center justify-between text-xs text-[#64748B] pt-1 border-t border-slate-100">
+            <span>Paid Staff & Engineers</span>
+            <span className="text-[10px] font-bold text-blue-600 group-hover:translate-x-0.5 transition-transform">
+              View Staff ↗
+            </span>
+          </div>
+        </Link>
 
         {/* Stat 2: Active Projects */}
-        <div className="bg-white rounded-2xl p-6 border border-[#E2E8F0] shadow-sm space-y-2 group">
+        <Link
+          href="/dashboard/projects"
+          className="bg-white rounded-2xl p-6 border border-[#E2E8F0] shadow-sm space-y-2 hover:border-blue-400 hover:shadow-md transition-all cursor-pointer group block"
+        >
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-[#64748B] uppercase tracking-wider">Active Projects</span>
-            <div className="p-2.5 rounded-xl bg-[#EFF6FF] text-[#2563EB]">
+            <div className="p-2.5 rounded-xl bg-[#EFF6FF] text-[#2563EB] group-hover:scale-110 transition-transform">
               <FaProjectDiagram className="text-base" />
             </div>
           </div>
@@ -630,39 +641,63 @@ export default function DashboardPage() {
               {overallProgressPercentage}% Milestones
             </span>
           </div>
-          <p className="text-xs text-[#64748B]">Ongoing Client Projects</p>
-        </div>
+          <div className="flex items-center justify-between text-xs text-[#64748B] pt-1 border-t border-slate-100">
+            <span>Ongoing Client Projects</span>
+            <span className="text-[10px] font-bold text-blue-600 group-hover:translate-x-0.5 transition-transform">
+              Projects Hub ↗
+            </span>
+          </div>
+        </Link>
 
         {/* Stat 3: Monthly Revenue */}
-        <div className="bg-white rounded-2xl p-6 border border-[#E2E8F0] shadow-sm space-y-2 group">
+        <Link
+          href="/dashboard/finance"
+          className="bg-white rounded-2xl p-6 border border-[#E2E8F0] shadow-sm space-y-2 hover:border-emerald-400 hover:shadow-md transition-all cursor-pointer group block"
+        >
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-[#64748B] uppercase tracking-wider">Monthly Revenue</span>
-            <div className="p-2.5 rounded-xl bg-[#EFF6FF] text-[#2563EB]">
+            <div className="p-2.5 rounded-xl bg-emerald-50 text-emerald-600 group-hover:scale-110 transition-transform">
               <FaMoneyBillWave className="text-base" />
             </div>
           </div>
           <div className="flex items-baseline justify-between pt-1">
             <h3 className="text-2xl font-bold text-[#0F172A]">Rs. {(stats.monthlyRevenue || 0).toLocaleString()}</h3>
-            <span className="text-[10px] font-semibold text-[#2563EB] bg-[#EFF6FF] px-2 py-0.5 rounded-md border border-[#2563EB]/20">
+            <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
               Current Month
             </span>
           </div>
-          <p className="text-xs text-[#64748B]">Invoices Cleared This Month</p>
-        </div>
+          <div className="flex items-center justify-between text-xs text-[#64748B] pt-1 border-t border-slate-100">
+            <span>Invoices Cleared</span>
+            <span className="text-[10px] font-bold text-emerald-600 group-hover:translate-x-0.5 transition-transform">
+              Finance Hub ↗
+            </span>
+          </div>
+        </Link>
 
         {/* Stat 4: Operating Expenses */}
-        <div className="bg-white rounded-2xl p-6 border border-[#E2E8F0] shadow-sm space-y-2 group">
+        <Link
+          href="/dashboard/expenses"
+          className="bg-white rounded-2xl p-6 border border-[#E2E8F0] shadow-sm space-y-2 hover:border-rose-400 hover:shadow-md transition-all cursor-pointer group block"
+        >
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-[#64748B] uppercase tracking-wider">Operating Expenses</span>
-            <div className="p-2.5 rounded-xl bg-[#EFF6FF] text-[#2563EB]">
+            <div className="p-2.5 rounded-xl bg-rose-50 text-rose-600 group-hover:scale-110 transition-transform">
               <FaLandmark className="text-base" />
             </div>
           </div>
           <div className="flex items-baseline justify-between pt-1">
             <h3 className="text-2xl font-bold text-[#0F172A]">Rs. {(stats.monthlyExpenses || 0).toLocaleString()}</h3>
+            <span className="text-[10px] font-semibold text-rose-700 bg-rose-50 px-2 py-0.5 rounded-md border border-rose-200">
+              Expenses
+            </span>
           </div>
-          <p className="text-xs text-[#64748B]">Salaries & Overhead Costs</p>
-        </div>
+          <div className="flex items-center justify-between text-xs text-[#64748B] pt-1 border-t border-slate-100">
+            <span>Salaries & Overhead Costs</span>
+            <span className="text-[10px] font-bold text-rose-600 group-hover:translate-x-0.5 transition-transform">
+              View Expenses ↗
+            </span>
+          </div>
+        </Link>
       </div>
 
       {/* 3. MULTI-SERIES FINANCIAL CHART */}
