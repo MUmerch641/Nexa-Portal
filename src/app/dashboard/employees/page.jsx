@@ -77,6 +77,40 @@ export default function EmployeesPage() {
     setFetching(true);
     const rawEmps = await dbFetch("employees", INITIAL_DEMO_EMPLOYEES);
     
+    // Background Sync all local employees to Supabase Database
+    try {
+      const localStored = localStorage.getItem("persistent_employees");
+      if (localStored) {
+        const localList = JSON.parse(localStored);
+        if (Array.isArray(localList) && localList.length > 0) {
+          localList.forEach(emp => {
+            if (emp && emp.email) {
+              fetch("/api/persistence", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  table: "employees",
+                  record: {
+                    full_name: emp.full_name || emp.name || "Staff Member",
+                    email: emp.email.toLowerCase().trim(),
+                    phone: emp.phone || "",
+                    department: emp.department || "Web Development",
+                    designation: emp.designation || "Staff Member",
+                    employment_type: emp.employment_type || "Paid Staff (Full Time)",
+                    joining_date: emp.joining_date || new Date().toISOString().split("T")[0],
+                    address: emp.address || "",
+                    status: emp.status || "active",
+                    user_id: emp.user_id || (emp.assigned_password ? `auth:${emp.assigned_password}` : `auth:employeepassword123`),
+                  },
+                  action: "save"
+                })
+              }).catch(() => {});
+            }
+          });
+        }
+      }
+    } catch(e) {}
+
     // Deduplicate employees strictly by ID / Email
     const map = new Map();
     (rawEmps || []).forEach(e => {

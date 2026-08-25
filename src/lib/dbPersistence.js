@@ -105,8 +105,18 @@ const MEM_CACHE_TTL = 30000; // 30 seconds TTL
  * Fetch records from Supabase DB merged with local storage fallback.
  * Returns cached data in <1ms while syncing with Supabase in the background.
  */
-export async function dbFetch(table, defaultData = []) {
+export async function dbFetch(table, defaultData = [], forceFresh = false) {
   const storageKey = TABLE_STORAGE_KEYS[table] || `persistent_${table}`;
+  
+  if (forceFresh) {
+    MEM_CACHE.delete(table);
+  } else {
+    // Check RAM Cache
+    const cached = MEM_CACHE.get(table);
+    if (cached && Date.now() - cached.timestamp < MEM_CACHE_TTL && Array.isArray(cached.data) && cached.data.length > 0) {
+      return cached.data;
+    }
+  }
   
   // Read deleted IDs blacklist
   let deletedIds = [];
@@ -135,7 +145,11 @@ export async function dbFetch(table, defaultData = []) {
   let fetchedFromDb = false;
   try {
     if (typeof window !== "undefined") {
-      const res = await fetch(`/api/persistence?table=${encodeURIComponent(table)}`).catch(() => null);
+      const cacheBust = forceFresh ? `&t=${Date.now()}` : "";
+      const res = await fetch(`/api/persistence?table=${encodeURIComponent(table)}${cacheBust}`, {
+        cache: "no-store",
+        headers: { "Cache-Control": "no-cache" }
+      }).catch(() => null);
       if (res && res.ok) {
         const json = await res.json();
         if (json && Array.isArray(json.data)) {

@@ -412,16 +412,30 @@ export default function DashboardPage() {
       localStorage.setItem("persistent_employees", JSON.stringify([...existing, newEmp]));
       showToast("Employee Added 👤", `'${newEmp.full_name}' registered successfully.`, "success");
     } else if (activeQuickActionModal === "student") {
+      const cleanEmail = quickForm.email.toLowerCase().trim();
+      const cleanName = quickForm.fullName || "New Student";
       const newStu = {
         id: `stu-${Date.now()}`,
-        full_name: quickForm.fullName || "New Student",
-        email: quickForm.email.toLowerCase().trim(),
-        course_name: quickForm.courseName,
+        enrollment_no: `s-${Date.now()}`,
+        full_name: cleanName,
+        email: cleanEmail,
+        course_name: quickForm.courseName || "Full Stack MERN Web Development",
         fee_status: "Paid",
+        admission_date: new Date().toISOString().split("T")[0],
+        status: "Active",
+        emergency_contact: "auth:studentpassword",
         progress: 10
       };
       const existing = JSON.parse(localStorage.getItem("persistent_courses") || "[]");
       localStorage.setItem("persistent_courses", JSON.stringify([...existing, newStu]));
+      
+      // Save directly to Supabase cloud database
+      fetch("/api/persistence", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ table: "students", record: newStu, action: "save" })
+      }).catch(() => {});
+
       showToast("Student Enrolled 🎓", `'${newStu.full_name}' enrolled in ${newStu.course_name}.`, "success");
     } else if (activeQuickActionModal === "project") {
       const newProj = {
