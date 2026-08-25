@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { showToast } from "@/components/Toast";
+import { supabase } from "@/lib/supabase";
 import { FaLock, FaEnvelope, FaUser, FaBuilding, FaArrowRight, FaShieldAlt } from "react-icons/fa";
 
 export default function SignupPage() {
@@ -14,7 +15,7 @@ export default function SignupPage() {
   const [role, setRole] = useState("student");
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!fullName.trim() || !email.trim() || !password) {
       showToast("Validation Error 🛑", "Please fill all required fields.", "error");
@@ -28,26 +29,44 @@ export default function SignupPage() {
 
     setLoading(true);
 
-    setTimeout(() => {
-      localStorage.setItem("isLoggedIn", "true");
-      localStorage.setItem("user_role", role);
-      localStorage.setItem("user_email", email.trim().toLowerCase());
-      localStorage.setItem("user_name", fullName.trim());
+    try {
+      const cleanEmail = email.trim().toLowerCase();
+      const { data, error } = await supabase.auth.signUp({
+        email: cleanEmail,
+        password,
+        options: {
+          data: { full_name: fullName.trim(), role },
+        },
+      });
 
-      showToast("Account Created 🎉", `Welcome ${fullName}! Logging you into the portal...`, "success");
+      if (error) throw error;
 
-      if (role === "admin") {
-        router.replace("/dashboard");
-      } else if (role === "employee") {
-        router.replace("/dashboard/employee");
-      } else if (role === "student") {
-        router.replace("/dashboard/student");
-      } else if (role === "intern") {
-        router.replace("/dashboard/internships");
+      if (data.session) {
+        localStorage.setItem("isLoggedIn", "true");
+        localStorage.setItem("user_role", role);
+        localStorage.setItem("current_user_email", cleanEmail);
+        localStorage.setItem("current_user_name", fullName.trim());
+        showToast("Account Created 🎉", `Welcome ${fullName}! Logging you into the portal...`, "success");
+
+        const destination = role === "admin"
+          ? "/dashboard"
+          : role === "employee"
+            ? "/dashboard/employee"
+            : role === "student"
+              ? "/dashboard/student"
+              : role === "intern"
+                ? "/dashboard/internships"
+                : "/dashboard";
+        router.replace(destination);
       } else {
-        router.replace("/dashboard");
+        showToast("Account Created 📧", "Check your email to confirm the account, then sign in from any device.", "success");
+        router.replace("/login");
       }
-    }, 600);
+    } catch (error) {
+      showToast("Registration Failed 🔴", error.message || "Unable to create your account.", "error");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (

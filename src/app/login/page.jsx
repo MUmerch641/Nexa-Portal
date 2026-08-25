@@ -138,7 +138,16 @@ export default function LoginPage() {
       }
     }
 
-    // Normal Login Flow: Strict authentication against registered accounts
+    // Authenticate against Supabase first so the same account works on every device.
+    let authenticatedUser = null;
+    try {
+      const { data: authData, error: authError } = await login(trimmedEmail, trimmedPassword);
+      if (!authError && authData?.user) {
+        authenticatedUser = authData.user;
+      }
+    } catch (e) {}
+
+    // Local/seed accounts remain a compatibility fallback for older installations.
     const registeredUsers = getRegisteredUsers();
     
     // Default system seed accounts assigned by Admin
@@ -153,9 +162,15 @@ export default function LoginPage() {
 
     const allValidUsers = [...defaultAccounts, ...registeredUsers];
 
-    const matchedUser = allValidUsers.find(
-      (u) => u.email.toLowerCase() === email.toLowerCase() && u.password === password
-    );
+    const matchedUser = authenticatedUser
+      ? {
+          email: authenticatedUser.email,
+          role: authenticatedUser.user_metadata?.role || selectedRole,
+          fullName: authenticatedUser.user_metadata?.full_name || "",
+        }
+      : allValidUsers.find(
+          (u) => u.email.toLowerCase() === email.toLowerCase() && u.password === password
+        );
 
     // 1. Check if user credentials match registered local/seed accounts first
     if (matchedUser) {
@@ -178,7 +193,7 @@ export default function LoginPage() {
 
       localStorage.setItem("isLoggedIn", "true");
       localStorage.setItem("user_role", activeRole);
-      localStorage.setItem("current_user_email", email);
+      localStorage.setItem("current_user_email", emailLower);
 
       // Naam resolve karo: matched user → employees list → students list → email se
       let resolvedName = matchedUser.fullName || matchedUser.full_name || "";
@@ -216,7 +231,7 @@ export default function LoginPage() {
       return;
     }
 
-    // 2. Fallback: Try Supabase Auth API login
+    // 2. Fallback: Try Supabase Auth API login for accounts without local metadata
     let supabaseAuthSuccess = false;
     try {
       const { error } = await login(email, password);

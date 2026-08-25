@@ -139,23 +139,18 @@ export async function enrollStudentWithCredentials({
   let authUserId = `usr_std_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
 
   // Create Supabase Auth Cloud Account
-  try {
-    const { data: authData, error: authError } = await supabase.auth.signUp({
-      email: cleanEmail,
-      password: password,
-      options: {
-        data: {
-          full_name: cleanName,
-          role: "student",
-        },
-      },
-    });
-
-    if (authData && authData.user) {
-      authUserId = authData.user.id;
-    }
-  } catch (e) {
-    console.warn("Supabase Auth student creation warning:", e);
+  const { data: authData, error: authError } = await supabase.auth.signUp({
+    email: cleanEmail,
+    password,
+    options: {
+      data: { full_name: cleanName, role: "student" },
+    },
+  });
+  if (authError) {
+    throw new Error(authError.message || "Unable to create the student login account.");
+  }
+  if (authData?.user) {
+    authUserId = authData.user.id;
   }
 
   const totalFee = Number(studentData.course_fee || studentData.total_fee || 25000);
@@ -224,26 +219,6 @@ export async function enrollStudentWithCredentials({
     }
   } catch (e) {}
 
-  // Save registered_system_users credentials record (for login matching)
-  try {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("registered_system_users");
-      const users = saved ? JSON.parse(saved) : [];
-      const updatedUsers = [
-        ...users.filter((u) => u && u.email && u.email.toLowerCase().trim() !== cleanEmail),
-        {
-          id: authUserId,
-          email: cleanEmail,
-          password: password, // kept in local system seed list for offline login simulation
-          role: "student",
-          fullName: cleanName,
-          email_verified: true, // Admin-created accounts pre-authorized for login
-        },
-      ];
-      localStorage.setItem("registered_system_users", JSON.stringify(updatedUsers));
-    }
-  } catch (e) {}
-
   return {
     student: studentProfile,
     feeCycles: feeCycles,
@@ -277,23 +252,18 @@ export async function registerEmployeeWithCredentials({
   let authUserId = `usr_emp_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
 
   // Create Supabase Auth User
-  try {
-    const { data: authData } = await supabase.auth.signUp({
-      email: cleanEmail,
-      password: password,
-      options: {
-        data: {
-          full_name: cleanName,
-          role: "employee",
-        },
-      },
-    });
-
-    if (authData && authData.user) {
-      authUserId = authData.user.id;
-    }
-  } catch (e) {
-    console.warn("Supabase Auth employee creation warning:", e);
+  const { data: authData, error: authError } = await supabase.auth.signUp({
+    email: cleanEmail,
+    password,
+    options: {
+      data: { full_name: cleanName, role: "employee" },
+    },
+  });
+  if (authError) {
+    throw new Error(authError.message || "Unable to create the employee login account.");
+  }
+  if (authData?.user) {
+    authUserId = authData.user.id;
   }
 
   const employeeId = employeeData.id || `emp-${Date.now()}`;
@@ -315,26 +285,6 @@ export async function registerEmployeeWithCredentials({
   };
 
   await dbSaveRecord("employees", employeeProfile).catch(() => {});
-
-  // Save to registered_system_users
-  try {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("registered_system_users");
-      const users = saved ? JSON.parse(saved) : [];
-      const updatedUsers = [
-        ...users.filter((u) => u && u.email && u.email.toLowerCase().trim() !== cleanEmail),
-        {
-          id: authUserId,
-          email: cleanEmail,
-          password: password,
-          role: "employee",
-          fullName: cleanName,
-          email_verified: true,
-        },
-      ];
-      localStorage.setItem("registered_system_users", JSON.stringify(updatedUsers));
-    }
-  } catch (e) {}
 
   return {
     employee: employeeProfile,
