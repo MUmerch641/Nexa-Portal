@@ -7,7 +7,7 @@ import { supabase } from "@/lib/supabase";
 import { dbFetch } from "@/lib/dbPersistence";
 import Modal from "@/components/Modal";
 import ToastContainer, { showToast } from "@/components/Toast";
-import { FaLock, FaEnvelope } from "react-icons/fa";
+import { FaLock, FaEnvelope, FaEye, FaEyeSlash } from "react-icons/fa";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -16,6 +16,7 @@ export default function LoginPage() {
   // Form Fields
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const workMode = "remote"; // 'remote' (Ipify OFF) or 'onsite'
   const [loading, setLoading] = useState(false);
 
@@ -443,16 +444,29 @@ export default function LoginPage() {
             </label>
 
             <div className="relative">
-              <FaLock className="absolute left-3.5 top-3.5 text-slate-400 text-sm" />
+              <FaLock className="absolute left-3.5 top-3.5 text-slate-400 text-sm pointer-events-none" />
               <input
-                type="password"
+                type={showPassword ? "text" : "password"}
                 placeholder="••••••••"
                 value={password}
                 onChange={handlePasswordChange}
-                className={`w-full rounded-lg border pl-10 pr-4 py-2.5 text-sm text-slate-900 outline-none focus:border-blue-600 ${
+                className={`w-full rounded-lg border pl-10 pr-10 py-2.5 text-sm text-slate-900 outline-none focus:border-blue-600 transition-colors ${
                   errors.password ? "border-red-500 bg-red-50/30" : "border-slate-300"
                 }`}
               />
+              <button
+                type="button"
+                onClick={() => setShowPassword((prev) => !prev)}
+                className="absolute right-3.5 top-3 text-slate-400 hover:text-blue-600 transition-colors cursor-pointer focus:outline-none p-0.5 rounded"
+                title={showPassword ? "Hide password" : "Show password"}
+                tabIndex={-1}
+              >
+                {showPassword ? (
+                  <FaEyeSlash className="text-base" />
+                ) : (
+                  <FaEye className="text-base" />
+                )}
+              </button>
             </div>
             {errors.password && (
               <p className="mt-1 text-xs text-red-600 font-medium">{errors.password}</p>

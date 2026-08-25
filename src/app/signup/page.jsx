@@ -6,13 +6,14 @@ import { useRouter } from "next/navigation";
 import { showToast } from "@/components/Toast";
 import { supabase } from "@/lib/supabase";
 import { saveRegisteredAuthAccount } from "@/lib/studentEnrollmentUtils";
-import { FaLock, FaEnvelope, FaUser, FaBuilding, FaArrowRight, FaShieldAlt } from "react-icons/fa";
+import { FaLock, FaEnvelope, FaUser, FaBuilding, FaArrowRight, FaShieldAlt, FaEye, FaEyeSlash } from "react-icons/fa";
 
 export default function SignupPage() {
   const router = useRouter();
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [role, setRole] = useState("student");
   const [loading, setLoading] = useState(false);
 
@@ -126,15 +127,24 @@ export default function SignupPage() {
           <div className="space-y-1">
             <label className="font-semibold text-[#0F172A] uppercase text-[10px]">Password *</label>
             <div className="relative">
-              <FaLock className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#94A3B8]" />
+              <FaLock className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#94A3B8] pointer-events-none" />
               <input
-                type="password"
+                type={showPassword ? "text" : "password"}
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="Min 6 characters"
-                className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-[#E2E8F0] text-xs text-[#0F172A] outline-none focus:border-[#2563EB] bg-white transition-colors"
+                className="w-full pl-10 pr-10 py-2.5 rounded-xl border border-[#E2E8F0] text-xs text-[#0F172A] outline-none focus:border-[#2563EB] bg-white transition-colors"
               />
+              <button
+                type="button"
+                onClick={() => setShowPassword((prev) => !prev)}
+                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[#94A3B8] hover:text-[#2563EB] transition-colors cursor-pointer focus:outline-none p-0.5"
+                title={showPassword ? "Hide password" : "Show password"}
+                tabIndex={-1}
+              >
+                {showPassword ? <FaEyeSlash className="text-sm" /> : <FaEye className="text-sm" />}
+              </button>
             </div>
           </div>
 
