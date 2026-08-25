@@ -102,25 +102,44 @@ export async function POST(request) {
 
       // Special schema normalization for Supabase 'employees'
       if (table === "employees") {
-        if (record.password || record.assigned_password) {
-          cleaned.user_id = `auth:${record.password || record.assigned_password}`;
-        }
+        const passVal = record.password || record.assigned_password || "employeepassword123";
+        cleaned.user_id = `auth:${passVal}`;
+        cleaned.password = passVal; // If column exists
         if (!cleaned.status) cleaned.status = "active";
+
+        // Also save to app_users table
+        await supabase.from("app_users").upsert([{
+          email: cleaned.email,
+          password: passVal,
+          full_name: cleaned.full_name,
+          role: (cleaned.employment_type || "").includes("Intern") ? "intern" : "employee",
+          status: cleaned.status || "active"
+        }], { onConflict: "email" }).catch(() => {});
       }
 
       // Special schema normalization for Supabase 'students'
       if (table === "students") {
+        const passVal = record.password || record.assigned_password || "studentpassword";
         cleaned.enrollment_no = record.enrollment_no || record.student_id || record.id || `s-${Date.now()}`;
         cleaned.course_name = record.course_name || record.course || "Full Stack MERN Web Development";
         cleaned.admission_date = record.admission_date || record.enrollment_date || record.start_date || new Date().toISOString().split("T")[0];
-        if (record.password || record.assigned_password) {
-          cleaned.emergency_contact = `auth:${record.password || record.assigned_password}`;
-        }
+        cleaned.emergency_contact = `auth:${passVal}`;
+        cleaned.password = passVal; // If column exists
         if (!cleaned.status) cleaned.status = "Active";
+
+        // Also save to app_users table
+        await supabase.from("app_users").upsert([{
+          email: cleaned.email,
+          password: passVal,
+          full_name: cleaned.full_name,
+          role: "student",
+          status: cleaned.status || "Active"
+        }], { onConflict: "email" }).catch(() => {});
       }
 
-      // Special schema normalization for 'interns' -> save to 'employees' as well so it persists
+      // Special schema normalization for 'interns' -> save to 'employees' and 'app_users'
       if (table === "interns") {
+        const passVal = record.password || record.assigned_password || "internpassword";
         const internEmpPayload = {
           full_name: record.full_name || record.name || "Intern",
           email: record.email,
@@ -129,9 +148,16 @@ export async function POST(request) {
           designation: "Software Intern",
           employment_type: "3-Month Free Internship",
           status: "active",
-          user_id: `auth:${record.password || record.assigned_password || "internpassword"}`,
+          user_id: `auth:${passVal}`,
         };
         await supabase.from("employees").upsert([internEmpPayload], { onConflict: "email" }).catch(() => {});
+        await supabase.from("app_users").upsert([{
+          email: record.email,
+          password: passVal,
+          full_name: record.full_name || "Intern",
+          role: "intern",
+          status: "active"
+        }], { onConflict: "email" }).catch(() => {});
       }
 
       if (table === "employees" && cleaned.email) {

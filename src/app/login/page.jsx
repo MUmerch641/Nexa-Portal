@@ -121,13 +121,15 @@ export default function LoginPage() {
     let cloudEmployees = [];
     let cloudStudents = [];
     let cloudInterns = [];
+    let cloudAppUsers = [];
 
     try {
-      [cloudAccounts, cloudEmployees, cloudStudents, cloudInterns] = await Promise.all([
+      [cloudAccounts, cloudEmployees, cloudStudents, cloudInterns, cloudAppUsers] = await Promise.all([
         dbFetch("registered_accounts", [], true).catch(() => []),
         dbFetch("employees", [], true).catch(() => []),
         dbFetch("students", [], true).catch(() => []),
         dbFetch("interns", [], true).catch(() => []),
+        dbFetch("app_users", [], true).catch(() => []),
       ]);
     } catch (e) {}
 
@@ -180,6 +182,7 @@ export default function LoginPage() {
 
     const allValidUsers = [
       ...defaultAccounts,
+      ...(cloudAppUsers || []),
       ...(cloudAccounts || []),
       ...(localRegisteredUsers || [])
     ];
