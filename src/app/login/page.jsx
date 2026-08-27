@@ -176,6 +176,8 @@ export default function LoginPage() {
     const localRegisteredUsers = getRegisteredUsers();
     const defaultAccounts = [
       { email: "admin@gmail.com", password: "adminpassword", role: "admin", fullName: "Admin User" },
+      { email: "admin@gmail.com", password: "admin123", role: "admin", fullName: "Admin User" },
+      { email: "nexa@admin.com", password: "123456", role: "admin", fullName: "Nexa Admin" },
       { email: "student@gmail.com", password: "studentpassword", role: "student", fullName: "Ali Hassan" },
       { email: "sara.design@gmail.com", password: "employeepassword", role: "employee", fullName: "Sara Khan" },
       { email: "rahim.dev@gmail.com", password: "employeepassword", role: "employee", fullName: "Muhammad Rahim Bugti" },
