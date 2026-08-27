@@ -27,7 +27,6 @@ import {
   FaChevronLeft,
   FaChevronRight,
   FaTable,
-  FaStudent,
   FaChartBar,
   FaSave,
   FaFilter,
@@ -231,7 +230,7 @@ export default function StudentAttendancePage() {
             </span>
           </div>
           <h1 className="text-xl md:text-2xl font-bold text-[#0F172A] mt-1.5 flex items-center gap-2.5">
-            <FaStudent className="text-[#2563EB]" />
+            <FaUserGraduate className="text-[#2563EB]" />
             <span>Student Daily Attendance Workspace</span>
           </h1>
           <p className="text-xs text-[#64748B] mt-0.5">
@@ -360,7 +359,7 @@ export default function StudentAttendancePage() {
               {filteredStudents.length === 0 ? (
                 <tr>
                   <td colSpan="6" className="p-8 text-center text-[#64748B]">
-                    <FaStudent className="mx-auto mb-2 text-3xl text-[#cbd5e1]" />
+                    <FaUserGraduate className="mx-auto mb-2 text-3xl text-[#cbd5e1]" />
                     <p className="text-sm">No students found</p>
                   </td>
                 </tr>
