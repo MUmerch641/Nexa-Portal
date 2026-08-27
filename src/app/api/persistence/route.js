@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
-// Use service role key for write operations (has full access)
-const serviceRoleKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV6d213dGtsZGdjaG51cXhhbW92Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4NTQwNTEyNiwiZXhwIjoyMTAwOTgxMTI2fQ.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W3YpPv1ZI";
+// Use anon key for read operations (safe for production)
+const supabaseUrl = "https://uzwmwtkldgchnuqxamov.supabase.co";
+const supabaseKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV6d213dGtsZGdjaG51cXhhbW92Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU0MDUxMjYsImV4cCI6MjEwMDk4MTEyNn0.dTw41DhaS-qDVqX4jj3WsrAvYE9CLigjOLZFiDt_7Rk";
 
-const supabase = createClient("https://uzwmwtkldgchnuqxamov.supabase.co", serviceRoleKey);
+const supabase = createClient(supabaseUrl, supabaseKey);
 
 function convertTo24HourTime(timeStr) {
   if (!timeStr || timeStr === "--:--" || String(timeStr).includes("Not Checked Out")) return null;
