@@ -113,7 +113,7 @@ export default function DashboardLayout({ children }) {
   }
 
   const isAdminRole = role === "admin" || role === "hr" || role === "manager" || role === "accounts";
-  const hideSidebar = true; // Set to true to hide sidebar completely
+  const hideSidebar = true; // Set to true to hide sidebar completely, false to show it
 
   if (hideSidebar) {
     return (
