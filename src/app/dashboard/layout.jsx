@@ -9,8 +9,8 @@ import ToastContainer, { showToast } from "@/components/Toast";
 export default function DashboardLayout({ children }) {
   const router = useRouter();
   const pathname = usePathname();
-  // Default true so desktop loads with sidebar open immediately (no flash)
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  // Default false so sidebar is hidden on first load
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [role, setRole] = useState("admin");
   const [authorized, setAuthorized] = useState(false);
 
@@ -113,22 +113,6 @@ export default function DashboardLayout({ children }) {
   }
 
   const isAdminRole = role === "admin" || role === "hr" || role === "manager" || role === "accounts";
-  const hideSidebar = true; // Set to true to hide sidebar completely, false to show it
-
-  if (hideSidebar) {
-    return (
-      <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] flex flex-col">
-        <Navbar isSidebarOpen={false} onMenuClick={() => {}} />
-
-        <main className="flex-1 p-6 max-w-7xl w-full mx-auto">
-          {children}
-        </main>
-
-        {/* Global Toast Notification System */}
-        <ToastContainer />
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] flex">
