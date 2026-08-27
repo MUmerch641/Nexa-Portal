@@ -288,6 +288,13 @@ export default function LoginPage() {
     if (matchedUser) {
       const activeRole = matchedUser.role || selectedRole;
 
+      // Override full name from defaultAccounts if available (for admin accounts)
+      if (emailLower === "admin@gmail.com") {
+        matchedUser.fullName = "Nexa Admin"; // You can change this to "Admin" or any name you want
+      } else if (emailLower === "nexa@admin.com") {
+        matchedUser.fullName = "Nexa Admin";
+      }
+
       // Check Remote mode
       const isRemoteUser = (
         matchedUser.is_remote === true ||
