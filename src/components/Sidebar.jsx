@@ -166,13 +166,9 @@ export default function Sidebar({ isOpen, onClose }) {
   const groups =
     role === "admin" || role === "hr" || role === "manager" || role === "accounts"
       ? adminMenuGroups
-      : role === "student" || role === "course_student" || role === "intern"
+      : role === "student" || role === "course_student"
       ? studentMenuGroups
       : employeeMenuGroups;
-
-  if (role !== "admin" && role !== "hr" && role !== "manager" && role !== "accounts" && role !== "client") {
-    return null;
-  }
 
   return (
     <>

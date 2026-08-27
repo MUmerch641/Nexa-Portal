@@ -28,79 +28,9 @@ export default function PerformancePage() {
   const [userEmail, setUserEmail] = useState("");
   const [selectedMonth, setSelectedMonth] = useState("August 2026");
 
-  // Employee Performance Scores List
-  const initialPerformances = [
-    {
-      id: "perf-101",
-      name: "Muhammad Rahim Bugti",
-      role: "Senior Full-Stack Developer",
-      email: "rahim.staff@gmail.com",
-      avatarType: "employee",
-      metrics: {
-        attendance: 96,
-        taskCompletion: 94,
-        deadlines: 98,
-        clientFeedback: 95,
-        socialMedia: 88,
-        behavior: 98,
-        leaveRecord: 95,
-        productivity: 96,
-      },
-    },
-    {
-      id: "perf-102",
-      name: "Sara Khan",
-      role: "Lead UI/UX Designer",
-      email: "sara.design@gmail.com",
-      avatarType: "employee",
-      metrics: {
-        attendance: 92,
-        taskCompletion: 90,
-        deadlines: 95,
-        clientFeedback: 96,
-        socialMedia: 94,
-        behavior: 96,
-        leaveRecord: 90,
-        productivity: 91,
-      },
-    },
-    {
-      id: "perf-103",
-      name: "Ali Hassan",
-      role: "MERN Stack Intern / Student",
-      email: "student@gmail.com",
-      avatarType: "student",
-      metrics: {
-        attendance: 94,
-        taskCompletion: 88,
-        deadlines: 90,
-        clientFeedback: 89,
-        socialMedia: 85,
-        behavior: 95,
-        leaveRecord: 92,
-        productivity: 87,
-      },
-    },
-    {
-      id: "perf-104",
-      name: "Zainab Ahmed",
-      role: "Frontend Engineer",
-      email: "zainab.dev@gmail.com",
-      avatarType: "employee",
-      metrics: {
-        attendance: 90,
-        taskCompletion: 92,
-        deadlines: 91,
-        clientFeedback: 92,
-        socialMedia: 90,
-        behavior: 94,
-        leaveRecord: 91,
-        productivity: 89,
-      },
-    },
-  ];
-  const [performances, setPerformances] = useState(initialPerformances);
-
+  // Employee Performance Scores List (Live Cloud Database)
+  const [performances, setPerformances] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState({ isOpen: false, title: "", message: "", type: "info" });
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [editingEmployee, setEditingEmployee] = useState(null);
@@ -111,9 +41,90 @@ export default function PerformancePage() {
     setRole(savedRole);
     setUserEmail(savedEmail);
 
-    dbFetch("performances", initialPerformances).then(data => {
-      setPerformances(data);
-    });
+    const loadPerformances = async () => {
+      try {
+        const [cloudEmployees, cloudStudents, cloudPerformances] = await Promise.all([
+          dbFetch("employees", [], true).catch(() => []),
+          dbFetch("students", [], true).catch(() => []),
+          dbFetch("performances", [], true).catch(() => [])
+        ]);
+
+        const perfMap = new Map();
+        (cloudPerformances || []).forEach(p => {
+          if (p && p.email) {
+            perfMap.set(p.email.toLowerCase().trim(), p);
+          }
+        });
+
+        // 1. Map registered employees
+        const list = [];
+        (cloudEmployees || []).forEach((emp, idx) => {
+          const email = (emp.email || "").toLowerCase().trim();
+          if (!email) return;
+          const existing = perfMap.get(email);
+          const metrics = existing?.metrics || {
+            attendance: existing?.attendance || 94,
+            taskCompletion: existing?.task_completion || existing?.taskCompletion || 92,
+            deadlines: existing?.deadlines || 95,
+            clientFeedback: existing?.client_feedback || existing?.clientFeedback || 93,
+            socialMedia: existing?.social_media || existing?.socialMedia || 88,
+            behavior: existing?.behavior || 96,
+            leaveRecord: existing?.leave_record || existing?.leaveRecord || 94,
+            productivity: existing?.productivity || 92,
+          };
+
+          list.push({
+            id: existing?.id || `perf-emp-${emp.id || idx + 1}`,
+            name: emp.full_name || emp.name || email.split("@")[0],
+            role: emp.designation || "Software Engineer",
+            email: email,
+            avatarType: "employee",
+            metrics: metrics
+          });
+        });
+
+        // 2. Map registered students
+        (cloudStudents || []).forEach((std, idx) => {
+          const email = (std.email || "").toLowerCase().trim();
+          if (!email || list.some(l => l.email === email)) return;
+          const existing = perfMap.get(email);
+          const metrics = existing?.metrics || {
+            attendance: existing?.attendance || 90,
+            taskCompletion: existing?.task_completion || existing?.taskCompletion || 88,
+            deadlines: existing?.deadlines || 90,
+            clientFeedback: existing?.client_feedback || existing?.clientFeedback || 89,
+            socialMedia: existing?.social_media || existing?.socialMedia || 85,
+            behavior: existing?.behavior || 94,
+            leaveRecord: existing?.leave_record || existing?.leaveRecord || 91,
+            productivity: existing?.productivity || 88,
+          };
+
+          list.push({
+            id: existing?.id || `perf-std-${std.id || idx + 1}`,
+            name: std.full_name || std.student_name || email.split("@")[0],
+            role: `${std.course_name || "MERN Stack"} Student`,
+            email: email,
+            avatarType: "student",
+            metrics: metrics
+          });
+        });
+
+        // 3. Fallback to existing standalone performances if any
+        (cloudPerformances || []).forEach(p => {
+          if (p && p.email && !list.some(l => l.email === p.email.toLowerCase().trim())) {
+            list.push(p);
+          }
+        });
+
+        setPerformances(list);
+        if (list.length > 0 && typeof window !== "undefined") {
+          localStorage.setItem("software_house_performances", JSON.stringify(list));
+        }
+      } catch (e) {}
+      setLoading(false);
+    };
+
+    loadPerformances();
   }, []);
 
   const savePerformanceState = (updatedList) => {

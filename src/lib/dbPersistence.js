@@ -28,6 +28,7 @@ export const TABLE_STORAGE_KEYS = {
   productivity_reports: "remote_productivity_reports",
   student_fee_cycles: "persistent_student_fee_cycles",
   registered_accounts: "registered_system_users",
+  student_attendance: "student_attendance_records",
 };
 
 /**
@@ -226,29 +227,17 @@ export async function dbSaveList(table, list = []) {
     } catch(e) {}
   }
 
+  // Single POST call to sync first record with Supabase (no duplicates)
   try {
-    if (Array.isArray(list) && list.length > 0) {
-      const cleanedList = list.map(item => cleanPayloadForDb(item, table));
-      if (typeof window !== "undefined") {
-        fetch("/api/persistence", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ table, record: cleanedList[0], action: "save" })
-        }).catch(() => {});
-      }
+    if (Array.isArray(list) && list.length > 0 && typeof window !== "undefined") {
+      const cleanedRecord = cleanPayloadForDb(list[0], table);
+      fetch("/api/persistence", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ table, record: cleanedRecord, action: "save" })
+      }).catch(() => {});
     }
   } catch(e) {}
-
-  if (typeof window !== "undefined") {
-    fetch("/api/persistence", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ table, record: list[0], action: "save" })
-    }).catch(() => {});
-
-    window.dispatchEvent(new Event("dataChanged"));
-    window.dispatchEvent(new Event("storage"));
-  }
 
   return list;
 }
@@ -293,11 +282,8 @@ export async function dbSaveRecord(table, record) {
     }
   } catch(e) {}
 
-  // 3. Trigger cross-tab/window event
-  if (typeof window !== "undefined") {
-    window.dispatchEvent(new Event("dataChanged"));
-    window.dispatchEvent(new Event("storage"));
-  }
+  // 3. Done — callers dispatch events explicitly when needed
+
 
   return record;
 }
@@ -367,11 +353,6 @@ export async function dbDeleteRecord(table, id, emailField = "") {
     }
   } catch(e) {
     backendError = e.message;
-  }
-
-  if (typeof window !== "undefined") {
-    window.dispatchEvent(new Event("dataChanged"));
-    window.dispatchEvent(new Event("storage"));
   }
 
   if (backendError && !backendSuccess) {

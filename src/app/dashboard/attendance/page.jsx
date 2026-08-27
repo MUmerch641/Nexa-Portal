@@ -6,7 +6,8 @@ import { supabase } from "@/lib/supabase";
 import { dbFetch, dbSaveRecord, dbDeleteRecord } from "@/lib/dbPersistence";
 import Modal from "@/components/Modal";
 import { showToast } from "@/components/Toast";
-import { getCurrentMinutes, determineAttendanceState } from "@/lib/attendanceUtils";
+import { getCurrentMinutes, determineAttendanceState, isRecordFromToday, getTodayDateString, getEmployeeCheckInStatus, timeToMinutes, minutesToTime } from "@/lib/attendanceUtils";
+import { fetchAttendancePolicy } from "@/lib/attendancePolicyUtils";
 import { fetchCurrentPublicIp, verifyOfficeWifiAttendance, getActiveOfficeNetworks } from "@/lib/attendanceIpUtils";
 import {
   FaWifi,
@@ -185,6 +186,7 @@ export default function AttendancePage() {
   const [currentMinutes, setCurrentMinutes] = useState(getCurrentMinutes());
   const [formattedTimeString, setFormattedTimeString] = useState("");
   const [allSystemLogs, setAllSystemLogs] = useState([]);
+  const [attendancePolicy, setAttendancePolicy] = useState(null);
   
   // Table Search & Filter State
   const [adminFilter, setAdminFilter] = useState("all");
@@ -204,6 +206,33 @@ export default function AttendancePage() {
       setFormattedTimeString(new Date().toLocaleTimeString());
     }, 1000);
     return () => clearInterval(timer);
+  }, []);
+
+  // Load policy from localStorage (with fallback to default)
+  useEffect(() => {
+    const loadPolicy = () => {
+      try {
+        const savedPolicy = localStorage.getItem("attendance_policy");
+        if (savedPolicy) {
+          setAttendancePolicy(JSON.parse(savedPolicy));
+        } else {
+          // Set default policy
+          const defaultPolicy = {
+            shift_start: "10:00 AM",
+            shift_end: "6:00 PM",
+            grace_period_minutes: 14,
+            late_warning_minutes: 29,
+            salary_deduction_after: 30,
+            policy_name: "Standard Policy"
+          };
+          localStorage.setItem("attendance_policy", JSON.stringify(defaultPolicy));
+          setAttendancePolicy(defaultPolicy);
+        }
+      } catch (e) {
+        console.error("Error loading policy from localStorage:", e);
+      }
+    };
+    loadPolicy();
   }, []);
 
   useEffect(() => {
@@ -237,9 +266,11 @@ export default function AttendancePage() {
       if (savedToday) {
         try {
           const parsed = JSON.parse(savedToday);
-          const startOfDay = new Date();
-          startOfDay.setHours(0, 0, 0, 0);
-          userLogs = parsed.filter(r => new Date(r.timestamp) >= startOfDay);
+          if (Array.isArray(parsed)) {
+            userLogs = parsed.filter(r => isRecordFromToday(r));
+          } else if (isRecordFromToday(parsed)) {
+            userLogs = [parsed];
+          }
         } catch(e) {}
       }
       setTodayRecords(userLogs);
@@ -326,7 +357,19 @@ export default function AttendancePage() {
 
       setLoading(false);
     };
+    
     fetchData();
+    
+    // Load attendance policy
+    const loadPolicy = async () => {
+      try {
+        const policy = await fetchAttendancePolicy();
+        setAttendancePolicy(policy);
+      } catch (e) {
+        console.error("Error loading attendance policy:", e);
+      }
+    };
+    loadPolicy();
   }, []);
 
   const handleVerifyIpify = async (silent = false) => {
@@ -428,7 +471,7 @@ export default function AttendancePage() {
       return;
     }
 
-    const todayDateStr = new Date().toISOString().split("T")[0];
+    const todayDateStr = getTodayDateString();
     const nowIso = new Date().toISOString();
     const nowLocalTime = new Date().toLocaleTimeString();
 
@@ -521,6 +564,11 @@ export default function AttendancePage() {
 
     try {
       dbDeleteRecord("attendance", record.id).catch(() => {});
+      fetch("/api/persistence", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ table: "attendance", record: { id: record.id, date: record.date || record.attendance_date }, action: "delete" })
+      }).catch(() => {});
       const masterSaved = JSON.parse(localStorage.getItem("software_house_master_attendance_logs") || "[]");
       const updatedMaster = masterSaved.filter(r => r.id !== record.id);
       setAllSystemLogs(updatedMaster);
@@ -779,18 +827,46 @@ export default function AttendancePage() {
               </div>
               <div className="space-y-2 text-xs">
                 <div className="p-2.5 rounded-xl bg-[#EFF6FF] border border-[#2563EB]/20 flex justify-between items-center">
-                  <span className="font-semibold text-[#2563EB]">10:00 – 10:14 AM</span>
+                  <span className="font-semibold text-[#2563EB]">
+                    {attendancePolicy?.shift_start || "10:00 AM"} – {(() => {
+                      const start = timeToMinutes(attendancePolicy?.shift_start || "10:00 AM");
+                      const end = start + (parseInt(attendancePolicy?.grace_period_minutes) || 14);
+                      return minutesToTime(end);
+                    })()}
+                  </span>
                   <span className="text-[10px] font-bold text-[#2563EB] bg-white px-2 py-0.5 rounded border border-[#2563EB]/20">On Time 🟢</span>
                 </div>
                 <div className="p-2.5 rounded-xl bg-[#FEF3C7] border border-[#F59E0B]/20 flex justify-between items-center">
-                  <span className="font-semibold text-[#92400E]">10:15 – 10:29 AM</span>
+                  <span className="font-semibold text-[#92400E]">
+                    {(() => {
+                      const start = timeToMinutes(attendancePolicy?.shift_start || "10:00 AM");
+                      const end = start + (parseInt(attendancePolicy?.grace_period_minutes) || 14);
+                      const end2 = start + (parseInt(attendancePolicy?.late_warning_minutes) || 29);
+                      return `${minutesToTime(end)} – ${minutesToTime(end2)}`;
+                    })()}
+                  </span>
                   <span className="text-[10px] font-bold text-[#92400E] bg-white px-2 py-0.5 rounded border border-[#F59E0B]/20">Late Warning 🟠</span>
                 </div>
                 <div className="p-2.5 rounded-xl bg-[#FEE2E2] border border-[#EF4444]/20 flex justify-between items-center">
-                  <span className="font-semibold text-[#991B1B]">10:30 AM & After</span>
+                  <span className="font-semibold text-[#991B1B]">
+                    {(() => {
+                      const start = timeToMinutes(attendancePolicy?.shift_start || "10:00 AM");
+                      const end = start + (parseInt(attendancePolicy?.late_warning_minutes) || 29);
+                      return `${minutesToTime(end)} & After`;
+                    })()}
+                  </span>
                   <span className="text-[10px] font-bold text-[#991B1B] bg-white px-2 py-0.5 rounded border border-[#EF4444]/20">Salary Deduction 🔴</span>
                 </div>
               </div>
+              {currentRole === "admin" && (
+                <button
+                  type="button"
+                  onClick={() => router.push("/dashboard/settings/attendance-policy")}
+                  className="w-full mt-2 py-1.5 px-3 rounded-lg bg-[#F8FAFC] hover:bg-[#EFF6FF] text-[#2563EB] border border-[#E2E8F0] font-semibold text-[10px] transition-colors cursor-pointer"
+                >
+                  Configure Policy Settings
+                </button>
+              )}
             </div>
 
             {/* Widget 2: Quick Rules & Notices */}
@@ -1075,17 +1151,36 @@ export default function AttendancePage() {
 
               <div className="space-y-3 text-xs">
                 <div className="p-3.5 rounded-xl bg-[#EFF6FF] border border-[#2563EB]/20 flex justify-between items-center">
-                  <span className="font-semibold text-[#2563EB]">10:00 – 10:14 AM</span>
+                  <span className="font-semibold text-[#2563EB]">
+                    {attendancePolicy?.shift_start || "10:00 AM"} – {(() => {
+                      const start = timeToMinutes(attendancePolicy?.shift_start || "10:00 AM");
+                      const end = start + (parseInt(attendancePolicy?.grace_period_minutes) || 14);
+                      return minutesToTime(end);
+                    })()}
+                  </span>
                   <span className="text-[10px] font-bold text-[#2563EB] bg-white px-2.5 py-1 rounded border border-[#2563EB]/20">On Time 🟢</span>
                 </div>
 
                 <div className="p-3.5 rounded-xl bg-[#FEF3C7] border border-[#F59E0B]/20 flex justify-between items-center">
-                  <span className="font-semibold text-[#92400E]">10:15 – 10:29 AM</span>
+                  <span className="font-semibold text-[#92400E]">
+                    {(() => {
+                      const start = timeToMinutes(attendancePolicy?.shift_start || "10:00 AM");
+                      const end = start + (parseInt(attendancePolicy?.grace_period_minutes) || 14);
+                      const end2 = start + (parseInt(attendancePolicy?.late_warning_minutes) || 29);
+                      return `${minutesToTime(end)} – ${minutesToTime(end2)}`;
+                    })()}
+                  </span>
                   <span className="text-[10px] font-bold text-[#92400E] bg-white px-2.5 py-1 rounded border border-[#F59E0B]/20">Late Warning 🟠</span>
                 </div>
 
                 <div className="p-3.5 rounded-xl bg-[#FEE2E2] border border-[#EF4444]/20 flex justify-between items-center">
-                  <span className="font-semibold text-[#991B1B]">10:30 AM & After</span>
+                  <span className="font-semibold text-[#991B1B]">
+                    {(() => {
+                      const start = timeToMinutes(attendancePolicy?.shift_start || "10:00 AM");
+                      const end = start + (parseInt(attendancePolicy?.late_warning_minutes) || 29);
+                      return `${minutesToTime(end)} & After`;
+                    })()}
+                  </span>
                   <span className="text-[10px] font-bold text-[#991B1B] bg-white px-2.5 py-1 rounded border border-[#EF4444]/20">Salary Deduction 🔴</span>
                 </div>
               </div>
@@ -1102,10 +1197,18 @@ export default function AttendancePage() {
               </div>
 
               <div className="space-y-1.5 text-xs text-[#64748B]">
-                <p>• <strong>Shift Timing:</strong> 10:00 AM – 6:00 PM</p>
-                <p>• <strong>Grace Period:</strong> 10:00 AM – 10:14 AM</p>
+                <p>• <strong>Shift Timing:</strong> {attendancePolicy?.shift_start || "10:00 AM"} – {attendancePolicy?.shift_end || "6:00 PM"}</p>
+                <p>• <strong>Grace Period:</strong> {attendancePolicy?.shift_start || "10:00 AM"} – {(() => {
+                  const start = timeToMinutes(attendancePolicy?.shift_start || "10:00 AM");
+                  const end = start + (parseInt(attendancePolicy?.grace_period_minutes) || 14);
+                  return minutesToTime(end);
+                })()}</p>
                 <p className="text-[11px] text-[#0F172A] font-medium leading-relaxed pt-1">
-                  Attendance recorded after 10:30 AM will automatically trigger the one-day salary deduction rule according to company HR policy.
+                  Attendance recorded after {(() => {
+                    const start = timeToMinutes(attendancePolicy?.shift_start || "10:00 AM");
+                    const end = start + (parseInt(attendancePolicy?.late_warning_minutes) || 29);
+                    return minutesToTime(end);
+                  })()} will automatically trigger salary deduction according to company HR policy.
                 </p>
               </div>
             </div>
@@ -1191,7 +1294,7 @@ export default function AttendancePage() {
         </div>
 
         {/* 100% Full Width Table */}
-        <div className="overflow-x-auto rounded-xl border border-[#E2E8F0] w-full">
+        <div className="overflow-x-auto rounded-xl border border-[#E2E8F0] w-full min-h-[260px] pb-10">
           <table className="w-full text-left text-xs border-collapse">
             <thead className="bg-[#F8FAFC] text-[#64748B] font-semibold uppercase text-[10px] tracking-wider border-b border-[#E2E8F0] sticky top-0">
               <tr>
@@ -1262,7 +1365,7 @@ export default function AttendancePage() {
                           </button>
 
                           {activeKebabId === r.id && (
-                            <div className="absolute right-0 mt-1 w-44 rounded-xl bg-white p-1.5 shadow-lg border border-[#E2E8F0] z-30 space-y-0.5 text-xs text-left animate-in fade-in zoom-in-95 duration-100">
+                            <div className={`absolute right-0 ${idx >= Math.max(1, filteredSystemLogs.length - 2) ? "bottom-full mb-1.5" : "top-full mt-1.5"} w-44 rounded-xl bg-white p-1.5 shadow-2xl border border-[#E2E8F0] z-50 space-y-0.5 text-xs text-left animate-in fade-in zoom-in-95 duration-100`}>
                               <button
                                 type="button"
                                 onClick={() => {

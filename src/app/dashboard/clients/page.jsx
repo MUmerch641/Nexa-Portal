@@ -99,39 +99,8 @@ export default function ClientsPage() {
 
   const fetchClients = async () => {
     setLoading(true);
-    const initialDefaultClients = [
-      {
-        id: "c-101",
-        client_name: "Apex Tech Systems",
-        contact_person: "Mr. David Smith (Director)",
-        email: "apex.client@gmail.com",
-        phone: "+92 300 1234567",
-        project_name: "Enterprise SaaS Portal",
-        contract_value: 500000,
-        amount_paid: 500000,
-        payment_status: "Paid",
-        address: "Suite 402, Business Tower, Karachi",
-        contract_start_date: "2026-05-01",
-        contract_end_date: "2026-11-01"
-      },
-      {
-        id: "c-102",
-        client_name: "Global Innovate Corp",
-        contact_person: "Sarah Jenkins",
-        email: "innovate.client@gmail.com",
-        phone: "+92 321 9876543",
-        project_name: "Mobile Banking & Flutter App",
-        contract_value: 800000,
-        amount_paid: 400000,
-        payment_status: "Partial Deposit",
-        address: "Floor 8, IT Park, Lahore",
-        contract_start_date: "2026-06-01",
-        contract_end_date: "2026-12-01"
-      }
-    ];
-
-    const finalClients = await dbFetch("clients", initialDefaultClients);
-    setClients(finalClients);
+    const finalClients = await dbFetch("clients", [], true);
+    setClients(finalClients || []);
 
     try {
       const { data: invData } = await supabase
@@ -563,7 +532,7 @@ export default function ClientsPage() {
           </div>
 
           {/* Table */}
-          <div className="overflow-x-auto flex-1">
+          <div className="overflow-x-auto flex-1 min-h-[260px] pb-10">
             <table className="w-full text-left text-xs text-[#0F172A]">
               <thead className="bg-[#F8FAFC] text-[11px] font-bold uppercase text-[#64748B] border-b border-[#E2E8F0]">
                 <tr>
@@ -649,7 +618,7 @@ export default function ClientsPage() {
                               </button>
 
                               {activeKebabId === client.id && (
-                                <div className={`absolute right-0 w-44 rounded-xl bg-white p-1.5 shadow-lg border border-[#E2E8F0] z-30 space-y-0.5 text-xs text-left animate-in fade-in zoom-in-95 duration-100 ${
+                                <div className={`absolute right-0 w-44 rounded-xl bg-white p-1.5 shadow-2xl border border-[#E2E8F0] z-50 space-y-0.5 text-xs text-left animate-in fade-in zoom-in-95 duration-100 ${
                                   idx >= Math.max(0, filteredClients.length - 2)
                                     ? "bottom-full mb-1 origin-bottom-right"
                                     : "top-full mt-1 origin-top-right"

@@ -25,39 +25,8 @@ import { dbFetch, dbSaveList } from "@/lib/dbPersistence";
 export default function AnnouncementsPage() {
   const [role, setRole] = useState("admin");
   const [userEmail, setUserEmail] = useState("");
-  const initialAnnouncements = [
-    {
-      id: "ann-101",
-      title: "Tomorrow Official Office Holiday (Independence Day)",
-      category: "Tomorrow Holiday",
-      postedBy: "System",
-      date: "2026-08-02",
-      time: "09:00 AM",
-      content: "All physical campus labs and remote operations will remain closed tomorrow in observance of national holiday. Enjoy your day!",
-      broadcastNotification: true,
-    },
-    {
-      id: "ann-102",
-      title: "Mandatory All-Hands Office Meeting at 03:00 PM",
-      category: "Office Meeting",
-      postedBy: "HR Department",
-      date: "2026-08-04",
-      time: "03:00 PM",
-      content: "All employees, interns, and students are requested to join Conference Room #1 / Google Meet for monthly roadmap sync.",
-      broadcastNotification: true,
-    },
-    {
-      id: "ann-103",
-      title: "Updated Remote Work & Transparent Monitoring Policy",
-      category: "New Policy",
-      postedBy: "Admin & Operations",
-      date: "2026-08-01",
-      time: "11:30 AM",
-      content: "New remote screenshot & activity logging guidelines released. Please review privacy transparency compliance parameters.",
-      broadcastNotification: true,
-    },
-  ];
-  const [announcements, setAnnouncements] = useState(initialAnnouncements);
+  const [announcements, setAnnouncements] = useState([]);
+  const [loading, setLoading] = useState(true);
 
   // Kebab Context Menu State
   const [activeKebabId, setActiveKebabId] = useState(null);
@@ -86,13 +55,14 @@ export default function AnnouncementsPage() {
     setRole(savedRole);
     setUserEmail(savedEmail);
 
-    dbFetch("announcements", initialAnnouncements).then(data => {
+    dbFetch("announcements", [], true).then(data => {
       const todayStr = new Date().toISOString().split("T")[0];
-      const validUnexpired = data.filter((a) => {
+      const validUnexpired = (data || []).filter((a) => {
         if (!a.expiry_date) return true;
         return a.expiry_date >= todayStr;
       });
       setAnnouncements(validUnexpired);
+      setLoading(false);
     });
   }, []);
 
@@ -320,7 +290,7 @@ export default function AnnouncementsPage() {
                       </button>
 
                       {activeKebabId === a.id && (
-                        <div className="absolute right-0 mt-1 w-44 rounded-xl bg-white p-1.5 shadow-lg border border-[#E2E8F0] z-30 space-y-0.5 text-xs text-left animate-in fade-in zoom-in-95 duration-100">
+                        <div className="absolute right-0 mt-1 w-44 rounded-xl bg-white p-1.5 shadow-2xl border border-[#E2E8F0] z-50 space-y-0.5 text-xs text-left animate-in fade-in zoom-in-95 duration-100">
                           <button
                             type="button"
                             onClick={() => {

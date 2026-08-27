@@ -58,6 +58,7 @@ export default function AttendanceHistory() {
   const router = useRouter();
   const [attendance, setAttendance] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
@@ -71,6 +72,19 @@ export default function AttendanceHistory() {
   };
 
   useEffect(() => {
+    const role = localStorage.getItem("user_role") || "employee";
+    const email = (localStorage.getItem("current_user_email") || "").toLowerCase().trim();
+    const adminCheck = role === "admin" || email.includes("admin") || email.includes("owner");
+
+    setIsAdmin(adminCheck);
+
+    if (!adminCheck) {
+      setLoading(false);
+      showToast("Access Restricted 🔒", "Attendance history and management is reserved for Admin only.", "warning");
+      router.replace(role === "student" ? "/dashboard/student" : "/dashboard/employee");
+      return;
+    }
+
     getAttendance();
   }, []);
 
@@ -116,6 +130,22 @@ export default function AttendanceHistory() {
     }
     return true;
   });
+
+  if (!isAdmin) {
+    return (
+      <div className="min-h-[350px] bg-white rounded-2xl border border-slate-200 p-8 flex flex-col items-center justify-center text-center space-y-4 shadow-sm">
+        <div className="w-14 h-14 rounded-full bg-rose-50 text-rose-600 flex items-center justify-center text-2xl border border-rose-200">
+          <FaExclamationTriangle />
+        </div>
+        <div>
+          <h2 className="text-lg font-bold text-slate-900">Admin Access Required</h2>
+          <p className="text-xs text-slate-500 max-w-md mt-1">
+            Global attendance records and management tools are restricted to Admin accounts. Redirecting to your dashboard...
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

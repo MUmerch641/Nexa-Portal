@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabase";
 import { dbFetch, dbSaveRecord } from "@/lib/dbPersistence";
 import { showToast } from "@/components/Toast";
 import { fetchRecentActivities, formatTimeAgo, clearActivityLogs } from "@/lib/activityUtils";
+import { enrollStudentWithCredentials, registerEmployeeWithCredentials } from "@/lib/studentEnrollmentUtils";
 import FinancialChart from "@/components/FinancialChart";
 import {
   FaUsers,
@@ -67,20 +68,6 @@ export default function DashboardPage() {
   // Modals & Popup State
   const [selectedUserModal, setSelectedUserModal] = useState(null);
   const [activeKebabId, setActiveKebabId] = useState(null);
-  const [activeQuickActionModal, setActiveQuickActionModal] = useState(null);
-
-  // Form State
-  const [quickForm, setQuickForm] = useState({
-    fullName: "",
-    email: "",
-    department: "Engineering",
-    designation: "Developer",
-    courseName: "MERN Stack Development",
-    title: "",
-    clientName: "Client Deal",
-    amount: "",
-    category: "General Expense",
-  });
 
   // Destructive Confirmation Modal
   const [confirmDeleteModal, setConfirmDeleteModal] = useState({ isOpen: false, type: "", targetId: "", title: "", loading: false });
@@ -110,15 +97,16 @@ export default function DashboardPage() {
     try {
       const currentYearMonth = new Date().toISOString().slice(0, 7);
 
-      const [allEmps, fullProjList, incList, leaveList, expList, liveTasks, studentList, invoiceList] = await Promise.all([
-        dbFetch("employees").catch(() => []),
-        dbFetch("projects").catch(() => []),
-        dbFetch("incomes").catch(() => []),
-        dbFetch("leaves").catch(() => []),
-        dbFetch("expenses").catch(() => []),
-        dbFetch("daily_tasks").catch(() => []),
-        dbFetch("students").catch(() => []),
-        dbFetch("invoices").catch(() => [])
+      const [allEmps, fullProjList, incList, leaveList, expList, liveTasks, studentList, invoiceList, internList] = await Promise.all([
+        dbFetch("employees", [], true).catch(() => []),
+        dbFetch("projects", [], true).catch(() => []),
+        dbFetch("incomes", [], true).catch(() => []),
+        dbFetch("leaves", [], true).catch(() => []),
+        dbFetch("expenses", [], true).catch(() => []),
+        dbFetch("daily_tasks", [], true).catch(() => []),
+        dbFetch("students", [], true).catch(() => []),
+        dbFetch("invoices", [], true).catch(() => []),
+        dbFetch("interns", [], true).catch(() => [])
       ]);
 
       const employeeCount = (allEmps || []).filter(e => (e.status || "").toLowerCase() !== "inactive" && (e.status || "").toLowerCase() !== "terminated").length;
@@ -212,8 +200,8 @@ export default function DashboardPage() {
         return !st.includes("completed") && !st.includes("archived") && !st.includes("cancelled");
       }).length || finalDeliverablesList.length;
 
-      const stus = JSON.parse(localStorage.getItem("persistent_courses") || "[]");
-      const ints = JSON.parse(localStorage.getItem("persistent_interns") || localStorage.getItem("persistent_internships") || "[]");
+      const stus = studentList || [];
+      const ints = internList || [];
 
       setStats({
         employees: employeeCount,
@@ -232,11 +220,23 @@ export default function DashboardPage() {
     }
   }, []);
 
-  const loadAllMembers = useCallback(() => {
+  const loadAllMembers = useCallback(async () => {
     try {
-      const persistentEmps = JSON.parse(localStorage.getItem("persistent_employees") || "[]");
-      const persistentStudents = JSON.parse(localStorage.getItem("persistent_courses") || "[]");
-      const persistentInterns = JSON.parse(localStorage.getItem("persistent_interns") || localStorage.getItem("persistent_internships") || "[]");
+      const [cloudEmps, cloudStudents, cloudInterns] = await Promise.all([
+        dbFetch("employees", [], true).catch(() => []),
+        dbFetch("students", [], true).catch(() => []),
+        dbFetch("interns", [], true).catch(() => [])
+      ]);
+
+      if (typeof window !== "undefined") {
+        if (Array.isArray(cloudEmps)) localStorage.setItem("persistent_employees", JSON.stringify(cloudEmps));
+        if (Array.isArray(cloudStudents)) localStorage.setItem("persistent_courses", JSON.stringify(cloudStudents));
+        if (Array.isArray(cloudInterns)) localStorage.setItem("persistent_interns", JSON.stringify(cloudInterns));
+      }
+
+      const persistentEmps = cloudEmps || [];
+      const persistentStudents = cloudStudents || [];
+      const persistentInterns = cloudInterns || [];
 
       const masterLogs = JSON.parse(localStorage.getItem("software_house_master_attendance_logs") || "[]");
       const savedEmpAtt = JSON.parse(localStorage.getItem("today_attendance_employee") || "[]");
@@ -324,9 +324,9 @@ export default function DashboardPage() {
           id: i.id || `int-${Date.now()}`,
           fullName: i.full_name || i.name || "Unknown Intern",
           email: i.email,
-          category: i.domain?.includes("Remote") ? "Remote 3-Month Intern" : "On-Site 3-Month Intern",
+          category: i.internship_mode?.includes("Remote") ? "Remote 3-Month Intern" : "On-Site 3-Month Intern",
           role: "intern",
-          department: i.domain || "Software Engineering Intern",
+          department: i.course_name || i.domain || "Software Engineering Intern",
           attendance: getTodayAttendanceText(i.email),
           progress: `${i.progress !== undefined ? i.progress : 0}% Internship Milestone Completed`,
           dailyTask: i.task_logs?.[0]?.details || "Working on assigned project module.",
@@ -393,81 +393,6 @@ export default function DashboardPage() {
     return list;
   }, [allRegisteredUsersList, segmentedFilter, tableSearch, sortColumn, sortDirection]);
 
-  // Quick Action Submissions
-  const handleQuickActionSubmit = async (e) => {
-    e.preventDefault();
-    if (!activeQuickActionModal) return;
-
-    if (activeQuickActionModal === "employee") {
-      const newEmp = {
-        id: `emp-${Date.now()}`,
-        full_name: quickForm.fullName || "New Employee",
-        email: quickForm.email.toLowerCase().trim(),
-        department: quickForm.department,
-        designation: quickForm.designation,
-        employment_type: "On-Site Staff",
-        status: "Active"
-      };
-      const existing = JSON.parse(localStorage.getItem("persistent_employees") || "[]");
-      localStorage.setItem("persistent_employees", JSON.stringify([...existing, newEmp]));
-      showToast("Employee Added 👤", `'${newEmp.full_name}' registered successfully.`, "success");
-    } else if (activeQuickActionModal === "student") {
-      const cleanEmail = quickForm.email.toLowerCase().trim();
-      const cleanName = quickForm.fullName || "New Student";
-      const newStu = {
-        id: `stu-${Date.now()}`,
-        enrollment_no: `s-${Date.now()}`,
-        full_name: cleanName,
-        email: cleanEmail,
-        course_name: quickForm.courseName || "Full Stack MERN Web Development",
-        fee_status: "Paid",
-        admission_date: new Date().toISOString().split("T")[0],
-        status: "Active",
-        emergency_contact: "auth:studentpassword",
-        progress: 10
-      };
-      const existing = JSON.parse(localStorage.getItem("persistent_courses") || "[]");
-      localStorage.setItem("persistent_courses", JSON.stringify([...existing, newStu]));
-      
-      // Save directly to Supabase cloud database
-      fetch("/api/persistence", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ table: "students", record: newStu, action: "save" })
-      }).catch(() => {});
-
-      showToast("Student Enrolled 🎓", `'${newStu.full_name}' enrolled in ${newStu.course_name}.`, "success");
-    } else if (activeQuickActionModal === "project") {
-      const newProj = {
-        id: `proj-${Date.now()}`,
-        title: quickForm.title || "Untitled Project",
-        client_name: quickForm.clientName || "Client Deal",
-        progress: 25,
-        status: "In Progress"
-      };
-      const existing = JSON.parse(localStorage.getItem("software_house_projects") || "[]");
-      localStorage.setItem("software_house_projects", JSON.stringify([...existing, newProj]));
-      showToast("Project Created 📁", `'${newProj.title}' added to active workstreams.`, "success");
-    } else if (activeQuickActionModal === "expense") {
-      const newExp = {
-        id: `exp-${Date.now()}`,
-        title: quickForm.title || "General Expense",
-        amount: Number(quickForm.amount) || 5000,
-        category: quickForm.category || "General Expense",
-        date: new Date().toISOString().split("T")[0]
-      };
-      const existing = JSON.parse(localStorage.getItem("software_house_expenses") || "[]");
-      localStorage.setItem("software_house_expenses", JSON.stringify([...existing, newExp]));
-      showToast("Expense Recorded 💸", `Rs. ${newExp.amount} logged under ${newExp.category}.`, "success");
-    }
-
-    if (typeof window !== "undefined") {
-      window.dispatchEvent(new Event("dataChanged"));
-    }
-    setActiveQuickActionModal(null);
-    setQuickForm({ fullName: "", email: "", department: "Engineering", designation: "Developer", courseName: "MERN Stack Development", title: "", clientName: "Client Deal", amount: "", category: "General Expense" });
-  };
-
   const executeConfirmedDelete = async () => {
     setConfirmDeleteModal(prev => ({ ...prev, loading: true }));
 
@@ -509,95 +434,7 @@ export default function DashboardPage() {
   return (
     <div className="space-y-6">
 
-      {/* 1. QUICK ACTION CARDS (Blue & White Design System) */}
-      <div className="bg-white rounded-2xl p-6 border border-[#E2E8F0] shadow-sm space-y-4">
-        <div className="flex items-center justify-between border-b border-[#E2E8F0] pb-3">
-          <div>
-            <h2 className="text-sm font-bold text-[#0F172A] flex items-center gap-2">
-              <FaPlusCircle className="text-[#2563EB]" />
-              <span>Quick Actions</span>
-            </h2>
-            <p className="text-xs text-[#64748B]">High-frequency operational shortcuts.</p>
-          </div>
-
-          <span className="text-[10px] font-semibold uppercase bg-[#EFF6FF] text-[#2563EB] px-2.5 py-1 rounded-full border border-[#2563EB]/20">
-            System Shortcuts
-          </span>
-        </div>
-
-        {/* Quick Action Buttons (White Cards, #E2E8F0 border, #2563EB Icon & Text, hover #EFF6FF) */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3 pt-1">
-          <button
-            type="button"
-            onClick={() => setActiveQuickActionModal("employee")}
-            className="flex items-center justify-center gap-2 p-3 rounded-xl bg-white hover:bg-[#EFF6FF] text-[#2563EB] border border-[#E2E8F0] text-xs font-semibold transition-colors cursor-pointer group"
-          >
-            <FaUserPlus className="text-sm text-[#2563EB]" />
-            <span>Add Staff</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveQuickActionModal("student")}
-            className="flex items-center justify-center gap-2 p-3 rounded-xl bg-white hover:bg-[#EFF6FF] text-[#2563EB] border border-[#E2E8F0] text-xs font-semibold transition-colors cursor-pointer group"
-          >
-            <FaGraduationCap className="text-sm text-[#2563EB]" />
-            <span>Add Student</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveQuickActionModal("project")}
-            className="flex items-center justify-center gap-2 p-3 rounded-xl bg-white hover:bg-[#EFF6FF] text-[#2563EB] border border-[#E2E8F0] text-xs font-semibold transition-colors cursor-pointer group"
-          >
-            <FaProjectDiagram className="text-sm text-[#2563EB]" />
-            <span>New Project</span>
-          </button>
-
-          <Link
-            href="/dashboard/projects"
-            className="flex items-center justify-center gap-2 p-3 rounded-xl bg-white hover:bg-[#EFF6FF] text-[#2563EB] border border-[#E2E8F0] text-xs font-semibold transition-colors cursor-pointer group"
-          >
-            <FaTasks className="text-sm text-[#2563EB]" />
-            <span>Assign Task</span>
-          </Link>
-
-          <Link
-            href="/dashboard/meetings"
-            className="flex items-center justify-center gap-2 p-3 rounded-xl bg-white hover:bg-[#EFF6FF] text-[#2563EB] border border-[#E2E8F0] text-xs font-semibold transition-colors cursor-pointer group"
-          >
-            <FaVideo className="text-sm text-[#2563EB]" />
-            <span>Meeting Hub</span>
-          </Link>
-
-          <button
-            type="button"
-            onClick={() => setActiveQuickActionModal("expense")}
-            className="flex items-center justify-center gap-2 p-3 rounded-xl bg-white hover:bg-[#EFF6FF] text-[#2563EB] border border-[#E2E8F0] text-xs font-semibold transition-colors cursor-pointer group"
-          >
-            <FaReceipt className="text-sm text-[#2563EB]" />
-            <span>Log Expense</span>
-          </button>
-
-          <Link
-            href="/dashboard/finance"
-            className="flex items-center justify-center gap-2 p-3 rounded-xl bg-white hover:bg-[#EFF6FF] text-[#2563EB] border border-[#E2E8F0] text-xs font-semibold transition-colors cursor-pointer group"
-          >
-            <FaFileInvoiceDollar className="text-sm text-[#2563EB]" />
-            <span>Invoice</span>
-          </Link>
-
-          <Link
-            href="/dashboard/attendance"
-            className="flex items-center justify-center gap-2 p-3 rounded-xl bg-white hover:bg-[#EFF6FF] text-[#2563EB] border border-[#E2E8F0] text-xs font-semibold transition-colors cursor-pointer group col-span-2 sm:col-span-1"
-          >
-            <FaCalendarCheck className="text-sm text-[#2563EB]" />
-            <span>Attendance</span>
-          </Link>
-        </div>
-      </div>
-
-      {/* 2. STATISTIC CARDS GRID (Bg #FFFFFF, Border #E2E8F0, Radius 16px, Padding 24px, Light Shadow) */}
+      {/* 1. STATISTIC CARDS GRID (Bg #FFFFFF, Border #E2E8F0, Radius 16px, Padding 24px, Light Shadow) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Stat 1: Total Staff */}
         <Link
@@ -966,129 +803,6 @@ export default function DashboardPage() {
                 Close
               </button>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* QUICK ACTION MODALS */}
-      {activeQuickActionModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-[#E2E8F0] space-y-4 animate-in fade-in zoom-in-95 duration-150">
-            <div className="flex items-center justify-between border-b border-[#E2E8F0] pb-3">
-              <h3 className="text-base font-bold text-[#0F172A] flex items-center gap-2">
-                <FaPlusCircle className="text-[#2563EB]" />
-                <span>
-                  {activeQuickActionModal === "employee" && "Add New Paid Staff Member"}
-                  {activeQuickActionModal === "student" && "Enroll Course Student"}
-                  {activeQuickActionModal === "project" && "Create Active Workstream Project"}
-                  {activeQuickActionModal === "expense" && "Record Operating Expense"}
-                </span>
-              </h3>
-              <button
-                onClick={() => setActiveQuickActionModal(null)}
-                className="text-[#64748B] hover:text-[#0F172A] font-bold cursor-pointer"
-              >
-                ✕
-              </button>
-            </div>
-
-            <form onSubmit={handleQuickActionSubmit} className="space-y-3 text-xs">
-              {(activeQuickActionModal === "employee" || activeQuickActionModal === "student") && (
-                <>
-                  <div className="space-y-1">
-                    <label className="font-semibold text-[#64748B]">Full Name</label>
-                    <input
-                      type="text"
-                      required
-                      value={quickForm.fullName}
-                      onChange={(e) => setQuickForm({ ...quickForm, fullName: e.target.value })}
-                      placeholder="e.g. Ali Hassan"
-                      className="w-full p-2.5 rounded-xl border border-[#E2E8F0] outline-none font-semibold text-[#0F172A] focus:border-[#2563EB] transition-colors"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="font-semibold text-[#64748B]">Email Address</label>
-                    <input
-                      type="email"
-                      required
-                      value={quickForm.email}
-                      onChange={(e) => setQuickForm({ ...quickForm, email: e.target.value })}
-                      placeholder="e.g. ali@gmail.com"
-                      className="w-full p-2.5 rounded-xl border border-[#E2E8F0] outline-none font-semibold text-[#0F172A] focus:border-[#2563EB] transition-colors"
-                    />
-                  </div>
-                </>
-              )}
-
-              {activeQuickActionModal === "project" && (
-                <>
-                  <div className="space-y-1">
-                    <label className="font-semibold text-[#64748B]">Project Title</label>
-                    <input
-                      type="text"
-                      required
-                      value={quickForm.title}
-                      onChange={(e) => setQuickForm({ ...quickForm, title: e.target.value })}
-                      placeholder="e.g. E-Commerce App API Integration"
-                      className="w-full p-2.5 rounded-xl border border-[#E2E8F0] outline-none font-semibold text-[#0F172A] focus:border-[#2563EB] transition-colors"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="font-semibold text-[#64748B]">Client Name</label>
-                    <input
-                      type="text"
-                      value={quickForm.clientName}
-                      onChange={(e) => setQuickForm({ ...quickForm, clientName: e.target.value })}
-                      placeholder="e.g. TechCorp USA"
-                      className="w-full p-2.5 rounded-xl border border-[#E2E8F0] outline-none font-semibold text-[#0F172A] focus:border-[#2563EB] transition-colors"
-                    />
-                  </div>
-                </>
-              )}
-
-              {activeQuickActionModal === "expense" && (
-                <>
-                  <div className="space-y-1">
-                    <label className="font-semibold text-[#64748B]">Expense Title</label>
-                    <input
-                      type="text"
-                      required
-                      value={quickForm.title}
-                      onChange={(e) => setQuickForm({ ...quickForm, title: e.target.value })}
-                      placeholder="e.g. Office Fiber WiFi Bill"
-                      className="w-full p-2.5 rounded-xl border border-[#E2E8F0] outline-none font-semibold text-[#0F172A] focus:border-[#2563EB] transition-colors"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="font-semibold text-[#64748B]">Amount (Rs.)</label>
-                    <input
-                      type="number"
-                      required
-                      value={quickForm.amount}
-                      onChange={(e) => setQuickForm({ ...quickForm, amount: e.target.value })}
-                      placeholder="e.g. 8500"
-                      className="w-full p-2.5 rounded-xl border border-[#E2E8F0] outline-none font-semibold text-[#0F172A] focus:border-[#2563EB] transition-colors"
-                    />
-                  </div>
-                </>
-              )}
-
-              <div className="pt-3 flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => setActiveQuickActionModal(null)}
-                  className="flex-1 py-2.5 rounded-xl bg-white hover:bg-[#F8FAFC] border border-[#E2E8F0] font-semibold text-[#2563EB] cursor-pointer transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="flex-1 py-2.5 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold transition-colors cursor-pointer"
-                >
-                  Save Record
-                </button>
-              </div>
-            </form>
           </div>
         </div>
       )}

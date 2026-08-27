@@ -6,6 +6,7 @@ import { dbFetch, dbSaveRecord, dbSaveList } from "@/lib/dbPersistence";
 import Modal from "@/components/Modal";
 import { showToast } from "@/components/Toast";
 import { verifyOfficeWifiAttendance } from "@/lib/attendanceIpUtils";
+import { isRecordFromToday, getTodayDateString, getEmployeeCheckInStatus } from "@/lib/attendanceUtils";
 import {
   FaUserCheck,
   FaCalendarCheck,
@@ -150,26 +151,27 @@ export default function EmployeeDedicatedDashboardPage() {
       const userLogs = (allLogs || []).filter(
         (l) => (l.user_email || l.email || "").toLowerCase().trim() === email
       );
-      setMyAttendanceHistory(userLogs);
-
-      const todayStr = new Date().toISOString().split("T")[0];
-      const matchToday = userLogs.find(
-        (l) => l.attendance_date === todayStr || (l.timestamp && l.timestamp.startsWith(todayStr))
-      );
-
+      // 1. Fetch Today's Attendance & History Log strictly for TODAY
       const key = `today_attendance_${email}`;
       const savedToday = localStorage.getItem(key);
+      let currentDayAttendance = null;
+
       if (savedToday) {
         try {
           const parsed = JSON.parse(savedToday);
-          const checkInLog = parsed.find(r => r.type === "check_in" || r.check_in_time);
-          setTodayAttendance(checkInLog || matchToday || null);
-        } catch(e) {
-          setTodayAttendance(matchToday || null);
-        }
-      } else {
-        setTodayAttendance(matchToday || null);
+          if (Array.isArray(parsed)) {
+            currentDayAttendance = parsed.find(r => isRecordFromToday(r) && (r.type === "check_in" || r.check_in_time));
+          } else if (isRecordFromToday(parsed)) {
+            currentDayAttendance = parsed;
+          }
+        } catch(e) {}
       }
+
+      if (!currentDayAttendance && userLogs.length > 0) {
+        currentDayAttendance = userLogs.find(l => isRecordFromToday(l) && (l.type === "check_in" || l.check_in_time || l.check_in));
+      }
+
+      setTodayAttendance(currentDayAttendance || null);
     } catch (e) {}
 
     // Verify Wi-Fi Network
@@ -305,6 +307,8 @@ export default function EmployeeDedicatedDashboardPage() {
 
     setMarkingAttendance(true);
     const now = new Date();
+    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+    const policyResult = getEmployeeCheckInStatus(currentMinutes);
     const timeStr = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
     const newRecord = {
@@ -316,8 +320,9 @@ export default function EmployeeDedicatedDashboardPage() {
       type: "check_in",
       check_in_time: timeStr,
       check_out_time: "Not Checked Out",
-      attendance_status: "Present (On Time)",
-      attendance_date: now.toISOString().split("T")[0],
+      attendance_status: policyResult.status, // "On Time", "Late Warning", or "Salary Deduction"
+      status: policyResult.status,
+      attendance_date: getTodayDateString(),
       timestamp: now.toISOString(),
       public_ip: userIp || "127.0.0.1",
     };
@@ -332,8 +337,12 @@ export default function EmployeeDedicatedDashboardPage() {
     } catch (e) {}
 
     setMarkingAttendance(false);
-    showToast("Check-In Successful 🟢", `Checked in at ${timeStr}.`, "success");
-    showAlert("Check-In Successful 🟢", `Checked in successfully at ${timeStr}!\n\nStatus: Present (On Time)\nNetwork: ${wifiStatus}`, "success");
+    showToast(`Check-In: ${policyResult.label}`, `Recorded at ${timeStr}. Status: ${policyResult.status}`, policyResult.colorKey === "emerald" ? "success" : policyResult.colorKey === "amber" ? "warning" : "error");
+    showAlert(
+      `Check-In Recorded: ${policyResult.label}`,
+      `Check-In Time: ${timeStr}\nAttendance Status: ${policyResult.status} (${policyResult.dot})\nPolicy Rule: ${policyResult.rule}\nNetwork: ${wifiStatus}`,
+      policyResult.colorKey === "emerald" ? "success" : policyResult.colorKey === "amber" ? "warning" : "error"
+    );
   };
 
   // Check-Out Handler
@@ -355,7 +364,7 @@ export default function EmployeeDedicatedDashboardPage() {
     const updatedRecord = {
       ...todayAttendance,
       check_out_time: timeStr,
-      attendance_status: "Present (Completed)",
+      attendance_status: todayAttendance.attendance_status || "On Time",
       updated_at: now.toISOString(),
     };
 
@@ -372,7 +381,7 @@ export default function EmployeeDedicatedDashboardPage() {
 
     setMarkingAttendance(false);
     showToast("Check-Out Successful 🔴", `Checked out at ${timeStr}. Daily work log completed.`, "success");
-    showAlert("Check-Out Successful 🔴", `Checked out successfully at ${timeStr}!\n\nDaily attendance log marked as Completed.`, "success");
+    showAlert("Check-Out Successful 🔴", `Checked out successfully at ${timeStr}!\n\nStatus: ${updatedRecord.attendance_status}\nDaily attendance log marked as Completed.`, "success");
   };
 
   // Task Status Update Handler
@@ -528,18 +537,24 @@ export default function EmployeeDedicatedDashboardPage() {
       {/* SUMMARY METRICS CARDS GRID */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <Link
-          href="/dashboard/attendance/history"
+          href="/dashboard/attendance"
           className="bg-white p-5 rounded-2xl border border-[#E2E8F0] shadow-sm space-y-2 hover:border-emerald-400 hover:shadow-md transition-all cursor-pointer group block"
         >
           <div className="flex justify-between items-center text-xs text-[#64748B]">
             <span className="font-semibold text-slate-700">Today's Attendance</span>
             <FaCalendarCheck className="text-emerald-500 group-hover:scale-110 transition-transform" />
           </div>
-          <p className="text-lg font-bold text-[#0F172A]">
+          <p className="text-base font-bold text-[#0F172A]">
             {todayAttendance?.check_out_time && todayAttendance.check_out_time !== "Not Checked Out" && todayAttendance.check_out_time !== "--:--"
               ? "Completed"
+              : todayAttendance?.attendance_status === "On Time" || todayAttendance?.status === "On Time"
+              ? "On Time 🟢"
+              : todayAttendance?.attendance_status === "Late Warning" || todayAttendance?.status === "Late Warning"
+              ? "Late Warning 🟠"
+              : todayAttendance?.attendance_status === "Salary Deduction" || todayAttendance?.status === "Salary Deduction"
+              ? "Salary Deduction 🔴"
               : todayAttendance?.check_in_time
-              ? "Checked In"
+              ? "Checked In 🔵"
               : "Not Marked"}
           </p>
           <div className="flex items-center justify-between text-xs pt-1 border-t border-slate-100">
@@ -551,7 +566,7 @@ export default function EmployeeDedicatedDashboardPage() {
                 : "Action required"}
             </span>
             <span className="text-[10px] font-bold text-emerald-600 group-hover:translate-x-0.5 transition-transform flex items-center gap-0.5">
-              History ↗
+              Attendance Desk ↗
             </span>
           </div>
         </Link>
@@ -607,6 +622,78 @@ export default function EmployeeDedicatedDashboardPage() {
           </div>
         </Link>
       </div>
+      {/* ATTENDANCE POLICY TIMELINE BANNER (VISIBLE ONLY ON EMPLOYEE DASHBOARD) */}
+      {!isAdminUser && (
+        <div className="bg-white p-5 rounded-2xl border border-[#E2E8F0] shadow-sm space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
+            <div className="space-y-0.5">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-[#2563EB] bg-[#EFF6FF] px-2.5 py-0.5 rounded-full border border-blue-200">
+                Official Company Policy
+              </span>
+              <h2 className="text-sm font-bold text-[#0F172A] flex items-center gap-2 mt-1">
+                <FaClock className="text-[#2563EB]" />
+                <span>Attendance Policy Timeline</span>
+              </h2>
+            </div>
+            <div className="flex items-center gap-2 text-xs font-semibold text-slate-500 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200">
+              <span>Standard Shift:</span>
+              <strong className="text-slate-800 font-mono">10:00 AM – 6:00 PM</strong>
+            </div>
+          </div>
+
+          {/* 3 POLICY TIMELINE BRACKETS */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
+            {/* 1. 10:00 AM – 10:14 AM — On Time 🟢 */}
+            <div className="p-4 rounded-xl border border-emerald-200 bg-emerald-50/50 space-y-2 hover:border-emerald-400 transition-all shadow-xs">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-emerald-800 flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-xs"></span>
+                  On Time 🟢
+                </span>
+                <span className="text-[10px] font-mono font-bold text-emerald-700 bg-white px-2 py-0.5 rounded-md border border-emerald-200">
+                  10:00 AM – 10:14 AM
+                </span>
+              </div>
+              <p className="text-[11px] text-emerald-700 font-medium leading-relaxed">
+                Full on-time attendance marked. Normal working day with 100% salary credit.
+              </p>
+            </div>
+
+            {/* 2. 10:15 AM – 10:29 AM — Late Warning 🟠 */}
+            <div className="p-4 rounded-xl border border-amber-200 bg-amber-50/50 space-y-2 hover:border-amber-400 transition-all shadow-xs">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-amber-800 flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-full bg-amber-500 shadow-xs"></span>
+                  Late Warning 🟠
+                </span>
+                <span className="text-[10px] font-mono font-bold text-amber-700 bg-white px-2 py-0.5 rounded-md border border-amber-200">
+                  10:15 AM – 10:29 AM
+                </span>
+              </div>
+              <p className="text-[11px] text-amber-700 font-medium leading-relaxed">
+                Late arrival warning recorded. Please ensure on-time clock-in before 10:15 AM.
+              </p>
+            </div>
+
+            {/* 3. 10:30 AM and after — Salary Deduction 🔴 */}
+            <div className="p-4 rounded-xl border border-rose-200 bg-rose-50/50 space-y-2 hover:border-rose-400 transition-all shadow-xs">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-rose-800 flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-full bg-rose-500 shadow-xs"></span>
+                  Salary Deduction 🔴
+                </span>
+                <span className="text-[10px] font-mono font-bold text-rose-700 bg-white px-2 py-0.5 rounded-md border border-rose-200">
+                  10:30 AM and after
+                </span>
+              </div>
+              <p className="text-[11px] text-rose-700 font-medium leading-relaxed">
+                1-day salary deduction applies according to company policy for late check-in.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* SECTION 1: TOP 2-COLUMN BALANCED ROW (Attendance Control on Left, Announcements & Leave Desk on Right) */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* LEFT COLUMN (7 COLS): Attendance Clocking / Admin Supervisory View */}
@@ -672,17 +759,25 @@ export default function EmployeeDedicatedDashboardPage() {
                     <span>Today&apos;s Attendance Control</span>
                   </h2>
                   <span className={`text-[10px] font-bold uppercase px-2.5 py-1 rounded-full border ${
-                    todayAttendance?.check_out_time && todayAttendance.check_out_time !== "Not Checked Out" && todayAttendance.check_out_time !== "--:--"
+                    todayAttendance?.attendance_status === "On Time" || todayAttendance?.status === "On Time"
                       ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                      : todayAttendance?.attendance_status === "Late Warning" || todayAttendance?.status === "Late Warning"
+                      ? "bg-amber-50 text-amber-700 border-amber-200"
+                      : todayAttendance?.attendance_status === "Salary Deduction" || todayAttendance?.status === "Salary Deduction"
+                      ? "bg-rose-50 text-rose-700 border-rose-200"
                       : todayAttendance?.check_in_time
                       ? "bg-blue-50 text-blue-700 border-blue-200"
-                      : "bg-amber-50 text-amber-700 border-amber-200"
+                      : "bg-slate-100 text-slate-600 border-slate-200"
                   }`}>
-                    {todayAttendance?.check_out_time && todayAttendance.check_out_time !== "Not Checked Out" && todayAttendance.check_out_time !== "--:--"
-                      ? "Completed"
+                    {todayAttendance?.attendance_status === "On Time" || todayAttendance?.status === "On Time"
+                      ? "On Time 🟢"
+                      : todayAttendance?.attendance_status === "Late Warning" || todayAttendance?.status === "Late Warning"
+                      ? "Late Warning 🟠"
+                      : todayAttendance?.attendance_status === "Salary Deduction" || todayAttendance?.status === "Salary Deduction"
+                      ? "Salary Deduction 🔴"
                       : todayAttendance?.check_in_time
-                      ? "Checked In"
-                      : "Not Checked In"}
+                      ? "Checked In 🔵"
+                      : "Not Checked In ⚪"}
                   </span>
                 </div>
 
@@ -705,6 +800,29 @@ export default function EmployeeDedicatedDashboardPage() {
                     </p>
                   </div>
                 </div>
+
+                {/* Real-Time Check-In Status Feedback Bar */}
+                {todayAttendance?.check_in_time && (
+                  <div className={`p-3 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-xs mt-3 ${
+                    todayAttendance.attendance_status === "On Time" || todayAttendance.status === "On Time"
+                      ? "bg-emerald-50/80 border-emerald-200 text-emerald-800"
+                      : todayAttendance.attendance_status === "Late Warning" || todayAttendance.status === "Late Warning"
+                      ? "bg-amber-50/80 border-amber-200 text-amber-800"
+                      : "bg-rose-50/80 border-rose-200 text-rose-800"
+                  }`}>
+                    <span className="font-bold flex items-center gap-1.5">
+                      <span>{todayAttendance.attendance_status === "On Time" || todayAttendance.status === "On Time" ? "🟢" : todayAttendance.attendance_status === "Late Warning" || todayAttendance.status === "Late Warning" ? "🟠" : "🔴"}</span>
+                      <span>Evaluated Status: <strong>{todayAttendance.attendance_status || todayAttendance.status || "On Time"}</strong></span>
+                    </span>
+                    <span className="text-[11px] font-medium opacity-90">
+                      {todayAttendance.attendance_status === "On Time" || todayAttendance.status === "On Time"
+                        ? "Checked in 10:00 AM – 10:14 AM (On Time)"
+                        : todayAttendance.attendance_status === "Late Warning" || todayAttendance.status === "Late Warning"
+                        ? "Checked in 10:15 AM – 10:29 AM (Late Warning)"
+                        : "Checked in 10:30 AM or later (Salary Deduction Applied)"}
+                    </span>
+                  </div>
+                )}
               </div>
 
               {/* Check-In / Check-Out Buttons for Employee */}
@@ -1177,9 +1295,11 @@ export default function EmployeeDedicatedDashboardPage() {
             <span className="text-xs font-bold text-[#2563EB] bg-[#EFF6FF] px-2.5 py-1 rounded-full border border-[#2563EB]/20">
               {myAttendanceHistory.length} Logs
             </span>
-            <Link href="/dashboard/attendance/history" className="text-xs font-bold text-[#2563EB] hover:underline hidden sm:inline-block">
-              Full Attendance Hub →
-            </Link>
+            {isAdminUser && (
+              <Link href="/dashboard/attendance/history" className="text-xs font-bold text-[#2563EB] hover:underline hidden sm:inline-block">
+                Full Attendance Hub →
+              </Link>
+            )}
           </div>
         </div>
 
@@ -1211,18 +1331,20 @@ export default function EmployeeDedicatedDashboardPage() {
                         : (rec.check_in_time ? "Not Checked Out" : "--:--")}
                     </td>
                     <td className="py-2.5 px-3">
-                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border uppercase ${
-                        (rec.attendance_status || "").toLowerCase().includes("completed") ||
-                        (rec.check_out_time && rec.check_out_time !== "Not Checked Out" && rec.check_out_time !== "--:--")
-                          ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                          : (rec.attendance_status || "").toLowerCase().includes("late")
-                          ? "bg-amber-50 text-amber-700 border-amber-200"
-                          : "bg-slate-100 text-slate-600 border-slate-200"
-                      }`}>
-                        {rec.check_out_time && rec.check_out_time !== "Not Checked Out" && rec.check_out_time !== "--:--"
-                          ? "Completed"
-                          : rec.attendance_status || "Present"}
-                      </span>
+                      {(() => {
+                        const statusVal = rec.attendance_status || rec.status;
+                        const evaluated = (statusVal === "On Time" || statusVal === "Late Warning" || statusVal === "Salary Deduction")
+                          ? { status: statusVal, label: statusVal === "On Time" ? "On Time 🟢" : statusVal === "Late Warning" ? "Late Warning 🟠" : "Salary Deduction 🔴", badgeColor: statusVal === "On Time" ? "bg-emerald-50 text-emerald-700 border-emerald-200" : statusVal === "Late Warning" ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-rose-50 text-rose-700 border-rose-200" }
+                          : rec.check_in_time
+                          ? getEmployeeCheckInStatus(rec.check_in_time)
+                          : { label: "Present", badgeColor: "bg-slate-100 text-slate-600 border-slate-200" };
+
+                        return (
+                          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border uppercase inline-flex items-center gap-1 ${evaluated.badgeColor}`}>
+                            {evaluated.label}
+                          </span>
+                        );
+                      })()}
                     </td>
                   </tr>
                 ))}

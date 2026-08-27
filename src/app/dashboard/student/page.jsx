@@ -9,6 +9,7 @@ import { generatePrintable3MonthStudentCertificatePdf } from "@/lib/generate3Mon
 import { generatePrintableInternshipExperienceCertificatePdf } from "@/lib/generateInternshipExperienceCertificatePdf";
 import { dbFetch, dbSaveRecord } from "@/lib/dbPersistence";
 import { calculate30DayFeeCycles } from "@/lib/studentEnrollmentUtils";
+import { isRecordFromToday, getTodayDateString } from "@/lib/attendanceUtils";
 import {
   FaGraduationCap,
   FaCalendarAlt,
@@ -266,22 +267,27 @@ export default function StudentDedicatedDashboardPage() {
           setExamAttempts(attemptsList || []);
         } catch (e) {}
 
-        // Check Today's Attendance
+        // Check Today's Attendance strictly for TODAY only
         const key = `today_attendance_${savedEmail}`;
         const savedToday = localStorage.getItem(key);
+        let currentDayAttendance = null;
+
         if (savedToday) {
           try {
             const parsed = JSON.parse(savedToday);
-            const match = parsed.find((r) => r.type === "check_in" || r.check_in_time);
-            setTodayAttendance(match || null);
+            if (Array.isArray(parsed)) {
+              currentDayAttendance = parsed.find(r => isRecordFromToday(r) && (r.type === "check_in" || r.check_in_time));
+            } else if (isRecordFromToday(parsed)) {
+              currentDayAttendance = parsed;
+            }
           } catch (e) {}
-        } else if (studentLogs.length > 0) {
-          const todayStr = new Date().toISOString().split("T")[0];
-          const matchToday = studentLogs.find(
-            (l) => l.attendance_date === todayStr || (l.timestamp && l.timestamp.startsWith(todayStr))
-          );
-          setTodayAttendance(matchToday || null);
         }
+
+        if (!currentDayAttendance && studentLogs.length > 0) {
+          currentDayAttendance = studentLogs.find(l => isRecordFromToday(l) && (l.type === "check_in" || l.check_in_time || l.check_in));
+        }
+
+        setTodayAttendance(currentDayAttendance || null);
 
         setStudentInfo((prev) => ({
           ...prev,
@@ -533,7 +539,7 @@ export default function StudentDedicatedDashboardPage() {
       check_in_time: timeStr,
       check_out_time: "Not Checked Out",
       attendance_status: "Present (On Time)",
-      attendance_date: now.toISOString().split("T")[0],
+      attendance_date: getTodayDateString(),
       timestamp: now.toISOString(),
       public_ip: "127.0.0.1",
     };

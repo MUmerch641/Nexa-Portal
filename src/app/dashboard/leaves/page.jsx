@@ -63,39 +63,6 @@ export default function LeavesPage() {
   const [loading, setLoading] = useState(true);
   const [activeKebabId, setActiveKebabId] = useState(null);
 
-  const initialDemoLeaves = [
-    {
-      id: "1",
-      employee_name: "Muhammad Rahim Bugti",
-      type: "Emergency Leave",
-      start_date: "2026-08-01",
-      end_date: "2026-08-01",
-      reason: "Family emergency medical checkup",
-      status: "pending",
-      salary_cut: false
-    },
-    {
-      id: "2",
-      employee_name: "Ali Hassan (Student)",
-      type: "Sick Leave",
-      start_date: "2026-07-31",
-      end_date: "2026-07-31",
-      reason: "Severe fever and flu doctor advice rest",
-      status: "approved",
-      salary_cut: false
-    },
-    {
-      id: "3",
-      employee_name: "Sara Ahmed (Intern)",
-      type: "Annual Leave",
-      start_date: "2026-07-30",
-      end_date: "2026-08-07",
-      reason: "Personal travel and university exams",
-      status: "rejected",
-      salary_cut: true
-    }
-  ];
-
   useEffect(() => {
     const storedRole = (localStorage.getItem("user_role") || "admin").toLowerCase().trim();
     const currentEmail = (localStorage.getItem("current_user_email") || "").toLowerCase().trim();
@@ -117,10 +84,10 @@ export default function LeavesPage() {
 
   const fetchLeaves = async () => {
     try {
-      const mergedLeaves = await dbFetch("leaves", initialDemoLeaves);
-      setLeaves(mergedLeaves);
+      const mergedLeaves = await dbFetch("leaves", [], true);
+      setLeaves(mergedLeaves || []);
     } catch (e) {
-      setLeaves(initialDemoLeaves);
+      setLeaves([]);
     } finally {
       setLoading(false);
     }
@@ -143,10 +110,11 @@ export default function LeavesPage() {
     }
 
     const currentEmail = localStorage.getItem("current_user_email") || "";
+    const applicant = form.applicantName || (role === "student" ? "Student Applicant" : "Employee Applicant");
     const newLeave = {
       id: `leave-${Date.now()}`,
       employee_id: user?.id || "local-user",
-      employee_name: form.applicantName || (role === "student" ? "Student Applicant" : "Employee Applicant"),
+      employee_name: applicant,
       applicant_email: currentEmail.toLowerCase().trim(),
       type: form.type,
       start_date: form.startDate,
@@ -159,6 +127,15 @@ export default function LeavesPage() {
 
     try {
       await dbSaveRecord("leaves", newLeave);
+      await supabase.from("leaves").insert([{
+        employee_name: applicant,
+        type: form.type,
+        start_date: form.startDate,
+        end_date: form.endDate,
+        reason: form.reason,
+        status: "pending",
+        salary_cut: false
+      }]).catch(() => {});
     } catch(e) {}
 
     const updated = [newLeave, ...leaves];
@@ -228,6 +205,20 @@ export default function LeavesPage() {
     localStorage.setItem("software_house_leaves", JSON.stringify(updated));
 
     showToast("Leave Rejected 🔴", "Leave request rejected.", "info");
+  };
+
+  const handleDeleteLeave = async (id) => {
+    if (!confirm("Are you sure you want to delete this leave application?")) return;
+    const updated = leaves.filter(l => l.id !== id);
+    setLeaves(updated);
+    localStorage.setItem("software_house_leaves", JSON.stringify(updated));
+    dbDeleteRecord("leaves", id).catch(() => {});
+    fetch("/api/persistence", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ table: "leaves", record: { id }, action: "delete" })
+    }).catch(() => {});
+    showToast("Leave Deleted 🗑️", "Leave application removed permanently from database.", "info");
   };
 
   const focusForm = () => {
@@ -526,6 +517,15 @@ export default function LeavesPage() {
                             className="bg-white hover:bg-rose-50 text-rose-600 border border-[#E2E8F0] hover:border-rose-200 font-semibold px-3 py-1.5 rounded-lg text-xs transition-colors flex items-center gap-1 cursor-pointer"
                           >
                             <FaTimes /> Reject (Salary Cut)
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteLeave(l.id)}
+                            title="Delete Leave Application"
+                            className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                          >
+                            <FaTrashAlt className="text-xs" />
                           </button>
                         </div>
                       </td>

@@ -61,8 +61,10 @@ export default function LoginPage() {
         router.replace("/dashboard/client-portal");
       } else if (userRole === "admin") {
         router.replace("/dashboard");
+      } else if (userRole === "student") {
+        router.replace("/dashboard/student");
       } else {
-        router.replace("/dashboard/attendance");
+        router.replace("/dashboard/employee");
       }
     }
   }, [router]);

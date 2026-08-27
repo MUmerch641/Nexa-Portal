@@ -95,7 +95,7 @@ export default function InternshipsPage() {
           videoRef.current.srcObject = stream;
         }
       }
-    } catch(e) {
+    } catch (e) {
       console.log("Screen access stream initiated");
     }
   };
@@ -241,21 +241,21 @@ export default function InternshipsPage() {
   const handleStartTask = async (task) => {
     const updated = myTasks.map(t => t.id === task.id ? { ...t, isTimerRunning: true, status: "In Progress" } : t);
     setMyTasks(updated);
-    await dbSaveRecord("daily_tasks", { ...task, isTimerRunning: true, status: "In Progress" }).catch(() => {});
+    await dbSaveRecord("daily_tasks", { ...task, isTimerRunning: true, status: "In Progress" }).catch(() => { });
     showToast("Task Started ▶️", `Stopwatch running for '${task.task || task.task_title}'.`, "info");
   };
 
   const handlePauseTask = async (task) => {
     const updated = myTasks.map(t => t.id === task.id ? { ...t, isTimerRunning: false, status: "Paused" } : t);
     setMyTasks(updated);
-    await dbSaveRecord("daily_tasks", { ...task, isTimerRunning: false, status: "Paused" }).catch(() => {});
+    await dbSaveRecord("daily_tasks", { ...task, isTimerRunning: false, status: "Paused" }).catch(() => { });
     showToast("Task Paused ⏸️", `Stopwatch paused for '${task.task || task.task_title}'.`, "info");
   };
 
   const handleCompleteTask = async (task) => {
     const updated = myTasks.map(t => t.id === task.id ? { ...t, isTimerRunning: false, status: "Completed" } : t);
     setMyTasks(updated);
-    await dbSaveRecord("daily_tasks", { ...task, isTimerRunning: false, status: "Completed" }).catch(() => {});
+    await dbSaveRecord("daily_tasks", { ...task, isTimerRunning: false, status: "Completed" }).catch(() => { });
     showToast("Task Completed 🎉", `Great job! Task marked as completed.`, "success");
   };
 
@@ -279,45 +279,8 @@ export default function InternshipsPage() {
 
   const fetchInterns = async () => {
     setLoading(true);
-    const initialDefaultInterns = [
-      {
-        id: "i-101",
-        full_name: "Muhammad Rahim Bugti",
-        cnic: "35202-1234567-1",
-        email: "rahim.intern@gmail.com",
-        phone: "03001234567",
-        internship_mode: "On-Site / Offline",
-        is_remote: false,
-        course_name: "Full Stack MERN Web Development",
-        instructor: "Lead Tech Mentor",
-        start_date: "2026-05-01",
-        end_date: "2026-08-01",
-        progress: 100,
-        daily_logs: [
-          { id: "l-1", date: "2026-08-01 10:00 AM", author: "Muhammad Rahim Bugti", task: "Completed capstone backend REST API testing and Prisma ORM migrations." }
-        ]
-      },
-      {
-        id: "i-102",
-        full_name: "Zainab Ahmed",
-        cnic: "35202-9876543-2",
-        email: "zainab.intern@gmail.com",
-        phone: "03219876543",
-        internship_mode: "Remote (Work From Home)",
-        is_remote: true,
-        course_name: "UI/UX Graphic & Product Design",
-        instructor: "Lead UI/UX Mentor",
-        start_date: "2026-06-01",
-        end_date: "2026-09-01",
-        progress: 60,
-        daily_logs: [
-          { id: "l-2", date: "2026-08-01 11:30 AM", author: "Zainab Ahmed", task: "Designed high-fidelity Figma component library and color tokens." }
-        ]
-      }
-    ];
-
-    const data = await dbFetch("interns", initialDefaultInterns);
-    setInterns(data);
+    const data = await dbFetch("interns", [], true);
+    setInterns(data || []);
     setLoading(false);
   };
 
@@ -401,7 +364,7 @@ export default function InternshipsPage() {
 
     setInterns(updated);
     const targetIntern = updated.find(i => String(i.id) === String(internId));
-    if (targetIntern) await dbSaveRecord("interns", targetIntern).catch(() => {});
+    if (targetIntern) await dbSaveRecord("interns", targetIntern).catch(() => { });
 
     setDailyLogText("");
     setSelectedInternId(null);
@@ -413,7 +376,7 @@ export default function InternshipsPage() {
     const updated = interns.map((i) => (String(i.id) === String(id) ? { ...i, progress: pVal } : i));
     setInterns(updated);
     const targetIntern = updated.find(i => String(i.id) === String(id));
-    if (targetIntern) await dbSaveRecord("interns", targetIntern).catch(() => {});
+    if (targetIntern) await dbSaveRecord("interns", targetIntern).catch(() => { });
   };
 
   const executeDeleteIntern = async () => {
@@ -424,9 +387,9 @@ export default function InternshipsPage() {
     try {
       const updated = interns.filter((i) => i.id !== id);
       setInterns(updated);
-      await dbDeleteRecord("interns", id, deleteModal.intern.email || "").catch(() => {});
+      await dbDeleteRecord("interns", id, deleteModal.intern.email || "").catch(() => { });
       showToast("Intern Deleted 🗑️", "Internship record removed successfully.", "info");
-    } catch(e) {
+    } catch (e) {
       showToast("Error", "Failed to delete intern record.", "error");
     } finally {
       setDeleteModal({ isOpen: false, intern: null, loading: false });
@@ -535,26 +498,24 @@ export default function InternshipsPage() {
               {myTasks.map((task) => (
                 <div
                   key={task.id}
-                  className={`p-4 rounded-xl border transition-all flex flex-col justify-between space-y-3 ${
-                    task.status === "Completed"
+                  className={`p-4 rounded-xl border transition-all flex flex-col justify-between space-y-3 ${task.status === "Completed"
                       ? "bg-emerald-50/50 border-emerald-200"
                       : task.isTimerRunning
-                      ? "bg-blue-50/60 border-blue-300 ring-2 ring-blue-500/20"
-                      : "bg-[#F8FAFC] border-slate-200"
-                  }`}
+                        ? "bg-blue-50/60 border-blue-300 ring-2 ring-blue-500/20"
+                        : "bg-[#F8FAFC] border-slate-200"
+                    }`}
                 >
                   <div className="space-y-2">
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-white text-blue-700 border border-blue-200">
                         {task.category || "Development"}
                       </span>
-                      <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full border ${
-                        task.status === "Completed"
+                      <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full border ${task.status === "Completed"
                           ? "bg-emerald-100 text-emerald-800 border-emerald-300"
                           : task.status === "In Progress"
-                          ? "bg-blue-100 text-blue-800 border-blue-300"
-                          : "bg-amber-100 text-amber-800 border-amber-300"
-                      }`}>
+                            ? "bg-blue-100 text-blue-800 border-blue-300"
+                            : "bg-amber-100 text-amber-800 border-amber-300"
+                        }`}>
                         {task.status || "Pending"}
                       </span>
                     </div>
@@ -644,11 +605,10 @@ export default function InternshipsPage() {
               <button
                 type="button"
                 onClick={() => setForm({ ...form, internship_mode: "On-Site / Offline" })}
-                className={`flex-1 py-2 px-4 text-xs font-bold rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer ${
-                  form.internship_mode === "On-Site / Offline"
+                className={`flex-1 py-2 px-4 text-xs font-bold rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer ${form.internship_mode === "On-Site / Offline"
                     ? "bg-[#2563EB] text-white shadow-xs"
                     : "bg-[#F8FAFC] text-[#64748B] border border-[#E2E8F0] hover:bg-[#EFF6FF]"
-                }`}
+                  }`}
               >
                 <FaBuilding className="text-xs" /> On-Site
               </button>
@@ -656,11 +616,10 @@ export default function InternshipsPage() {
               <button
                 type="button"
                 onClick={() => setForm({ ...form, internship_mode: "Remote (Work From Home)" })}
-                className={`flex-1 py-2 px-4 text-xs font-bold rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer ${
-                  form.internship_mode === "Remote (Work From Home)"
+                className={`flex-1 py-2 px-4 text-xs font-bold rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer ${form.internship_mode === "Remote (Work From Home)"
                     ? "bg-[#2563EB] text-white shadow-xs"
                     : "bg-[#F8FAFC] text-[#64748B] border border-[#E2E8F0] hover:bg-[#EFF6FF]"
-                }`}
+                  }`}
               >
                 <FaHome className="text-xs" /> Remote
               </button>
@@ -893,11 +852,10 @@ export default function InternshipsPage() {
                         </button>
 
                         {activeKebabId === st.id && (
-                          <div className={`absolute right-0 w-44 rounded-xl bg-white p-1.5 shadow-xl border border-[#E2E8F0] z-50 space-y-0.5 text-xs text-left animate-in fade-in zoom-in-95 duration-100 ${
-                            idx >= Math.max(0, filteredInterns.length - 2)
+                          <div className={`absolute right-0 w-44 rounded-xl bg-white p-1.5 shadow-xl border border-[#E2E8F0] z-50 space-y-0.5 text-xs text-left animate-in fade-in zoom-in-95 duration-100 ${idx >= Math.max(0, filteredInterns.length - 2)
                               ? "bottom-full mb-1 origin-bottom-right"
                               : "top-full mt-1 origin-top-right"
-                          }`}>
+                            }`}>
                             <button
                               type="button"
                               onClick={() => {

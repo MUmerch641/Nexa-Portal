@@ -227,8 +227,8 @@ export default function CoursesPage() {
       },
     ];
 
-    dbFetch("students", initialDefaultStudents).then((data) => {
-      setStudents(data);
+    dbFetch("students", [], true).then((data) => {
+      setStudents(data || []);
       setLoading(false);
     });
 
@@ -483,7 +483,12 @@ export default function CoursesPage() {
       const filtered = students.filter((s) => s.id !== id && (email ? s.email !== email : true));
       setStudents(filtered);
       dbDeleteRecord("students", id, email || "").catch(() => {});
-      showToast("Student Removed 🗑️", "Student record removed from directory.", "info");
+      fetch("/api/persistence", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ table: "students", record: { id, email }, action: "delete" })
+      }).catch(() => {});
+      showToast("Student Removed 🗑️", "Student record removed permanently from database.", "info");
     } catch(e) {
       showToast("Error", "Failed to delete student record.", "error");
     } finally {

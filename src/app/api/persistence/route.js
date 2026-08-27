@@ -12,16 +12,19 @@ const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY && !process.env.NE
   ? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
   : LIVE_SUPABASE_ANON_KEY;
 
-const supabase = createClient(supabaseUrl, supabaseKey);
+// Use service role key for write operations (has full access)
+const serviceRoleKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV6d213dGtsZGdjaG51cXhhbW92Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4NTQwNTEyNiwiZXhwIjoyMTAwOTgxMTI2fQ.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W3YpPv1ZI";
+
+const supabase = createClient(supabaseUrl, serviceRoleKey);
 
 function convertTo24HourTime(timeStr) {
   if (!timeStr || timeStr === "--:--" || String(timeStr).includes("Not Checked Out")) return null;
   const str = String(timeStr).trim();
   if (/^\d{2}:\d{2}(:\d{2})?$/.test(str)) return str.length === 5 ? `${str}:00` : str;
-  
+
   const match = str.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)$/i);
   if (!match) return null;
-  
+
   let hours = parseInt(match[1], 10);
   const minutes = match[2];
   const seconds = match[3] || "00";
@@ -54,7 +57,6 @@ export async function GET(request) {
 
     let { data, error } = await supabase.from(table).select("*");
 
-    // If daily_tasks table gives 404 or error, fallback to 'tasks' table
     if (error && table === "daily_tasks") {
       const fallback = await supabase.from("tasks").select("*");
       if (!fallback.error && fallback.data) {
@@ -63,7 +65,6 @@ export async function GET(request) {
       }
     }
 
-    // Bidirectional formatting for attendance
     if (table === "attendance" && Array.isArray(data)) {
       try {
         const { data: allEmps } = await supabase.from("employees").select("id, full_name, email");
@@ -72,7 +73,7 @@ export async function GET(request) {
         data = data.map(item => {
           const emp = empMap.get(item.employee_id);
           const email = emp?.email || item.employee_id || "employee@example.com";
-          const name = emp?.full_name || "Employee Staff";
+          const name = emp?.full_name || "";
           return {
             id: item.id,
             employee_id: email,
@@ -90,7 +91,7 @@ export async function GET(request) {
             timestamp: `${item.date}T${item.check_in || "00:00:00"}`
           };
         });
-      } catch(e) {}
+      } catch (e) { }
     }
 
     if (error) {
@@ -121,33 +122,63 @@ export async function POST(request) {
       return NextResponse.json({ error: "Table required" }, { status: 400 });
     }
 
+    // 1. DELETE ACTION
     if (action === "delete") {
       const { id, email, full_name, name } = record || {};
+      const cleanEmail = email ? email.toLowerCase().trim() : "";
       let deleted = false;
       let errRes = null;
 
-      if (id) {
-        const { error } = await supabase.from(table).delete().eq("id", id);
-        if (!error) deleted = true; else errRes = error;
+      // Special handling for attendance table - delete by multiple possible fields
+      if (table === "attendance") {
+        // Try deleting by id first
+        if (id) {
+          const { error } = await supabase.from("attendance").delete().eq("id", id);
+          if (!error) deleted = true; else errRes = error;
+        }
+        
+        // Also try deleting by user_email/date combination (for student attendance)
+        if (!deleted && cleanEmail) {
+          // Check if this is a student attendance record
+          const { data: existing } = await supabase.from("attendance").select("id").or(`student_id.eq.${cleanEmail},user_email.eq.${cleanEmail}`).limit(1);
+          if (existing && existing.length > 0) {
+            const { error } = await supabase.from("attendance").delete().eq("id", existing[0].id);
+            if (!error) deleted = true; else errRes = error;
+          }
+        }
+      } else {
+        // For other tables, use standard deletion
+        if (cleanEmail) {
+          const { error } = await supabase.from(table).delete().eq("email", cleanEmail);
+          if (!error) deleted = true; else errRes = error;
+        }
+        if (id && String(id).includes("-") && isNaN(Number(id))) {
+          const { error } = await supabase.from(table).delete().eq("id", id);
+          if (!error) deleted = true; else if (!errRes) errRes = error;
+        }
+        if (full_name || name) {
+          const { error } = await supabase.from(table).delete().eq("full_name", full_name || name);
+          if (!error) deleted = true; else if (!errRes) errRes = error;
+        }
       }
-      if (email) {
-        const { error } = await supabase.from(table).delete().eq("email", email);
-        if (!error) deleted = true; else if (!errRes) errRes = error;
+
+      if (cleanEmail && (table === "employees" || table === "students" || table === "interns")) {
+        await supabase.from("app_users").delete().eq("email", cleanEmail).catch(() => { });
+        await supabase.from("payrolls").delete().eq("email", cleanEmail).catch(() => { });
+        await supabase.from("performances").delete().eq("email", cleanEmail).catch(() => { });
       }
-      if (full_name || name) {
-        const { error } = await supabase.from(table).delete().eq("full_name", full_name || name);
-        if (!error) deleted = true; else if (!errRes) errRes = error;
-      }
+
       return NextResponse.json({ success: true, deleted, error: errRes ? errRes.message : null });
     }
 
+    // 2. SAVE ACTION
     if (record) {
-      // Special schema normalization for Supabase 'attendance'
+      // 2.1 Attendance
       if (table === "attendance") {
         const attDate = record.date || record.attendance_date || (record.timestamp ? record.timestamp.split("T")[0] : new Date().toISOString().split("T")[0]);
         const checkInTime = convertTo24HourTime(record.check_in || record.check_in_time) || "09:00:00";
         const checkOutTime = convertTo24HourTime(record.check_out || record.check_out_time);
-        
+
         let empUuid = null;
         const targetEmail = (record.employee_id || record.user_email || record.email || "").toLowerCase().trim();
         if (targetEmail) {
@@ -166,7 +197,6 @@ export async function POST(request) {
           ip_address: record.ip_address || record.public_ip || "127.0.0.1"
         };
 
-        // Check if an attendance record for this date and employee already exists in Supabase
         let existingQuery = supabase.from("attendance").select("id").eq("date", attDate);
         if (empUuid) {
           existingQuery = existingQuery.eq("employee_id", empUuid);
@@ -181,6 +211,133 @@ export async function POST(request) {
         return NextResponse.json({ success: true });
       }
 
+      // 2.2 Students (Student Attendance support)
+      if (table === "students") {
+        const cleanEmail = (record.email || "").toLowerCase().trim();
+        const passVal = record.password || record.assigned_password || "studentpassword123";
+        const stuPayload = {
+          full_name: record.full_name || cleanEmail.split("@")[0],
+          email: cleanEmail,
+          phone: record.phone || "",
+          course_name: record.course_name || "Full Stack MERN Web Development",
+          status: record.status || "Active"
+        };
+
+        if (cleanEmail) {
+          try {
+            const { data: existS } = await supabase.from("students").select("id").eq("email", cleanEmail).limit(1);
+            if (existS && existS.length > 0) {
+              await supabase.from("students").update(stuPayload).eq("id", existS[0].id);
+            } else {
+              await supabase.from("students").insert([stuPayload]);
+            }
+          } catch (e) { }
+
+          try {
+            const userPayload = {
+              email: cleanEmail,
+              password: passVal,
+              full_name: stuPayload.full_name,
+              role: "student",
+              status: "active"
+            };
+            const { data: existU } = await supabase.from("app_users").select("id").eq("email", cleanEmail).limit(1);
+            if (existU && existU.length > 0) {
+              await supabase.from("app_users").update(userPayload).eq("id", existU[0].id);
+            } else {
+              await supabase.from("app_users").insert([userPayload]);
+            }
+          } catch (e) { }
+        }
+
+        return NextResponse.json({ success: true });
+      }
+
+      // 2.3 Student Attendance
+      if (table === "attendance" && record.student_id) {
+        const attDate = record.date || record.attendance_date || new Date().toISOString().split("T")[0];
+        const studentEmail = (record.student_id || record.user_email || record.user_id || "").toLowerCase().trim();
+        const studentName = record.student_name || record.user_name || record.name || studentEmail.split("@")[0];
+        
+        let attendanceStatus = "Present";
+        if ((record.status || "").toLowerCase().includes("absent")) {
+          attendanceStatus = "Absent";
+        } else if ((record.status || "").toLowerCase().includes("late")) {
+          attendanceStatus = "Late";
+        } else if ((record.status || "").toLowerCase().includes("leave")) {
+          attendanceStatus = "Leave";
+        }
+
+        const checkInTime = convertTo24HourTime(record.check_in || record.check_in_time) || "09:00:00";
+        const checkOutTime = convertTo24HourTime(record.check_out || record.check_out_time);
+
+        const attPayload = {
+          student_id: studentEmail,
+          user_email: studentEmail,
+          user_name: studentName,
+          attendance_date: attDate,
+          date: attDate,
+          status: attendanceStatus,
+          attendance_status: attendanceStatus,
+          check_in: checkInTime,
+          check_in_time: checkInTime,
+          check_out: checkOutTime,
+          check_out_time: checkOutTime,
+          ip_address: record.ip_address || "127.0.0.1",
+          public_ip: record.ip_address || "127.0.0.1"
+        };
+
+        // Check for existing record
+        const { data: existingRows } = await supabase
+          .from("attendance")
+          .select("id")
+          .or(`student_id.eq.${studentEmail},user_email.eq.${studentEmail}`)
+          .eq("attendance_date", attDate)
+          .limit(1);
+
+        if (existingRows && existingRows.length > 0) {
+          await supabase.from("attendance").update(attPayload).eq("id", existingRows[0].id);
+        } else {
+          await supabase.from("attendance").insert([attPayload]);
+        }
+        
+        // Also update student attendance percentage
+        try {
+          const { data: studentData } = await supabase
+            .from("students")
+            .select("id, attendance")
+            .eq("email", studentEmail)
+            .limit(1);
+
+          if (studentData && studentData[0]) {
+            const { data: recentAttendance } = await supabase
+              .from("attendance")
+              .select("status")
+              .or(`student_id.eq.${studentEmail},user_email.eq.${studentEmail}`)
+              .gte("attendance_date", new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0]);
+
+            if (recentAttendance && recentAttendance.length > 0) {
+              const presentCount = recentAttendance.filter(a => 
+                (a.status || "").toLowerCase().includes("present") || 
+                (a.status || "").toLowerCase().includes("on time") ||
+                (a.status || "").toLowerCase().includes("leave")
+              ).length;
+              const newAttendanceRate = Math.round((presentCount / recentAttendance.length) * 100);
+
+              await supabase
+                .from("students")
+                .update({ attendance: newAttendanceRate })
+                .eq("id", studentData[0].id);
+            }
+          }
+        } catch (e) {
+          console.debug(`Could not update student attendance for ${studentEmail}:`, e);
+        }
+
+        return NextResponse.json({ success: true });
+      }
+
+      // 2.4 General Tables (Projects, Incomes, Expenses, etc.)
       const cleaned = {};
       const invalidColumns = [
         "cnic", "internship_mode", "resources_url", "screen_access_url",
@@ -199,75 +356,9 @@ export async function POST(request) {
         cleaned[key] = val;
       });
 
-      // Special schema normalization for Supabase 'employees'
-      if (table === "employees") {
-        const passVal = record.password || record.assigned_password || "employeepassword123";
-        cleaned.user_id = `auth:${passVal}`;
-        cleaned.password = passVal; // If column exists
-        if (!cleaned.status) cleaned.status = "active";
-
-        // Also save to app_users table
-        await supabase.from("app_users").upsert([{
-          email: cleaned.email,
-          password: passVal,
-          full_name: cleaned.full_name,
-          role: (cleaned.employment_type || "").includes("Intern") ? "intern" : "employee",
-          status: cleaned.status || "active"
-        }], { onConflict: "email" }).catch(() => {});
-      }
-
-      // Special schema normalization for Supabase 'students'
-      if (table === "students") {
-        const passVal = record.password || record.assigned_password || "studentpassword";
-        cleaned.enrollment_no = record.enrollment_no || record.student_id || record.id || `s-${Date.now()}`;
-        cleaned.course_name = record.course_name || record.course || "Full Stack MERN Web Development";
-        cleaned.admission_date = record.admission_date || record.enrollment_date || record.start_date || new Date().toISOString().split("T")[0];
-        cleaned.emergency_contact = `auth:${passVal}`;
-        cleaned.password = passVal; // If column exists
-        if (!cleaned.status) cleaned.status = "Active";
-
-        // Also save to app_users table
-        await supabase.from("app_users").upsert([{
-          email: cleaned.email,
-          password: passVal,
-          full_name: cleaned.full_name,
-          role: "student",
-          status: cleaned.status || "Active"
-        }], { onConflict: "email" }).catch(() => {});
-      }
-
-      // Special schema normalization for 'interns' -> save to 'employees' and 'app_users'
-      if (table === "interns") {
-        const passVal = record.password || record.assigned_password || "internpassword";
-        const internEmpPayload = {
-          full_name: record.full_name || record.name || "Intern",
-          email: record.email,
-          phone: record.phone || "",
-          department: record.tech_domain || record.course_name || "Software Engineering",
-          designation: "Software Intern",
-          employment_type: "3-Month Free Internship",
-          status: "active",
-          user_id: `auth:${passVal}`,
-        };
-        await supabase.from("employees").upsert([internEmpPayload], { onConflict: "email" }).catch(() => {});
-        await supabase.from("app_users").upsert([{
-          email: record.email,
-          password: passVal,
-          full_name: record.full_name || "Intern",
-          role: "intern",
-          status: "active"
-        }], { onConflict: "email" }).catch(() => {});
-      }
-
-      if (table === "employees" && cleaned.email) {
-        await supabase.from("employees").upsert([cleaned], { onConflict: "email" }).catch(() => {});
-      } else if (table === "students" && cleaned.email) {
-        await supabase.from("students").upsert([cleaned], { onConflict: "email" }).catch(() => {});
-      } else {
-        const { error: insErr } = await supabase.from(table).insert([cleaned]);
-        if (insErr) {
-          await supabase.from(table).upsert([cleaned]).catch(() => {});
-        }
+      const { error: insErr } = await supabase.from(table).insert([cleaned]).catch(() => ({}));
+      if (insErr) {
+        await supabase.from(table).upsert([cleaned]).catch(() => { });
       }
     }
 

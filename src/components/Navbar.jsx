@@ -171,36 +171,13 @@ export default function Navbar({ onMenuClick, isSidebarOpen = true }) {
   }, [userEmail]);
 
   const loadAllNotifications = async () => {
-    const DEFAULT_LEAVES = [
-      {
-        id: "leave-demo-1",
-        employee_name: "Muhammad Rahim Bugti (Staff / Student)",
-        applicant_name: "Muhammad Rahim Bugti (Staff / Student)",
-        role: "student",
-        type: "Sick Leave",
-        leave_type: "Sick Leave",
-        start_date: "2026-08-22",
-        end_date: "2026-09-22",
-        reason: "sick - doctor advised complete rest and medication",
-        status: "pending",
-        salary_cut: false,
-        applied_at: "2026-08-22"
-      }
-    ];
-
     try {
       const savedLeaves = localStorage.getItem("software_house_leaves");
       if (savedLeaves) {
         const list = JSON.parse(savedLeaves);
-        if (list.length > 0) {
+        if (Array.isArray(list)) {
           setPendingLeaves(list.filter(l => (l.status || "").toLowerCase() === "pending"));
-        } else {
-          setPendingLeaves(DEFAULT_LEAVES);
-          localStorage.setItem("software_house_leaves", JSON.stringify(DEFAULT_LEAVES));
         }
-      } else {
-        setPendingLeaves(DEFAULT_LEAVES);
-        localStorage.setItem("software_house_leaves", JSON.stringify(DEFAULT_LEAVES));
       }
     } catch(e) {}
 
@@ -214,13 +191,14 @@ export default function Navbar({ onMenuClick, isSidebarOpen = true }) {
       }
     } catch(e) {}
 
-    // Async DB fetch sync
+    // Async live Supabase DB fetch
     try {
-      const dbLeaves = await dbFetch("leaves", DEFAULT_LEAVES);
-      if (Array.isArray(dbLeaves) && dbLeaves.length > 0) {
+      const dbLeaves = await dbFetch("leaves", [], true);
+      if (Array.isArray(dbLeaves)) {
         const pending = dbLeaves.filter(l => (l.status || "").toLowerCase() === "pending");
-        if (pending.length > 0) {
-          setPendingLeaves(pending);
+        setPendingLeaves(pending);
+        if (typeof window !== "undefined") {
+          localStorage.setItem("software_house_leaves", JSON.stringify(dbLeaves));
         }
       }
     } catch (e) {}

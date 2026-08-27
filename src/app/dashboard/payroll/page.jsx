@@ -32,89 +32,8 @@ export default function PayrollDashboardPage() {
   const [selectedMonth, setSelectedMonth] = useState("2026-08");
   const [loading, setLoading] = useState(true);
 
-  // Initial Employee Master Salary & Payroll List
-  const [payrolls, setPayrolls] = useState([
-    {
-      id: "p-1",
-      employee_id: "emp-101",
-      employee_name: "Muhammad Ali",
-      department: "Web Development",
-      designation: "Senior Lead Developer",
-      email: "ali.staff@gmail.com",
-      month: "2026-08",
-      basic_salary: 120000,
-      overtime_hours: 10,
-      overtime_amount: 6000,
-      leave_deduction: 0,
-      late_penalty: 500,
-      bonus_amount: 5000,
-      incentive_amount: 3000,
-      advance_deduction: 0,
-      loan_deduction: 5000,
-      final_payable_salary: 128500,
-      status: "processed"
-    },
-    {
-      id: "p-2",
-      employee_id: "emp-102",
-      employee_name: "Sara Khan",
-      department: "UI/UX Design",
-      designation: "Lead Designer",
-      email: "sara.design@gmail.com",
-      month: "2026-08",
-      basic_salary: 95000,
-      overtime_hours: 0,
-      overtime_amount: 0,
-      leave_deduction: 3650,
-      late_penalty: 0,
-      bonus_amount: 4000,
-      incentive_amount: 2000,
-      advance_deduction: 10000,
-      loan_deduction: 0,
-      final_payable_salary: 87350,
-      status: "processed"
-    },
-    {
-      id: "p-3",
-      employee_id: "emp-103",
-      employee_name: "Muhammad Rahim Bugti",
-      department: "Engineering",
-      designation: "Senior Full-Stack Developer",
-      email: "rahim.staff@gmail.com",
-      month: "2026-08",
-      basic_salary: 150000,
-      overtime_hours: 15,
-      overtime_amount: 11250,
-      leave_deduction: 0,
-      late_penalty: 0,
-      bonus_amount: 10000,
-      incentive_amount: 5000,
-      advance_deduction: 0,
-      loan_deduction: 0,
-      final_payable_salary: 176250,
-      status: "processed"
-    },
-    {
-      id: "p-4",
-      employee_id: "emp-104",
-      employee_name: "Usman Tariq",
-      department: "QA Testing",
-      designation: "Automation QA Engineer",
-      email: "usman.qa@gmail.com",
-      month: "2026-08",
-      basic_salary: 80000,
-      overtime_hours: 5,
-      overtime_amount: 2500,
-      leave_deduction: 2600,
-      late_penalty: 500,
-      bonus_amount: 3000,
-      incentive_amount: 0,
-      advance_deduction: 0,
-      loan_deduction: 0,
-      final_payable_salary: 82400,
-      status: "processed"
-    }
-  ]);
+  // Employee Master Salary & Payroll List (Fetched from Cloud Database)
+  const [payrolls, setPayrolls] = useState([]);
 
   // Modal State for Adding New Employee Payroll Record (Admin Only)
   const [createModalOpen, setCreateModalOpen] = useState(false);
@@ -226,20 +145,77 @@ export default function PayrollDashboardPage() {
     setUserEmail(savedEmail);
 
     const loadPayrolls = async () => {
-      const defaultPayrolls = [
-        { id: "p-1", employee_id: "emp-101", employee_name: "Muhammad Ali", department: "Web Development", designation: "Senior Lead Developer", email: "ali.staff@gmail.com", month: "2026-08", basic_salary: 120000, overtime_hours: 10, overtime_amount: 6000, leave_deduction: 0, late_penalty: 500, bonus_amount: 5000, incentive_amount: 3000, advance_deduction: 0, loan_deduction: 5000, final_payable_salary: 128500, status: "processed" },
-        { id: "p-2", employee_id: "emp-102", employee_name: "Sara Khan", department: "UI/UX Design", designation: "Lead Designer", email: "sara.design@gmail.com", month: "2026-08", basic_salary: 95000, overtime_hours: 0, overtime_amount: 0, leave_deduction: 3650, late_penalty: 0, bonus_amount: 4000, incentive_amount: 2000, advance_deduction: 10000, loan_deduction: 0, final_payable_salary: 87350, status: "processed" },
-        { id: "p-3", employee_id: "emp-103", employee_name: "Muhammad Rahim Bugti", department: "Engineering", designation: "Senior Full-Stack Developer", email: "rahim.staff@gmail.com", month: "2026-08", basic_salary: 150000, overtime_hours: 15, overtime_amount: 11250, leave_deduction: 0, late_penalty: 0, bonus_amount: 10000, incentive_amount: 5000, advance_deduction: 0, loan_deduction: 0, final_payable_salary: 176250, status: "processed" },
-        { id: "p-4", employee_id: "emp-104", employee_name: "Usman Tariq", department: "QA Testing", designation: "Automation QA Engineer", email: "usman.qa@gmail.com", month: "2026-08", basic_salary: 80000, overtime_hours: 5, overtime_amount: 2500, leave_deduction: 2600, late_penalty: 500, bonus_amount: 3000, incentive_amount: 0, advance_deduction: 0, loan_deduction: 0, final_payable_salary: 82400, status: "processed" }
-      ];
+      try {
+        const [cloudEmployees, cloudPayrolls] = await Promise.all([
+          dbFetch("employees", [], true).catch(() => []),
+          dbFetch("payrolls", [], true).catch(() => []),
+        ]);
 
-      const finalPayrolls = await dbFetch("payrolls", defaultPayrolls);
-      setPayrolls(finalPayrolls);
+        const payrollMap = new Map();
+        (cloudPayrolls || []).forEach(p => {
+          if (p && p.email) {
+            payrollMap.set(p.email.toLowerCase().trim(), p);
+          }
+        });
+
+        // Auto-generate / link payrolls for every registered employee in database
+        const integratedPayrolls = (cloudEmployees || []).map((emp, idx) => {
+          const empEmail = (emp.email || "").toLowerCase().trim();
+          const existing = payrollMap.get(empEmail);
+          const basic = Number(emp.basic_salary || existing?.basic_salary || 45000);
+
+          if (existing) {
+            return {
+              ...existing,
+              employee_name: emp.full_name || existing.employee_name || "Staff Member",
+              department: emp.department || existing.department || "Web Development",
+              designation: emp.designation || existing.designation || "Staff Member",
+              basic_salary: basic,
+              final_payable_salary: calculateNetSalary({ ...existing, basic_salary: basic })
+            };
+          }
+
+          const defaultRec = {
+            id: `p-${emp.id || idx + 1}`,
+            employee_id: emp.id || `emp-${idx + 101}`,
+            employee_name: emp.full_name || "Staff Member",
+            department: emp.department || "Web Development",
+            designation: emp.designation || "Staff Member",
+            email: empEmail,
+            month: selectedMonth,
+            basic_salary: basic,
+            overtime_hours: 0,
+            overtime_amount: 0,
+            leave_deduction: 0,
+            late_penalty: 0,
+            bonus_amount: 0,
+            incentive_amount: 0,
+            advance_deduction: 0,
+            loan_deduction: 0,
+            final_payable_salary: basic,
+            status: "processed"
+          };
+
+          return defaultRec;
+        });
+
+        // Also include any standalone payroll records that may exist
+        (cloudPayrolls || []).forEach(p => {
+          if (p && p.email && !integratedPayrolls.some(ip => ip.email === p.email.toLowerCase().trim())) {
+            integratedPayrolls.push(p);
+          }
+        });
+
+        setPayrolls(integratedPayrolls);
+        if (integratedPayrolls.length > 0 && typeof window !== "undefined") {
+          localStorage.setItem("software_house_payrolls", JSON.stringify(integratedPayrolls));
+        }
+      } catch (e) {}
       setLoading(false);
     };
 
     loadPayrolls();
-  }, []);
+  }, [selectedMonth]);
 
   const savePayrollsState = (newList) => {
     setPayrolls(newList);
@@ -375,7 +351,7 @@ export default function PayrollDashboardPage() {
     );
   };
 
-  const handleUpdateRecord = (e) => {
+  const handleUpdateRecord = async (e) => {
     e.preventDefault();
     if (!editingRecord) return;
 
@@ -387,6 +363,31 @@ export default function PayrollDashboardPage() {
 
     const updated = payrolls.map((p) => (p.id === editingRecord.id ? updatedRecord : p));
     savePayrollsState(updated);
+
+    // Save to Database
+    try {
+      await dbSaveRecord("payrolls", updatedRecord).catch(() => {});
+      await supabase.from("payrolls").upsert([
+        {
+          employee_name: updatedRecord.employee_name,
+          email: updatedRecord.email,
+          department: updatedRecord.department,
+          designation: updatedRecord.designation,
+          month: updatedRecord.month || selectedMonth,
+          basic_salary: updatedRecord.basic_salary,
+          overtime_hours: updatedRecord.overtime_hours,
+          overtime_amount: updatedRecord.overtime_amount,
+          leave_deduction: updatedRecord.leave_deduction,
+          late_penalty: updatedRecord.late_penalty,
+          bonus_amount: updatedRecord.bonus_amount,
+          incentive_amount: updatedRecord.incentive_amount,
+          loan_deduction: updatedRecord.loan_deduction,
+          final_payable_salary: updatedRecord.final_payable_salary,
+          status: "processed"
+        }
+      ], { onConflict: "email" }).catch(() => {});
+    } catch (e) {}
+
     setEditModalOpen(false);
     setEditingRecord(null);
     showAlert("Salary Recalculated & Saved ⚡", `Updated final payable salary for ${updatedRecord.employee_name} is Rs. ${finalNet.toLocaleString()}.`, "success");
@@ -407,6 +408,11 @@ export default function PayrollDashboardPage() {
       if (id) {
         await supabase.from("payrolls").delete().eq("id", id);
       }
+      fetch("/api/persistence", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ table: "payrolls", record: { id, email: recordToDelete?.email }, action: "delete" })
+      }).catch(() => {});
     } catch(e) {}
   };
 

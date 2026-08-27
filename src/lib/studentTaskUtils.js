@@ -108,7 +108,7 @@ export async function saveTaskRecord(taskRecord) {
  * Get Certificates
  */
 export async function getCertificates() {
-  return await dbFetch("certificates", INITIAL_CERTIFICATES);
+  return await dbFetch("certificates", [], true);
 }
 
 /**

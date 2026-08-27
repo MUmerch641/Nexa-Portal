@@ -56,19 +56,19 @@ export default function DashboardLayout({ children }) {
       const currentPath = pathname ? pathname.replace(/\/$/, "") : "";
 
       if (userRole === "employee") {
-        if (adminOnlyPaths.includes(currentPath) || currentPath === "/dashboard") {
-          showToast("403 Forbidden 🛑", "Access Denied: Admin privileges required. Redirecting to Employee Portal...", "error");
+        if (adminOnlyPaths.includes(currentPath) || currentPath === "/dashboard" || currentPath === "/dashboard/student") {
+          showToast("403 Forbidden 🛑", "Access Denied: You do not have permission to access this area. Redirecting to Employee Portal...", "error");
           router.replace("/dashboard/employee");
           return;
         }
       } else if (userRole === "student") {
-        if (adminOnlyPaths.includes(currentPath) || currentPath === "/dashboard") {
-          showToast("403 Forbidden 🛑", "Access Denied: Admin privileges required. Redirecting to Student Portal...", "error");
+        if (adminOnlyPaths.includes(currentPath) || currentPath === "/dashboard" || currentPath === "/dashboard/employee") {
+          showToast("403 Forbidden 🛑", "Access Denied: You do not have permission to access this area. Redirecting to Student Portal...", "error");
           router.replace("/dashboard/student");
           return;
         }
       } else if (userRole === "intern") {
-        if (adminOnlyPaths.includes(currentPath) || currentPath === "/dashboard") {
+        if (adminOnlyPaths.includes(currentPath) || currentPath === "/dashboard" || currentPath === "/dashboard/employee") {
           showToast("403 Forbidden 🛑", "Access Denied. Redirecting to Internships Portal...", "error");
           router.replace("/dashboard/internships");
           return;
@@ -113,6 +113,22 @@ export default function DashboardLayout({ children }) {
   }
 
   const isAdminRole = role === "admin" || role === "hr" || role === "manager" || role === "accounts";
+  const hideSidebar = true; // Set to true to hide sidebar completely
+
+  if (hideSidebar) {
+    return (
+      <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] flex flex-col">
+        <Navbar isSidebarOpen={false} onMenuClick={() => {}} />
+
+        <main className="flex-1 p-6 max-w-7xl w-full mx-auto">
+          {children}
+        </main>
+
+        {/* Global Toast Notification System */}
+        <ToastContainer />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] flex">
