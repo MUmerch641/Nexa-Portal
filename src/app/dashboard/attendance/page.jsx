@@ -7,7 +7,7 @@ import { dbFetch, dbSaveRecord, dbDeleteRecord } from "@/lib/dbPersistence";
 import Modal from "@/components/Modal";
 import { showToast } from "@/components/Toast";
 import { getCurrentMinutes, determineAttendanceState, isRecordFromToday, getTodayDateString, getEmployeeCheckInStatus, timeToMinutes, minutesToTime } from "@/lib/attendanceUtils";
-import { fetchAttendancePolicy } from "@/lib/attendancePolicyUtils";
+import { fetchAttendancePolicy, updateAttendancePolicy } from "@/lib/attendancePolicyUtils";
 import { fetchCurrentPublicIp, verifyOfficeWifiAttendance, getActiveOfficeNetworks } from "@/lib/attendanceIpUtils";
 import {
   FaWifi,
@@ -239,10 +239,11 @@ export default function AttendancePage() {
     try {
       localStorage.setItem("attendance_policy", JSON.stringify(updatedPolicy));
       localStorage.setItem("software_house_attendance_policy", JSON.stringify(updatedPolicy));
+      await updateAttendancePolicy(updatedPolicy);
       await dbSaveRecord("settings", { id: "attendance_policy", ...updatedPolicy }).catch(() => {});
     } catch(e) {}
     setShowPolicyModal(false);
-    showToast("Policy Updated 🛡️", "Attendance Policy Timeline hours updated successfully!", "success");
+    showToast("Policy Updated 🛡️", "Attendance Policy Timeline hours updated successfully & saved to Supabase!", "success");
     window.dispatchEvent(new Event("storage"));
   };
 
