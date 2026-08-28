@@ -89,19 +89,17 @@ export default function Navbar({ onMenuClick, isSidebarOpen = true }) {
   }, []);
 
   const toggleDarkMode = () => {
-    setIsDarkMode((prev) => {
-      const nextTheme = !prev;
-      if (nextTheme) {
-        document.documentElement.classList.add("dark");
-        localStorage.setItem("nexa_theme", "dark");
-        showToast("Dark Mode Active 🌙", "Sleek Dark Theme enabled across Nexa Portal.", "info");
-      } else {
-        document.documentElement.classList.remove("dark");
-        localStorage.setItem("nexa_theme", "light");
-        showToast("Light Mode Active ☀️", "Clean Light Theme enabled across Nexa Portal.", "info");
-      }
-      return nextTheme;
-    });
+    const nextTheme = !isDarkMode;
+    setIsDarkMode(nextTheme);
+    if (nextTheme) {
+      document.documentElement.classList.add("dark");
+      localStorage.setItem("nexa_theme", "dark");
+      showToast("Dark Mode Active 🌙", "Sleek Dark Theme enabled across Nexa Portal.", "info");
+    } else {
+      document.documentElement.classList.remove("dark");
+      localStorage.setItem("nexa_theme", "light");
+      showToast("Light Mode Active ☀️", "Clean Light Theme enabled across Nexa Portal.", "info");
+    }
   };
 
   const handleMouseEnterNotif = () => {
