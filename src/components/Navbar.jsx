@@ -37,7 +37,9 @@ import {
   FaTimesCircle,
   FaShieldAlt,
   FaInfoCircle,
-  FaUserGraduate
+  FaUserGraduate,
+  FaSun,
+  FaMoon
 } from "react-icons/fa";
 
 export default function Navbar({ onMenuClick, isSidebarOpen = true }) {
@@ -70,7 +72,37 @@ export default function Navbar({ onMenuClick, isSidebarOpen = true }) {
   const [hasSeenNotifications, setHasSeenNotifications] = useState(false);
   const [dismissedNotifIds, setDismissedNotifIds] = useState([]);
   const [activeNotifCategory, setActiveNotifCategory] = useState("all");
+  const [isDarkMode, setIsDarkMode] = useState(false);
   const notifCloseTimerRef = useRef(null);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const savedTheme = localStorage.getItem("nexa_theme");
+      if (savedTheme === "dark") {
+        setIsDarkMode(true);
+        document.documentElement.classList.add("dark");
+      } else {
+        setIsDarkMode(false);
+        document.documentElement.classList.remove("dark");
+      }
+    }
+  }, []);
+
+  const toggleDarkMode = () => {
+    setIsDarkMode((prev) => {
+      const nextTheme = !prev;
+      if (nextTheme) {
+        document.documentElement.classList.add("dark");
+        localStorage.setItem("nexa_theme", "dark");
+        showToast("Dark Mode Active 🌙", "Sleek Dark Theme enabled across Nexa Portal.", "info");
+      } else {
+        document.documentElement.classList.remove("dark");
+        localStorage.setItem("nexa_theme", "light");
+        showToast("Light Mode Active ☀️", "Clean Light Theme enabled across Nexa Portal.", "info");
+      }
+      return nextTheme;
+    });
+  };
 
   const handleMouseEnterNotif = () => {
     if (notifCloseTimerRef.current) {
@@ -510,6 +542,20 @@ export default function Navbar({ onMenuClick, isSidebarOpen = true }) {
           className="md:hidden p-2 text-[#64748B] hover:text-[#0F172A] hover:bg-[#F8FAFC] rounded-xl border border-[#E2E8F0] cursor-pointer"
         >
           <FaSearch className="text-sm text-[#2563EB]" />
+        </button>
+
+        {/* Dark / Light Mode Toggle Button */}
+        <button
+          type="button"
+          onClick={toggleDarkMode}
+          className="p-2 text-[#64748B] dark:text-amber-400 hover:bg-[#F8FAFC] dark:hover:bg-slate-800 rounded-xl transition-all border border-[#E2E8F0] dark:border-slate-700 cursor-pointer flex items-center justify-center shadow-xs"
+          title={isDarkMode ? "Switch to Light Mode ☀️" : "Switch to Dark Mode 🌙"}
+        >
+          {isDarkMode ? (
+            <FaSun className="text-base text-amber-400" />
+          ) : (
+            <FaMoon className="text-base text-[#2563EB]" />
+          )}
         </button>
 
         {/* Notifications Bell */}
