@@ -39,11 +39,11 @@ const adminMenuGroups = [
     ]
   },
   {
-    title: "Attendance & HR",
+    title: "Attendance & Admin",
     id: "hr",
     items: [
       { name: "Attendance Control", href: "/dashboard/attendance", icon: FaCalendarCheck },
-      { name: "Leave Approvals", href: "/dashboard/leaves", icon: FaUserClock },
+      { name: "Leave & Admin Approvals", href: "/dashboard/leaves", icon: FaUserClock },
       { name: "Payroll & Payslips", href: "/dashboard/payroll", icon: FaWallet },
       { name: "Performance Reviews", href: "/dashboard/performance", icon: FaTrophy },
       { name: "Complaints Hub", href: "/dashboard/complaints", icon: FaExclamationTriangle },
@@ -53,7 +53,6 @@ const adminMenuGroups = [
     title: "Academic & Students",
     id: "academic",
     items: [
-      { name: "Student Portal", href: "/dashboard/student", icon: FaGraduationCap },
       { name: "Courses & Students", href: "/dashboard/courses", icon: FaGraduationCap },
       { name: "3-Month Internships", href: "/dashboard/internships", icon: FaLaptopCode },
       { name: "Announcement Board", href: "/dashboard/announcements", icon: FaBullhorn },

@@ -47,12 +47,14 @@ export async function GET(request) {
 
     let { data, error } = await supabase.from(table).select("*");
 
-    if (error && table === "daily_tasks") {
-      const fallback = await supabase.from("tasks").select("*");
-      if (!fallback.error && fallback.data) {
-        data = fallback.data;
-        error = null;
-      }
+    if (table === "daily_tasks" && Array.isArray(data)) {
+      data = data.map(item => ({
+        ...item,
+        task: item.task_title || item.task || item.title || "Untitled Task",
+        assignedTo: item.assigned_to ? `${item.assigned_to} (${item.assigned_to_email || ""})` : item.assignedTo,
+        assigned_to_name: item.assigned_to || item.assigned_to_name,
+        assigned_to_email: item.assigned_to_email || item.email
+      }));
     }
 
     if (table === "attendance" && Array.isArray(data)) {
@@ -327,7 +329,104 @@ export async function POST(request) {
         return NextResponse.json({ success: true });
       }
 
-      // 2.4 General Tables (Projects, Incomes, Expenses, etc.)
+      // 2.4 Daily Tasks Table (Schema Columns: task_title, description, priority, status, assigned_to_email)
+      if (table === "daily_tasks") {
+        const taskTitle = record.task_title || record.task || record.title || "Untitled Task";
+        const desc = record.description || record.task || "Workstream deliverable";
+        const cleanEmail = (record.assigned_to_email || record.email || "staff@nexa-portal.com").toLowerCase().trim() || "staff@nexa-portal.com";
+        const assignName = record.assigned_to_name || record.assignedTo || cleanEmail.split("@")[0] || "Staff Member";
+
+        // Primary Payload matching exact Supabase Schema (assigned_to_email, task_title, description, priority, status)
+        const taskPayload = {
+          task_title: taskTitle,
+          description: desc,
+          priority: record.priority || "Medium",
+          status: record.status || "Pending",
+          assigned_to_email: cleanEmail
+        };
+
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        if (record.id && typeof record.id === "string" && uuidRegex.test(record.id)) {
+          taskPayload.id = record.id;
+        }
+
+        let { data: dtData, error: dtErr } = await supabase.from("daily_tasks").insert([taskPayload]).select();
+
+        if (dtErr) {
+          console.error("daily_tasks primary insert error:", dtErr.message || dtErr);
+          // Fallback including assigned_to if present in schema
+          const fallbackPayload = {
+            ...taskPayload,
+            assigned_to: assignName
+          };
+          const fallbackRes = await supabase.from("daily_tasks").insert([fallbackPayload]).select();
+          if (!fallbackRes.error) {
+            dtData = fallbackRes.data;
+            dtErr = null;
+          } else {
+            dtErr = fallbackRes.error;
+          }
+        }
+        return NextResponse.json({ success: !dtErr, data: dtData, error: dtErr ? (dtErr.message || JSON.stringify(dtErr)) : null });
+      }
+
+      // 2.5 Complaints Table (Schema: ticket_id, title, category, description, is_anonymous, submitted_by, email, status, admin_note)
+      if (table === "complaints") {
+        const recordsToProcess = Array.isArray(body.list) ? body.list : (record ? [record] : []);
+        let lastError = null;
+
+        for (const item of recordsToProcess) {
+          if (!item) continue;
+          const ticketIdStr = item.ticket_id || `TICKET-${Math.floor(100000 + Math.random() * 900000)}`;
+          const ticketPayload = {
+            ticket_id: ticketIdStr,
+            title: item.title || "General Query",
+            category: item.category || "General",
+            description: item.description || item.title || "",
+            is_anonymous: Boolean(item.is_anonymous),
+            submitted_by: item.submitted_by || item.email || "Applicant",
+            email: item.email || "user@example.com",
+            status: item.status || "Pending",
+            admin_note: item.admin_note || "Awaiting review."
+          };
+
+          const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+          if (item.id && typeof item.id === "string" && uuidRegex.test(item.id)) {
+            ticketPayload.id = item.id;
+          }
+
+          // 1. Primary Target: complaints table
+          const { data: existing } = await supabase.from("complaints").select("id").eq("ticket_id", ticketIdStr).limit(1).catch(() => ({ data: [] }));
+          let resErr = null;
+
+          if (existing && existing.length > 0) {
+            const { error } = await supabase.from("complaints").update(ticketPayload).eq("id", existing[0].id);
+            resErr = error;
+          } else {
+            const { error } = await supabase.from("complaints").insert([ticketPayload]);
+            resErr = error;
+          }
+
+          // 2. Dual-Target Fallback: Mirror insert into confirmed daily_tasks table in Supabase
+          try {
+            await supabase.from("daily_tasks").insert([{
+              task_title: `[COMPLAINT TICKET] ${ticketIdStr}: ${item.title || item.category || "Query"}`,
+              description: `Category: ${item.category || "HR"} | Submitted By: ${item.submitted_by || item.email} | Text: ${item.description || ""}`,
+              priority: "High",
+              status: "Pending",
+              assigned_to_email: item.email || "admin@nexa.com"
+            }]);
+          } catch (dtErr) {}
+
+          if (resErr) {
+            console.error("complaints insert error:", resErr.message || resErr);
+            lastError = resErr.message || resErr;
+          }
+        }
+        return NextResponse.json({ success: !lastError, error: lastError ? String(lastError) : null });
+      }
+
+      // 2.6 General Tables (Projects, Incomes, Expenses, etc.)
       const cleaned = {};
       const invalidColumns = [
         "cnic", "internship_mode", "resources_url", "screen_access_url",

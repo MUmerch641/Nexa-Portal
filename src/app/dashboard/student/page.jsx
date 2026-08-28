@@ -48,7 +48,8 @@ import {
   FaIdCard,
   FaPhoneAlt,
   FaEnvelope,
-  FaTimes
+  FaTimes,
+  FaStar
 } from "react-icons/fa";
 
 import {
@@ -87,7 +88,10 @@ const formatSafeDueDate = (rawDate) => {
 export default function StudentDedicatedDashboardPage() {
   const [role, setRole] = useState("student");
   const [myStudentMeetings, setMyStudentMeetings] = useState([]);
+  const [myFeeNotices, setMyFeeNotices] = useState([]);
   const [profileDetailModalOpen, setProfileDetailModalOpen] = useState(false);
+  const [allStudentsList, setAllStudentsList] = useState([]);
+  const [selectedStudentEmail, setSelectedStudentEmail] = useState("");
   const [studentInfo, setStudentInfo] = useState({
     name: "Enrolled Student",
     email: "",
@@ -155,6 +159,7 @@ export default function StudentDedicatedDashboardPage() {
   });
 
   const [isAdminUser, setIsAdminUser] = useState(false);
+  const [myPerformance, setMyPerformance] = useState(null);
 
   useEffect(() => {
     const savedRole = localStorage.getItem("user_role") || "student";
@@ -167,20 +172,30 @@ export default function StudentDedicatedDashboardPage() {
 
     async function fetchStudentData() {
       const allStudents = await dbFetch("students").catch(() => []);
-      let matched = (allStudents || []).find(
-        (s) => (s.email || "").trim().toLowerCase() === savedEmail
+      const allInterns = await dbFetch("interns").catch(() => []);
+      const combined = [...(allStudents || []), ...(allInterns || [])];
+      setAllStudentsList(combined);
+
+      const activeTargetEmail = selectedStudentEmail 
+        ? selectedStudentEmail.trim().toLowerCase()
+        : savedEmail;
+
+      let matched = combined.find(
+        (s) => (s.email || "").trim().toLowerCase() === activeTargetEmail
       );
+
       let isInternRole = false;
 
-      if (!matched) {
-        const allInterns = await dbFetch("interns").catch(() => []);
-        matched = (allInterns || []).find(
-          (i) => (i.email || "").trim().toLowerCase() === savedEmail
-        );
-        if (matched) isInternRole = true;
+      // Fallback for Admin inspection or unmatched user: pick the first student in database
+      if (!matched && combined.length > 0) {
+        matched = combined[0];
       }
 
       if (matched) {
+        if (matched.intern_id || (matched.internship_mode && matched.internship_mode !== "")) {
+          isInternRole = true;
+        }
+
         const courseTitle = matched.course_name || matched.course || matched.tech_domain || "Full Stack MERN Web Development";
         const isRemote = matched.is_remote || (matched.internship_mode || "").includes("Remote") || (matched.course_name || "").includes("Remote") || (matched.batch || "").includes("Remote");
         const trackType = isInternRole 
@@ -265,6 +280,13 @@ export default function StudentDedicatedDashboardPage() {
           const attemptsList = await getExamAttemptsForUser(savedEmail);
           setAssignedExams(examsList || []);
           setExamAttempts(attemptsList || []);
+        } catch (e) {}
+
+        // Fetch My Personal Performance Record (Specific to this Student Only)
+        try {
+          const allPerfs = await dbFetch("performances", [], true).catch(() => []);
+          const myPerf = (allPerfs || []).find(p => p && p.email && p.email.toLowerCase().trim() === savedEmail);
+          setMyPerformance(myPerf || null);
         } catch (e) {}
 
         // Check Today's Attendance strictly for TODAY only
@@ -371,6 +393,25 @@ export default function StudentDedicatedDashboardPage() {
         setMyStudentMeetings(targetedMeetings);
       } catch (e) {}
 
+      // Fetch Targeted Fee Notices & Announcements for this student
+      try {
+        const cloudAnn = await dbFetch("announcements").catch(() => []);
+        const localAnn = JSON.parse(localStorage.getItem("software_house_master_announcements") || "[]");
+        const allAnn = [...(cloudAnn || []), ...(localAnn || [])];
+
+        const sEmail = (matched?.email || activeTargetEmail || savedEmail || "").toLowerCase().trim();
+        const targetedFeeNotices = allAnn.filter((a) => {
+          if (!a) return false;
+          const tType = (a.target_type || "").toLowerCase();
+          const tKey = (a.target_key || "").toLowerCase();
+          return (
+            a.is_fee_notice &&
+            (tType === "all" || tType === "all_students" || (sEmail && tKey.includes(sEmail)))
+          );
+        });
+        setMyFeeNotices(targetedFeeNotices);
+      } catch (e) {}
+
       loadStudentTasks(savedEmail);
     };
 
@@ -381,7 +422,7 @@ export default function StudentDedicatedDashboardPage() {
     };
     window.addEventListener("storage", handleStorage);
     return () => window.removeEventListener("storage", handleStorage);
-  }, []);
+  }, [selectedStudentEmail]);
 
   const loadStudentTasks = async (email) => {
     try {
@@ -723,6 +764,30 @@ export default function StudentDedicatedDashboardPage() {
 
   return (
     <div className="space-y-6 pb-12 font-sans bg-[#F8FAFC]">
+      {/* Admin Student Inspector Switcher Bar */}
+      {isAdminUser && (
+        <div className="p-4 rounded-2xl bg-blue-50/90 border border-blue-200 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs shadow-2xs">
+          <div className="flex items-center gap-2 text-blue-900 font-bold">
+            <FaShieldAlt className="text-blue-600 text-sm" />
+            <span>Admin Student Inspector Mode: Viewing student dashboard as Admin.</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="font-bold text-slate-700">Select Student:</span>
+            <select
+              value={selectedStudentEmail || studentInfo.email}
+              onChange={(e) => setSelectedStudentEmail(e.target.value)}
+              className="px-3.5 py-1.5 rounded-xl border border-blue-300 bg-white font-bold text-slate-900 outline-none focus:border-blue-600 text-xs cursor-pointer shadow-2xs"
+            >
+              {allStudentsList.map((s, idx) => (
+                <option key={idx} value={s.email}>
+                  {s.full_name || s.student_name || s.name || s.email} ({s.course_name || s.course || "Student"})
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      )}
+
       {/* === STUDENT / INTERN PROFILE HEADER BANNER (Clean & Minimalist) === */}
       <div className="rounded-3xl border border-blue-100 bg-white p-6 shadow-xs relative overflow-hidden space-y-5">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6 relative z-10">
@@ -785,6 +850,53 @@ export default function StudentDedicatedDashboardPage() {
           </div>
         </div>
       </div>
+
+      {/* === DEDICATED MONTHLY FEE REMINDER NOTICE (High-Priority Student Alert) === */}
+      {Array.isArray(myFeeNotices) && myFeeNotices.length > 0 && myFeeNotices[0] && (
+        <div className="p-5 rounded-3xl border border-amber-300 bg-gradient-to-r from-amber-50/90 via-white to-amber-50/40 shadow-xs space-y-3 animate-in fade-in zoom-in-95 duration-300">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-amber-200/80 pb-2.5">
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-extrabold uppercase tracking-wider text-amber-800 bg-amber-100 px-3 py-0.5 rounded-full border border-amber-300 flex items-center gap-1">
+                <FaMoneyBillWave className="text-amber-700 text-xs" />
+                <span>Monthly Fee Payment Alert 📧</span>
+              </span>
+              <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200">
+                Due Date: {myFeeNotices[0]?.due_date || "End of Month"}
+              </span>
+            </div>
+            <span className="text-xs text-amber-800 font-bold">
+              Dispatched by Accounts & Finance Dept
+            </span>
+          </div>
+
+          <div className="space-y-2">
+            <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
+              <span>{myFeeNotices[0]?.title || "Monthly Course Fee Reminder"}</span>
+            </h3>
+            <p className="text-xs text-slate-700 leading-relaxed bg-white/90 p-3.5 rounded-2xl border border-amber-200/60 font-sans whitespace-pre-line">
+              {myFeeNotices[0]?.content}
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-3 pt-1 border-t border-amber-200/60">
+            <div className="text-[11px] font-semibold text-slate-600 space-x-2">
+              <span><strong>Target Account:</strong> {studentInfo.email}</span>
+              <span>•</span>
+              <span><strong>Status:</strong> <span className="text-amber-700 font-bold">Pending Payment Slip</span></span>
+            </div>
+
+            <button
+              onClick={() => {
+                showToast("Fee Payment Instruction 💳", "Please transfer monthly fee to Nexa Official Account & present receipt.", "info");
+              }}
+              className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-extrabold text-xs shadow-xs transition-all cursor-pointer flex items-center gap-1.5"
+            >
+              <FaPrint className="text-xs" />
+              <span>Submit Payment Receipt / Mark Dues</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* === SCHEDULED LIVE SESSIONS & VIDEO MEETINGS (High-Priority Student Alert) === */}
       {myStudentMeetings.length > 0 && (
@@ -1276,6 +1388,40 @@ export default function StudentDedicatedDashboardPage() {
           <p className="text-sm font-bold text-emerald-600 flex items-center gap-1">
             <FaCheckCircle /> {feeStatus.status}
           </p>
+        </div>
+      </div>
+
+      {/* === SECTION: MY PERSONAL PERFORMANCE & EVALUATION SCORE === */}
+      <div className="rounded-3xl border border-blue-200 bg-linear-to-br from-blue-50/50 to-white p-6 shadow-xs space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-blue-100 pb-3">
+          <div>
+            <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
+              <FaStar className="text-blue-600" /> My Evaluation Score & Performance Rating
+            </h2>
+            <p className="text-xs text-slate-500">Your personal performance score set by Admin.</p>
+          </div>
+          <div className="px-3.5 py-1 bg-blue-600 text-white font-black text-xs rounded-full shadow-xs flex items-center gap-1.5">
+            <FaAward className="text-amber-300" /> Overall Rating: {myPerformance?.metrics ? Math.round(Object.values(myPerformance.metrics).reduce((a,b)=>a+b,0)/Object.values(myPerformance.metrics).length) : (studentInfo.attendance || 90)}%
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+          <div className="p-3.5 rounded-2xl bg-white border border-slate-200/80 shadow-2xs space-y-1">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Attendance Score</span>
+            <p className="text-xl font-black text-blue-700">{myPerformance?.metrics?.attendance || studentInfo.attendance || 90}%</p>
+          </div>
+          <div className="p-3.5 rounded-2xl bg-white border border-slate-200/80 shadow-2xs space-y-1">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Task Completion</span>
+            <p className="text-xl font-black text-emerald-700">{myPerformance?.metrics?.taskCompletion || 92}%</p>
+          </div>
+          <div className="p-3.5 rounded-2xl bg-white border border-slate-200/80 shadow-2xs space-y-1">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Deadlines Met</span>
+            <p className="text-xl font-black text-purple-700">{myPerformance?.metrics?.deadlines || 90}%</p>
+          </div>
+          <div className="p-3.5 rounded-2xl bg-white border border-slate-200/80 shadow-2xs space-y-1">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Instructor Rating</span>
+            <p className="text-xl font-black text-amber-700">{myPerformance?.metrics?.clientFeedback || 94}%</p>
+          </div>
         </div>
       </div>
 

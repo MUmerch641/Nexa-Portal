@@ -6,7 +6,7 @@ import { dbFetch, dbSaveRecord, dbSaveList } from "@/lib/dbPersistence";
 import Modal from "@/components/Modal";
 import { showToast } from "@/components/Toast";
 import { verifyOfficeWifiAttendance } from "@/lib/attendanceIpUtils";
-import { isRecordFromToday, getTodayDateString, getEmployeeCheckInStatus } from "@/lib/attendanceUtils";
+import { isRecordFromToday, isRecordFromYesterday, getTodayDateString, getEmployeeCheckInStatus } from "@/lib/attendanceUtils";
 import {
   FaUserCheck,
   FaCalendarCheck,
@@ -42,6 +42,7 @@ export default function EmployeeDedicatedDashboardPage() {
 
   // Attendance State
   const [todayAttendance, setTodayAttendance] = useState(null);
+  const [yesterdayAttendance, setYesterdayAttendance] = useState(null);
   const [myAttendanceHistory, setMyAttendanceHistory] = useState([]);
   const [markingAttendance, setMarkingAttendance] = useState(false);
   const [wifiStatus, setWifiStatus] = useState("Verifying Wi-Fi...");
@@ -172,6 +173,13 @@ export default function EmployeeDedicatedDashboardPage() {
       }
 
       setTodayAttendance(currentDayAttendance || null);
+
+      // Load Yesterday's Attendance Record for Employee View
+      let prevAttendance = userLogs.find(l => isRecordFromYesterday(l));
+      if (!prevAttendance && userLogs.length > 0) {
+        prevAttendance = userLogs.find(l => !isRecordFromToday(l));
+      }
+      setYesterdayAttendance(prevAttendance || null);
     } catch (e) {}
 
     // Verify Wi-Fi Network
@@ -191,12 +199,15 @@ export default function EmployeeDedicatedDashboardPage() {
     try {
       const allTasks = await dbFetch("daily_tasks").catch(() => []);
       const cleanEmail = email.toLowerCase().trim();
+      const namePart = cleanEmail.split("@")[0];
       const assigned = (allTasks || []).filter((t) => {
         const tEmail = (t.assigned_to_email || t.assignedToEmail || t.email || "").toLowerCase().trim();
+        const tName = (t.assigned_to_name || t.assignedTo || "").toLowerCase().trim();
         const targetAud = (t.targetAudience || "").toLowerCase();
         return (
           tEmail === cleanEmail ||
           (cleanEmail && tEmail.includes(cleanEmail)) ||
+          (namePart && tName.includes(namePart)) ||
           targetAud.includes("all paid staff") ||
           targetAud.includes("all staff") ||
           targetAud.includes("all employees")
@@ -821,6 +832,41 @@ export default function EmployeeDedicatedDashboardPage() {
                         ? "Checked in 10:15 AM – 10:29 AM (Late Warning)"
                         : "Checked in 10:30 AM or later (Salary Deduction Applied)"}
                     </span>
+                  </div>
+                )}
+
+                {/* Yesterday's Attendance Record Summary Card */}
+                {yesterdayAttendance && (
+                  <div className="bg-slate-50 rounded-xl p-3.5 border border-slate-200 space-y-2 mt-3 text-xs">
+                    <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                      <span className="font-bold text-slate-700 flex items-center gap-1.5 text-[11px]">
+                        <FaCalendarCheck className="text-blue-600" />
+                        <span>Yesterday&apos;s Attendance ({yesterdayAttendance.attendance_date || yesterdayAttendance.date || "Yesterday"})</span>
+                      </span>
+                      <span className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border ${
+                        (yesterdayAttendance.attendance_status || yesterdayAttendance.status || "").toLowerCase().includes("deduction") || (yesterdayAttendance.attendance_status || yesterdayAttendance.status || "").toLowerCase().includes("late")
+                          ? "bg-rose-50 text-rose-700 border-rose-200"
+                          : "bg-emerald-50 text-emerald-700 border-emerald-200"
+                      }`}>
+                        {yesterdayAttendance.attendance_status || yesterdayAttendance.status || "Present"}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3.5 pt-1">
+                      <div className="p-2.5 rounded-lg bg-white border border-slate-200">
+                        <span className="text-[9px] font-bold text-slate-500 uppercase block">Check-In Time</span>
+                        <span className="font-mono font-extrabold text-slate-900 text-xs">
+                          {yesterdayAttendance.check_in_time || yesterdayAttendance.check_in || "--:--"}
+                        </span>
+                      </div>
+
+                      <div className="p-2.5 rounded-lg bg-white border border-slate-200">
+                        <span className="text-[9px] font-bold text-slate-500 uppercase block">Check-Out Time</span>
+                        <span className="font-mono font-extrabold text-slate-900 text-xs">
+                          {yesterdayAttendance.check_out_time || yesterdayAttendance.check_out || "Not Checked Out"}
+                        </span>
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>

@@ -71,43 +71,25 @@ export async function checkDuplicateAccountEmail(email) {
   if (!email || !email.trim()) return false;
   const cleanEmail = email.trim().toLowerCase();
 
-  // 1. Check registered_system_users cache
-  try {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("registered_system_users");
-      if (saved) {
-        const users = JSON.parse(saved);
-        const match = users.find(
-          (u) => (u.email || "").trim().toLowerCase() === cleanEmail
-        );
-        if (match) return true;
-      }
-    }
-  } catch (e) {}
-
-  // 2. Check persistent_employees cache
-  try {
-    if (typeof window !== "undefined") {
-      const emps = JSON.parse(localStorage.getItem("persistent_employees"));
-      if (emps) {
-        const parsed = JSON.parse(emps);
-        if (Array.isArray(parsed)) {
-          const match = parsed.find(
-            (e) => (e.email || "").trim().toLowerCase() === cleanEmail
-          );
-          if (match) return true;
-        }
-      }
-    }
-  } catch (e) {}
-
-  // 3. Check DB students table
+  // Check DB students, interns, and employees active records
   try {
     const students = await dbFetch("students").catch(() => []);
     const studentMatch = (students || []).find(
-      (s) => (s.email || "").trim().toLowerCase() === cleanEmail
+      (s) => s && (s.email || "").trim().toLowerCase() === cleanEmail
     );
     if (studentMatch) return true;
+
+    const interns = await dbFetch("interns").catch(() => []);
+    const internMatch = (interns || []).find(
+      (i) => i && (i.email || "").trim().toLowerCase() === cleanEmail
+    );
+    if (internMatch) return true;
+
+    const employees = await dbFetch("employees").catch(() => []);
+    const empMatch = (employees || []).find(
+      (e) => e && (e.email || "").trim().toLowerCase() === cleanEmail
+    );
+    if (empMatch) return true;
   } catch (e) {}
 
   return false;

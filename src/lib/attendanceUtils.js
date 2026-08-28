@@ -9,6 +9,15 @@ export function getTodayDateString() {
   return `${year}-${month}-${day}`;
 }
 
+export function getYesterdayDateString() {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 /**
  * Checks if an attendance record belongs to today's date
  */
@@ -24,6 +33,27 @@ export function isRecordFromToday(r) {
       return d.getFullYear() === now.getFullYear() &&
              d.getMonth() === now.getMonth() &&
              d.getDate() === now.getDate();
+    } catch(e) {}
+  }
+  return false;
+}
+
+/**
+ * Checks if an attendance record belongs to yesterday's date
+ */
+export function isRecordFromYesterday(r) {
+  if (!r) return false;
+  const yesterday = getYesterdayDateString();
+  const rDate = r.attendance_date || r.date || (r.timestamp ? r.timestamp.split("T")[0] : "");
+  if (rDate && rDate === yesterday) return true;
+  if (r.timestamp) {
+    try {
+      const d = new Date(r.timestamp);
+      const yDate = new Date();
+      yDate.setDate(yDate.getDate() - 1);
+      return d.getFullYear() === yDate.getFullYear() &&
+             d.getMonth() === yDate.getMonth() &&
+             d.getDate() === yDate.getDate();
     } catch(e) {}
   }
   return false;

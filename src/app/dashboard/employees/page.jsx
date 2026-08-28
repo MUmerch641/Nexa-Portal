@@ -59,7 +59,7 @@ export default function EmployeesPage() {
     father_name: "",
     phone: "",
     email: "",
-    assigned_password: "employeepassword123",
+    assigned_password: "",
     blood_group: "O+",
     address: "",
     guardian_phone: "",
@@ -204,8 +204,8 @@ export default function EmployeesPage() {
         father_name: "",
         phone: "",
         email: "",
-        assigned_password: "employeepassword123",
-        confirm_password: "employeepassword123",
+        assigned_password: "",
+        confirm_password: "",
         blood_group: "O+",
         address: "",
         guardian_phone: "",
@@ -522,8 +522,8 @@ export default function EmployeesPage() {
                             </button>
 
                             {activeKebabId === emp.id && (
-                              <div className={`absolute right-0 w-44 rounded-xl bg-white p-1.5 shadow-xl border border-[#E2E8F0] z-50 space-y-0.5 text-xs text-left animate-in fade-in zoom-in-95 duration-100 ${
-                                idx >= Math.max(0, filteredEmployees.length - 2)
+                              <div className={`absolute right-0 w-44 rounded-xl bg-white p-1.5 shadow-2xl border border-[#E2E8F0] z-50 space-y-0.5 text-xs text-left animate-in fade-in zoom-in-95 duration-100 ${
+                                filteredEmployees.length > 3 && idx >= filteredEmployees.length - 1
                                   ? "bottom-full mb-1 origin-bottom-right"
                                   : "top-full mt-1 origin-top-right"
                               }`}>
@@ -767,13 +767,13 @@ export default function EmployeesPage() {
                   </div>
 
                   <div className="space-y-1">
-                    <label className="font-semibold text-[#64748B]">Assign Login Password *</label>
+                    <label className="font-semibold text-[#64748B]">Assign Login Password</label>
                     <input
                       type="text"
                       name="assigned_password"
-                      required
                       value={form.assigned_password}
                       onChange={handleChange}
+                      placeholder="Set Employee Password (e.g. Pass123)"
                       className="w-full p-2.5 rounded-xl border border-[#E2E8F0] font-semibold text-[#0F172A] outline-none focus:border-[#2563EB]"
                     />
                   </div>

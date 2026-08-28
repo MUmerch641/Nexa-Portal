@@ -785,8 +785,8 @@ export default function ComprehensiveFinanceAccountingPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-slate-800 font-medium">
-                {salaryPayments.map((sal) => (
-                  <tr key={sal.id} className="hover:bg-slate-50 transition-colors">
+                {salaryPayments.map((sal, idx) => (
+                  <tr key={`sal-pay-${sal.id || 'sal'}-${idx}`} className="hover:bg-slate-50 transition-colors">
                     <td className="py-3.5 px-3 font-bold text-slate-900">{sal.employee_name}</td>
                     <td className="py-3.5 px-3 font-mono">{sal.salary_month}</td>
                     <td className="py-3.5 px-3 font-mono font-bold">Rs. {sal.basic_salary.toLocaleString()}</td>

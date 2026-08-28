@@ -53,9 +53,12 @@ export function cleanPayloadForDb(record, table = "") {
     if (typeof value === "function" || typeof value === "symbol") return;
     if (value && typeof value === "object" && !Array.isArray(value) && !(value instanceof Date)) return;
 
-    // If ID is a custom frontend string like "emp-178540..." or "s-123", strip it so PostgreSQL auto-assigns integer/uuid ID
-    if (key === "id" && typeof value === "string" && isNaN(Number(value)) && !value.includes("-")) {
-      return;
+    // If ID is a custom frontend string like "dt-1785..." or "emp-123", strip it so PostgreSQL auto-assigns valid UUID
+    if (key === "id" && typeof value === "string") {
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (!uuidRegex.test(value) && isNaN(Number(value))) {
+        return;
+      }
     }
 
     // Strip unmapped custom frontend columns to prevent Supabase PostgREST 400 schema errors

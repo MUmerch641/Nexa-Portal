@@ -33,6 +33,8 @@ import {
   FaLock,
   FaKey,
   FaShieldAlt,
+  FaEye,
+  FaEyeSlash,
   FaTasks,
   FaPlay,
   FaPause,
@@ -49,6 +51,8 @@ export default function InternshipsPage() {
   const [currentUserEmail, setCurrentUserEmail] = useState("");
   const [currentUserName, setCurrentUserName] = useState("");
   const [myTasks, setMyTasks] = useState([]);
+  const [showAssignedPassword, setShowAssignedPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   // Kebab Context Menu State
   const [activeKebabId, setActiveKebabId] = useState(null);
@@ -148,8 +152,8 @@ export default function InternshipsPage() {
     full_name: "",
     cnic: "",
     email: "",
-    assigned_password: "internpassword123",
-    confirm_password: "internpassword123",
+    assigned_password: "",
+    confirm_password: "",
     phone: "",
     emergency_phone: "",
     internship_mode: "On-Site / Offline",
@@ -747,30 +751,50 @@ export default function InternshipsPage() {
                     <label className="block text-[10px] font-semibold uppercase text-slate-700 mb-1">
                       Temporary Password *
                     </label>
-                    <input
-                      type="password"
-                      name="assigned_password"
-                      value={form.assigned_password || ""}
-                      onChange={handleChange}
-                      placeholder="Min 6 characters"
-                      required
-                      className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-900 outline-none focus:border-blue-600 font-mono"
-                    />
+                    <div className="relative">
+                      <input
+                        type={showAssignedPassword ? "text" : "password"}
+                        name="assigned_password"
+                        value={form.assigned_password || ""}
+                        onChange={handleChange}
+                        placeholder="Enter Temporary Password"
+                        required
+                        className="w-full rounded-lg border border-slate-200 bg-white pl-2.5 pr-8 py-1.5 text-xs text-slate-900 outline-none focus:border-blue-600 font-mono"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowAssignedPassword(!showAssignedPassword)}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 transition-colors cursor-pointer p-1"
+                        title={showAssignedPassword ? "Hide Password" : "Show Password"}
+                      >
+                        {showAssignedPassword ? <FaEyeSlash className="text-xs" /> : <FaEye className="text-xs" />}
+                      </button>
+                    </div>
                   </div>
 
                   <div>
                     <label className="block text-[10px] font-semibold uppercase text-slate-700 mb-1">
                       Confirm Password *
                     </label>
-                    <input
-                      type="password"
-                      name="confirm_password"
-                      value={form.confirm_password || ""}
-                      onChange={handleChange}
-                      placeholder="Re-enter password"
-                      required
-                      className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-900 outline-none focus:border-blue-600 font-mono"
-                    />
+                    <div className="relative">
+                      <input
+                        type={showConfirmPassword ? "text" : "password"}
+                        name="confirm_password"
+                        value={form.confirm_password || ""}
+                        onChange={handleChange}
+                        placeholder="Confirm Password"
+                        required
+                        className="w-full rounded-lg border border-slate-200 bg-white pl-2.5 pr-8 py-1.5 text-xs text-slate-900 outline-none focus:border-blue-600 font-mono"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 transition-colors cursor-pointer p-1"
+                        title={showConfirmPassword ? "Hide Password" : "Show Password"}
+                      >
+                        {showConfirmPassword ? <FaEyeSlash className="text-xs" /> : <FaEye className="text-xs" />}
+                      </button>
+                    </div>
                   </div>
                 </div>
                 <p className="text-[10px] text-slate-500 italic">
@@ -852,7 +876,8 @@ export default function InternshipsPage() {
                         </button>
 
                         {activeKebabId === st.id && (
-                          <div className={`absolute right-0 w-44 rounded-xl bg-white p-1.5 shadow-xl border border-[#E2E8F0] z-50 space-y-0.5 text-xs text-left animate-in fade-in zoom-in-95 duration-100 ${idx >= Math.max(0, filteredInterns.length - 2)
+                          <div className={`absolute right-0 w-44 rounded-xl bg-white p-1.5 shadow-2xl border border-[#E2E8F0] z-50 space-y-0.5 text-xs text-left animate-in fade-in zoom-in-95 duration-100 ${
+                            filteredInterns.length > 3 && idx >= filteredInterns.length - 1
                               ? "bottom-full mb-1 origin-bottom-right"
                               : "top-full mt-1 origin-top-right"
                             }`}>

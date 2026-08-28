@@ -33,12 +33,13 @@ import {
   FaKey,
   FaShieldAlt,
   FaMoneyBillWave,
+  FaEye,
+  FaEyeSlash,
   FaVideo,
   FaTasks,
   FaEllipsisV,
   FaSearch,
   FaFilter,
-  FaEye,
   FaChevronRight
 } from "react-icons/fa";
 
@@ -47,6 +48,8 @@ export default function CoursesPage() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [role, setRole] = useState("admin");
+  const [showAssignedPassword, setShowAssignedPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   // Kebab Context Menu State
   const [activeKebabId, setActiveKebabId] = useState(null);
@@ -156,8 +159,8 @@ export default function CoursesPage() {
     full_name: "",
     cnic: "",
     email: "",
-    assigned_password: "studentpassword123",
-    confirm_password: "studentpassword123",
+    assigned_password: "",
+    confirm_password: "",
     phone: "",
     track_type: "Remote Student",
     tech_domain: "Full Stack MERN Web Development",
@@ -228,7 +231,25 @@ export default function CoursesPage() {
     ];
 
     dbFetch("students", [], true).then((data) => {
-      setStudents(data || []);
+      // Deduplicate students list by unique email and ID
+      const uniqueStudents = [];
+      const seenEmails = new Set();
+      const seenIds = new Set();
+
+      (data || []).forEach((s) => {
+        if (!s) return;
+        const cleanEm = (s.email || "").toLowerCase().trim();
+        const cleanId = (s.id || s.student_id || "").toString();
+
+        if (cleanEm && seenEmails.has(cleanEm)) return;
+        if (cleanId && seenIds.has(cleanId)) return;
+
+        if (cleanEm) seenEmails.add(cleanEm);
+        if (cleanId) seenIds.add(cleanId);
+        uniqueStudents.push(s);
+      });
+
+      setStudents(uniqueStudents);
       setLoading(false);
     });
 
@@ -345,14 +366,36 @@ export default function CoursesPage() {
     const inst = courseObj ? courseObj.instructor : "Internal Lead Trainer";
     const res = courseObj ? courseObj.resources : "";
 
-    setForm({
-      ...form,
+    setForm((prev) => ({
+      ...prev,
       course_name: selectedTitle,
+      tech_domain: selectedTitle,
       course_fee: fee,
       fee_paid: fee,
       instructor: inst,
       resources_url: res,
-    });
+    }));
+  };
+
+  const handleTechDomainSelect = (e) => {
+    const selectedDomain = e.target.value;
+    let courseObj = availableCourses.find((c) => c.title === selectedDomain);
+    if (!courseObj) {
+      courseObj = availableCourses.find((c) => selectedDomain.toLowerCase().includes(c.title.split(" ")[0].toLowerCase())) || availableCourses[0];
+    }
+    const fee = courseObj ? courseObj.defaultFee.toString() : "25000";
+    const inst = courseObj ? courseObj.instructor : "Internal Lead Trainer";
+    const res = courseObj ? courseObj.resources : "";
+
+    setForm((prev) => ({
+      ...prev,
+      tech_domain: selectedDomain,
+      course_name: courseObj.title,
+      course_fee: fee,
+      fee_paid: fee,
+      instructor: inst,
+      resources_url: res,
+    }));
   };
 
   const handleChange = (e) => {
@@ -369,12 +412,11 @@ export default function CoursesPage() {
       return;
     }
 
-    if (!form.assigned_password || form.assigned_password.length < 6) {
-      showToast("Password Security Error 🔴", "Temporary password must be at least 6 characters long.", "error");
-      return;
-    }
+    const targetPassword = form.assigned_password && form.assigned_password.trim().length >= 6 
+      ? form.assigned_password.trim() 
+      : "student123";
 
-    if (form.confirm_password && form.assigned_password !== form.confirm_password) {
+    if (form.confirm_password && form.assigned_password && form.assigned_password !== form.confirm_password) {
       showToast("Password Mismatch 🔴", "Passwords do not match. Please re-enter.", "error");
       return;
     }
@@ -384,10 +426,15 @@ export default function CoursesPage() {
     try {
       const res = await enrollStudentWithCredentials({
         studentData: form,
-        password: form.assigned_password,
+        password: targetPassword,
       });
 
-      setStudents([res.student, ...students]);
+      setStudents(prev => {
+        const cleanEm = (res.student?.email || "").toLowerCase().trim();
+        const cleanId = res.student?.id;
+        const filteredPrev = prev.filter(s => s.id !== cleanId && (cleanEm ? (s.email || "").toLowerCase().trim() !== cleanEm : true));
+        return [res.student, ...filteredPrev];
+      });
       setSubmitting(false);
 
       showToast(
@@ -406,8 +453,8 @@ export default function CoursesPage() {
         full_name: "",
         cnic: "",
         email: "",
-        assigned_password: "studentpassword123",
-        confirm_password: "studentpassword123",
+        assigned_password: "",
+        confirm_password: "",
         phone: "",
         batch: "Batch #14 (Morning Tech)",
         guardian_name: "",
@@ -469,8 +516,77 @@ export default function CoursesPage() {
   };
 
   const sendFeeReminderEmail = async (student) => {
-    showToast("Email Dispatched 📧", `Monthly fee reminder email sent to ${student.full_name} (${student.email}).`, "info");
-    dbSaveRecord("students", { ...student, reminder_sent: true }).catch(() => {});
+    const studentEmail = (student.email || "").toLowerCase().trim();
+    const rawName = student.full_name || student.student_name || "Student";
+    const studentName = rawName.charAt(0).toUpperCase() + rawName.slice(1);
+    const courseTitle = student.course_name || student.course || "Enrolled Course";
+    const calcNextDueDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    const dueDateStr = student.next_due_date || calcNextDueDate;
+
+    // 1. Create Targeted Fee Notice Record for Student Portal
+    const feeNotice = {
+      id: `fee-notice-${Date.now()}`,
+      title: `💳 Monthly Fee Reminder Alert: ${courseTitle}`,
+      content: `Dear ${studentName},\n\nThis is an official fee reminder that your monthly tuition fee (PKR ${student.course_fee || '25,000'}) is due for cycle ${dueDateStr}.\n\nPlease clear your fee balance or submit your payment slip to maintain active student privileges.\n\nNexa Enterprise Accounts & Finance Dept`,
+      target_type: "specific_user",
+      target_key: studentEmail,
+      author: "Finance & Accounts Dept",
+      is_fee_notice: true,
+      due_date: dueDateStr,
+      created_at: new Date().toISOString()
+    };
+
+    // 2. Persist to announcements cloud table & master local storage
+    try {
+      dbSaveRecord("announcements", feeNotice).catch(() => {});
+      const existingMaster = JSON.parse(localStorage.getItem("software_house_master_announcements") || "[]");
+      const updatedMaster = [feeNotice, ...existingMaster.filter(a => a.id !== feeNotice.id)];
+      localStorage.setItem("software_house_master_announcements", JSON.stringify(updatedMaster));
+    } catch (e) {}
+
+    // 3. Trigger Server-Side Email Dispatch API (Pure TLS Gmail SMTP Mailer)
+    let apiRes = null;
+    try {
+      const response = await fetch("/api/send-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          to: studentEmail,
+          studentName: studentName,
+          subject: `💳 Monthly Fee Reminder Alert - ${courseTitle}`,
+          content: feeNotice.content
+        })
+      });
+      apiRes = await response.json().catch(() => null);
+    } catch (e) {}
+
+    // 4. Open Direct Web Gmail Composer as backup
+    const subjectStr = `💳 Monthly Fee Reminder Alert - ${courseTitle}`;
+    const gmailWebUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(studentEmail)}&su=${encodeURIComponent(subjectStr)}&body=${encodeURIComponent(feeNotice.content)}`;
+
+    if (typeof window !== "undefined") {
+      window.open(gmailWebUrl, "_blank");
+    }
+
+    // 5. Update student record
+    dbSaveRecord("students", { ...student, reminder_sent: true, last_reminder_at: new Date().toISOString() }).catch(() => {});
+
+    // 6. Show confirmation alert based on direct TLS SMTP mailer result
+    if (apiRes?.smtpResult?.success) {
+      showAlert(
+        "Fee Email Delivered Directly to Inbox 🎉",
+        `Physical HTML fee reminder email delivered directly to ${studentName}'s Gmail Inbox (${studentEmail})!\n\nNo manual send needed! Student Portal notice is also active.`,
+        "success"
+      );
+    } else {
+      const errorMsg = apiRes?.smtpResult?.reason || "SMTP Server response pending";
+      const userUsed = apiRes?.smtpUser || "None";
+      showAlert(
+        "SMTP Dispatch Status Diagnostic 📧",
+        `Target Recipient: ${studentEmail}\nConfigured SMTP Sender: ${userUsed}\nServer Diagnostics: ${errorMsg}\n\n(Web Gmail Compose backup tab launched as fallback).`,
+        "info"
+      );
+    }
   };
 
   const executeDeleteStudent = async () => {
@@ -488,6 +604,21 @@ export default function CoursesPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ table: "students", record: { id, email }, action: "delete" })
       }).catch(() => {});
+
+      // Clean up local system user registration caches
+      if (email) {
+        try {
+          const cleanEm = email.toLowerCase().trim();
+          const sysUsers = JSON.parse(localStorage.getItem("registered_system_users") || "[]");
+          const updatedSys = sysUsers.filter(u => (u.email || "").toLowerCase().trim() !== cleanEm);
+          localStorage.setItem("registered_system_users", JSON.stringify(updatedSys));
+
+          const masterStu = JSON.parse(localStorage.getItem("software_house_master_students") || "[]");
+          const updatedMaster = masterStu.filter(s => (s.email || "").toLowerCase().trim() !== cleanEm && s.id !== id);
+          localStorage.setItem("software_house_master_students", JSON.stringify(updatedMaster));
+        } catch (e) {}
+      }
+
       showToast("Student Removed 🗑️", "Student record removed permanently from database.", "info");
     } catch(e) {
       showToast("Error", "Failed to delete student record.", "error");
@@ -707,16 +838,15 @@ export default function CoursesPage() {
                   </label>
                   <select
                     name="tech_domain"
-                    value={form.tech_domain || "Full Stack MERN Web Development"}
-                    onChange={handleChange}
-                    className="w-full rounded-xl border border-[#E2E8F0] px-3 py-2 text-xs text-[#0F172A] outline-none focus:border-[#2563EB] bg-white"
+                    value={form.tech_domain || form.course_name}
+                    onChange={handleTechDomainSelect}
+                    className="w-full rounded-xl border border-[#E2E8F0] px-3 py-2 text-xs text-[#0F172A] outline-none focus:border-[#2563EB] bg-white font-semibold"
                   >
-                    <option value="Full Stack MERN Web Development">Full Stack MERN Web Development</option>
-                    <option value="Frontend Web Development (React / Next.js)">Frontend Web Development (React / Next.js)</option>
-                    <option value="UI/UX & Product Design">UI/UX & Product Design</option>
-                    <option value="AI & Machine Learning (Python)">AI & Machine Learning (Python)</option>
-                    <option value="Mobile App Development (Flutter)">Mobile App Development (Flutter)</option>
-                    <option value="Cybersecurity & Cloud Computing">Cybersecurity & Cloud Computing</option>
+                    {availableCourses.map((c) => (
+                      <option key={c.title} value={c.title}>
+                        {c.title}
+                      </option>
+                    ))}
                   </select>
                 </div>
               </div>
@@ -827,30 +957,50 @@ export default function CoursesPage() {
                     <label className="block text-[10px] font-semibold uppercase text-slate-700 mb-1">
                       Temporary Password *
                     </label>
-                    <input
-                      type="password"
-                      name="assigned_password"
-                      value={form.assigned_password || ""}
-                      onChange={handleChange}
-                      placeholder="Min 6 characters"
-                      required
-                      className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-900 outline-none focus:border-blue-600 font-mono"
-                    />
+                    <div className="relative">
+                      <input
+                        type={showAssignedPassword ? "text" : "password"}
+                        name="assigned_password"
+                        value={form.assigned_password || ""}
+                        onChange={handleChange}
+                        placeholder="Enter Temporary Password"
+                        required
+                        className="w-full rounded-lg border border-slate-200 bg-white pl-2.5 pr-8 py-1.5 text-xs text-slate-900 outline-none focus:border-blue-600 font-mono"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowAssignedPassword(!showAssignedPassword)}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 transition-colors cursor-pointer p-1"
+                        title={showAssignedPassword ? "Hide Password" : "Show Password"}
+                      >
+                        {showAssignedPassword ? <FaEyeSlash className="text-xs" /> : <FaEye className="text-xs" />}
+                      </button>
+                    </div>
                   </div>
 
                   <div>
                     <label className="block text-[10px] font-semibold uppercase text-slate-700 mb-1">
                       Confirm Password *
                     </label>
-                    <input
-                      type="password"
-                      name="confirm_password"
-                      value={form.confirm_password || ""}
-                      onChange={handleChange}
-                      placeholder="Re-enter password"
-                      required
-                      className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-900 outline-none focus:border-blue-600 font-mono"
-                    />
+                    <div className="relative">
+                      <input
+                        type={showConfirmPassword ? "text" : "password"}
+                        name="confirm_password"
+                        value={form.confirm_password || ""}
+                        onChange={handleChange}
+                        placeholder="Confirm Password"
+                        required
+                        className="w-full rounded-lg border border-slate-200 bg-white pl-2.5 pr-8 py-1.5 text-xs text-slate-900 outline-none focus:border-blue-600 font-mono"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 transition-colors cursor-pointer p-1"
+                        title={showConfirmPassword ? "Hide Password" : "Show Password"}
+                      >
+                        {showConfirmPassword ? <FaEyeSlash className="text-xs" /> : <FaEye className="text-xs" />}
+                      </button>
+                    </div>
                   </div>
                 </div>
                 <p className="text-[10px] text-slate-500 italic">
@@ -959,8 +1109,8 @@ export default function CoursesPage() {
                               </button>
 
                               {activeKebabId === st.id && (
-                                <div className={`absolute right-0 w-44 rounded-xl bg-white p-1.5 shadow-lg border border-[#E2E8F0] z-30 space-y-0.5 text-xs text-left animate-in fade-in zoom-in-95 duration-100 ${
-                                  idx >= Math.max(0, students.length - 2)
+                                <div className={`absolute right-0 w-44 rounded-xl bg-white p-1.5 shadow-2xl border border-[#E2E8F0] z-50 space-y-0.5 text-xs text-left animate-in fade-in zoom-in-95 duration-100 ${
+                                  students.length > 3 && idx >= students.length - 1
                                     ? "bottom-full mb-1 origin-bottom-right"
                                     : "top-full mt-1 origin-top-right"
                                 }`}>

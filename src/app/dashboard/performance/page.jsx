@@ -18,10 +18,12 @@ import {
   FaSlidersH,
   FaUserTie,
   FaUserGraduate,
-  FaEdit
+  FaEdit,
+  FaTrash
 } from "react-icons/fa";
 
-import { dbFetch, dbSaveList } from "@/lib/dbPersistence";
+import { dbFetch, dbSaveList, dbDeleteRecord } from "@/lib/dbPersistence";
+import { showToast } from "@/components/Toast";
 
 export default function PerformancePage() {
   const [role, setRole] = useState("admin");
@@ -31,6 +33,7 @@ export default function PerformancePage() {
   // Employee Performance Scores List (Live Cloud Database)
   const [performances, setPerformances] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [engineModalOpen, setEngineModalOpen] = useState(false);
   const [modal, setModal] = useState({ isOpen: false, title: "", message: "", type: "info" });
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [editingEmployee, setEditingEmployee] = useState(null);
@@ -49,18 +52,27 @@ export default function PerformancePage() {
           dbFetch("performances", [], true).catch(() => [])
         ]);
 
+        let deletedEmails = [];
+        try {
+          deletedEmails = JSON.parse(localStorage.getItem("software_house_deleted_performances") || "[]");
+        } catch (e) {}
+
         const perfMap = new Map();
-        (cloudPerformances || []).forEach(p => {
+        (cloudPerformances || []).forEach((p) => {
           if (p && p.email) {
             perfMap.set(p.email.toLowerCase().trim(), p);
           }
         });
 
-        // 1. Map registered employees
+        // 1. Map registered employees (Deduplicated by Email & Filtered by Blacklist)
         const list = [];
-        (cloudEmployees || []).forEach((emp, idx) => {
+        const seenEmails = new Set();
+
+        (cloudEmployees || []).forEach((emp) => {
           const email = (emp.email || "").toLowerCase().trim();
-          if (!email) return;
+          if (!email || seenEmails.has(email) || deletedEmails.includes(email)) return;
+          seenEmails.add(email);
+
           const existing = perfMap.get(email);
           const metrics = existing?.metrics || {
             attendance: existing?.attendance || 94,
@@ -74,7 +86,7 @@ export default function PerformancePage() {
           };
 
           list.push({
-            id: existing?.id || `perf-emp-${emp.id || idx + 1}`,
+            id: existing?.id || `perf-emp-${email.replace(/[^a-z0-9]/gi, "_")}`,
             name: emp.full_name || emp.name || email.split("@")[0],
             role: emp.designation || "Software Engineer",
             email: email,
@@ -83,10 +95,12 @@ export default function PerformancePage() {
           });
         });
 
-        // 2. Map registered students
-        (cloudStudents || []).forEach((std, idx) => {
+        // 2. Map registered students (Deduplicated by Email & Filtered by Blacklist)
+        (cloudStudents || []).forEach((std) => {
           const email = (std.email || "").toLowerCase().trim();
-          if (!email || list.some(l => l.email === email)) return;
+          if (!email || seenEmails.has(email) || deletedEmails.includes(email)) return;
+          seenEmails.add(email);
+
           const existing = perfMap.get(email);
           const metrics = existing?.metrics || {
             attendance: existing?.attendance || 90,
@@ -100,7 +114,7 @@ export default function PerformancePage() {
           };
 
           list.push({
-            id: existing?.id || `perf-std-${std.id || idx + 1}`,
+            id: existing?.id || `perf-std-${email.replace(/[^a-z0-9]/gi, "_")}`,
             name: std.full_name || std.student_name || email.split("@")[0],
             role: `${std.course_name || "MERN Stack"} Student`,
             email: email,
@@ -109,17 +123,55 @@ export default function PerformancePage() {
           });
         });
 
-        // 3. Fallback to existing standalone performances if any
-        (cloudPerformances || []).forEach(p => {
-          if (p && p.email && !list.some(l => l.email === p.email.toLowerCase().trim())) {
-            list.push(p);
-          }
-        });
+        // 3. Fallback to default enterprise members if list is empty
+        if (list.length === 0) {
+          const defaults = [
+            {
+              id: "perf-emp-rahim",
+              name: "Rahim Bugti",
+              role: "Senior Lead Developer",
+              email: "bugtirahim450@gmail.com",
+              avatarType: "employee",
+              metrics: { attendance: 98, taskCompletion: 96, deadlines: 97, clientFeedback: 98, socialMedia: 92, behavior: 98, leaveRecord: 96, productivity: 97 }
+            },
+            {
+              id: "perf-emp-atsham",
+              name: "Atsham",
+              role: "Senior Lead Developer",
+              email: "atsham@gmail.com",
+              avatarType: "employee",
+              metrics: { attendance: 95, taskCompletion: 94, deadlines: 93, clientFeedback: 95, socialMedia: 90, behavior: 96, leaveRecord: 94, productivity: 94 }
+            },
+            {
+              id: "perf-emp-sara",
+              name: "Sara Khan",
+              role: "Lead UI/UX Designer",
+              email: "sara.khan@gmail.com",
+              avatarType: "employee",
+              metrics: { attendance: 94, taskCompletion: 92, deadlines: 93, clientFeedback: 96, socialMedia: 94, behavior: 96, leaveRecord: 92, productivity: 93 }
+            },
+            {
+              id: "perf-std-student",
+              name: "On-Site Student",
+              role: "Full Stack MERN Student",
+              email: "student@gmail.com",
+              avatarType: "student",
+              metrics: { attendance: 91, taskCompletion: 90, deadlines: 89, clientFeedback: 91, socialMedia: 86, behavior: 95, leaveRecord: 93, productivity: 89 }
+            }
+          ];
+          defaults.forEach((d) => {
+            if (!seenEmails.has(d.email) && !deletedEmails.includes(d.email)) {
+              seenEmails.add(d.email);
+              list.push(d);
+            }
+          });
+        }
 
         setPerformances(list);
-        if (list.length > 0 && typeof window !== "undefined") {
+        if (typeof window !== "undefined") {
           localStorage.setItem("software_house_performances", JSON.stringify(list));
         }
+        dbSaveList("performances", list).catch(() => {});
       } catch (e) {}
       setLoading(false);
     };
@@ -138,6 +190,26 @@ export default function PerformancePage() {
 
   const closeModal = () => {
     setModal({ isOpen: false, title: "", message: "", type: "info" });
+  };
+
+  const handleDeletePerformance = (p) => {
+    if (!confirm(`Are you sure you want to remove ${p.name} from the Performance Leaderboard?`)) return;
+
+    const emailToDelete = (p.email || "").toLowerCase().trim();
+    const updated = performances.filter((item) => item.id !== p.id && (item.email || "").toLowerCase().trim() !== emailToDelete);
+    setPerformances(updated);
+
+    try {
+      const savedDeleted = JSON.parse(localStorage.getItem("software_house_deleted_performances") || "[]");
+      if (!savedDeleted.includes(emailToDelete)) {
+        savedDeleted.push(emailToDelete);
+        localStorage.setItem("software_house_deleted_performances", JSON.stringify(savedDeleted));
+      }
+    } catch (e) {}
+
+    savePerformanceState(updated);
+    dbDeleteRecord("performances", p.id, p.email).catch(() => {});
+    showToast("Record Deleted 🗑️", `${p.name} removed from Performance Leaderboard.`, "info");
   };
 
   const calculateOverallScore = (metrics) => {
@@ -172,8 +244,8 @@ export default function PerformancePage() {
       ...prev,
       metrics: {
         ...prev.metrics,
-        [field]: numValue,
-      },
+        [field]: numValue
+      }
     }));
   };
 
@@ -181,9 +253,7 @@ export default function PerformancePage() {
     e.preventDefault();
     if (!editingEmployee) return;
 
-    const updated = performances.map((p) =>
-      p.id === editingEmployee.id ? editingEmployee : p
-    );
+    const updated = performances.map((p) => (p.id === editingEmployee.id ? editingEmployee : p));
     savePerformanceState(updated);
     setEditModalOpen(false);
     setEditingEmployee(null);
@@ -211,11 +281,7 @@ export default function PerformancePage() {
           </span>
         );
       default:
-        return (
-          <span className="bg-slate-100 text-slate-700 font-bold px-3 py-1 rounded-xl text-xs">
-            Rank #{rank}
-          </span>
-        );
+        return <span className="bg-slate-100 text-slate-700 font-bold px-3 py-1 rounded-xl text-xs">Rank #{rank}</span>;
     }
   };
 
@@ -226,13 +292,26 @@ export default function PerformancePage() {
       {/* Top Banner - Blue & White Theme */}
       <div className="bg-white rounded-2xl p-6 border border-[#E2E8F0] shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-[#2563EB] bg-[#EFF6FF] px-2.5 py-1 rounded-full border border-[#2563EB]/20">
-              Employee Performance Engine
-            </span>
-            <span className="text-[10px] font-semibold text-[#64748B] bg-[#F8FAFC] px-2.5 py-1 rounded-full border border-[#E2E8F0]">
-              8-Factor Evaluation & Monthly Leaderboard
-            </span>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={() => setEngineModalOpen(true)}
+              className="text-[10px] font-bold uppercase tracking-wider text-[#2563EB] bg-[#EFF6FF] hover:bg-blue-100 px-2.5 py-1 rounded-full border border-[#2563EB]/20 transition-all cursor-pointer flex items-center gap-1 shadow-2xs"
+              title="Click to view 8-Factor Evaluation Formula & Engine Breakdown"
+            >
+              <FaSlidersH className="text-[10px]" /> Employee Performance Engine ↗
+            </button>
+
+            <button
+              onClick={() => {
+                const el = document.getElementById("monthly-leaderboard-section");
+                if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+                showToast("Monthly Leaderboard 🏆", `Showing ${selectedMonth} member evaluations.`, "info");
+              }}
+              className="text-[10px] font-bold text-[#0F172A] bg-[#F8FAFC] hover:bg-slate-100 px-2.5 py-1 rounded-full border border-[#E2E8F0] transition-all cursor-pointer flex items-center gap-1 shadow-2xs"
+              title="Click to auto-scroll to Leaderboard Table"
+            >
+              <FaStar className="text-amber-500 text-[10px]" /> 8-Factor Evaluation & Monthly Leaderboard 🎯
+            </button>
           </div>
           <h1 className="text-xl md:text-2xl font-bold mt-1.5 text-[#0F172A] flex items-center gap-2.5 whitespace-nowrap">
             <FaTrophy className="text-[#2563EB] shrink-0" />
@@ -257,9 +336,9 @@ export default function PerformancePage() {
       </div>
 
       {/* Monthly Ranking Leaderboard Grid */}
-      <div className="space-y-6">
+      <div id="monthly-leaderboard-section" className="space-y-6 scroll-mt-6">
         <h2 className="text-base font-bold text-[#0F172A] flex items-center gap-2 max-w-full overflow-hidden">
-          <FaStar className="text-[#2563EB] text-[#2563EB] text-base shrink-0" />
+          <FaStar className="text-[#2563EB] text-base shrink-0" />
           <span className="whitespace-nowrap truncate font-bold text-[#0F172A]">Monthly Employee Performance Leaderboard ({selectedMonth})</span>
         </h2>
 
@@ -270,7 +349,7 @@ export default function PerformancePage() {
 
             return (
               <div
-                key={p.id}
+                key={`perf-item-${p.email || p.id || index}-${index}`}
                 className={`bg-white rounded-2xl border ${
                   rank === 1 ? "border-blue-600 shadow-md ring-2 ring-blue-500/30" : "border-slate-200 shadow-xs"
                 } p-5 space-y-4 text-xs flex flex-col justify-between`}
@@ -289,9 +368,7 @@ export default function PerformancePage() {
                       </div>
                     </div>
 
-                    <div className="text-right">
-                      {getRankBadge(rank)}
-                    </div>
+                    <div className="text-right">{getRankBadge(rank)}</div>
                   </div>
 
                   {/* Overall Score Meter */}
@@ -365,14 +442,23 @@ export default function PerformancePage() {
                   </div>
                 </div>
 
-                {role === "admin" && (
-                  <div className="pt-2 border-t border-slate-100 flex items-center justify-end">
+                {(role === "admin" || role === "hr" || role === "manager") && (
+                  <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
+                    <button
+                      onClick={() => handleDeletePerformance(p)}
+                      className="px-3 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs transition-all border border-rose-200 flex items-center gap-1.5 cursor-pointer"
+                      title="Delete member performance record"
+                    >
+                      <FaTrash className="text-rose-600 text-xs" />
+                      <span>Delete</span>
+                    </button>
+
                     <button
                       onClick={() => handleEditClick(p)}
                       className="px-4 py-2 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 font-extrabold text-xs transition-all border border-blue-200 flex items-center gap-1.5 cursor-pointer"
                     >
-                      <FaEdit className="text-blue-600" />
-                      <span>Update Performance Scores</span>
+                      <FaEdit className="text-blue-600 text-xs" />
+                      <span>Update Scores</span>
                     </button>
                   </div>
                 )}
@@ -382,7 +468,7 @@ export default function PerformancePage() {
         </div>
       </div>
 
-      {/* Admin Edit Performance Modal - Pure Blue & White Theme */}
+      {/* Admin Edit Performance Modal */}
       {editModalOpen && editingEmployee && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4">
           <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl space-y-4 border border-blue-100 text-left">
@@ -392,12 +478,11 @@ export default function PerformancePage() {
                   <FaSlidersH className="text-blue-600" />
                   <span>Update Performance Scores</span>
                 </h3>
-                <p className="text-xs text-blue-600 font-bold">{editingEmployee.name} ({editingEmployee.role})</p>
+                <p className="text-xs text-blue-600 font-bold">
+                  {editingEmployee.name} ({editingEmployee.role})
+                </p>
               </div>
-              <button
-                onClick={() => setEditModalOpen(false)}
-                className="text-slate-400 hover:text-slate-700 font-bold text-lg cursor-pointer"
-              >
+              <button onClick={() => setEditModalOpen(false)} className="text-slate-400 hover:text-slate-700 font-bold text-lg cursor-pointer">
                 ✕
               </button>
             </div>
@@ -517,6 +602,69 @@ export default function PerformancePage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* 8-Factor Evaluation Engine Breakdown Modal */}
+      {engineModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-3xl max-w-2xl w-full p-6 shadow-2xl space-y-4 border border-blue-100 text-left">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div>
+                <h3 className="font-extrabold text-slate-900 text-base flex items-center gap-2">
+                  <FaSlidersH className="text-blue-600" />
+                  <span>8-Factor Employee Performance Evaluation Engine</span>
+                </h3>
+                <p className="text-xs text-slate-500">Automated evaluation metrics weightage and formula breakdown.</p>
+              </div>
+              <button onClick={() => setEngineModalOpen(false)} className="text-slate-400 hover:text-slate-700 font-bold text-lg cursor-pointer">
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-4 text-xs">
+              <div className="p-4 rounded-2xl bg-blue-50/60 border border-blue-100 space-y-2">
+                <h4 className="font-bold text-blue-900 flex items-center gap-1.5">
+                  <FaTrophy className="text-blue-600" /> Evaluation Formula:
+                </h4>
+                <p className="text-slate-700 font-mono text-[11px] leading-relaxed">
+                  Overall Rating = (Attendance + TaskCompletion + Deadlines + ClientFeedback + SocialMedia + Behavior + LeaveRecord + Productivity) ÷ 8
+                </p>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                {[
+                  { name: "Attendance Rate", weight: "12.5%", icon: <FaUserCheck className="text-blue-600" /> },
+                  { name: "Task Completion", weight: "12.5%", icon: <FaTasks className="text-emerald-600" /> },
+                  { name: "On-Time Deadlines", weight: "12.5%", icon: <FaClock className="text-purple-600" /> },
+                  { name: "Client Feedback", weight: "12.5%", icon: <FaComments className="text-amber-600" /> },
+                  { name: "Social Activity", weight: "12.5%", icon: <FaShareAlt className="text-indigo-600" /> },
+                  { name: "Behavior & Ethics", weight: "12.5%", icon: <FaUserShield className="text-teal-600" /> },
+                  { name: "Leave Discipline", weight: "12.5%", icon: <FaCalendarMinus className="text-rose-600" /> },
+                  { name: "Code Productivity", weight: "12.5%", icon: <FaChartLine className="text-cyan-600" /> }
+                ].map((factor, idx) => (
+                  <div key={idx} className="p-3 rounded-xl border border-slate-200/80 bg-slate-50 space-y-1">
+                    <div className="flex items-center gap-1.5 font-bold text-slate-800 text-[11px]">
+                      {factor.icon} <span>{factor.name}</span>
+                    </div>
+                    <span className="text-[10px] text-blue-600 font-semibold bg-blue-50 px-2 py-0.5 rounded-full border border-blue-100 inline-block">
+                      Weight: {factor.weight}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setEngineModalOpen(false)}
+                className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs transition-colors cursor-pointer"
+              >
+                Close Engine Formula
+              </button>
+            </div>
           </div>
         </div>
       )}

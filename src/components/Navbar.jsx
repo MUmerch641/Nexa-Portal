@@ -70,6 +70,40 @@ export default function Navbar({ onMenuClick, isSidebarOpen = true }) {
   const [hasSeenNotifications, setHasSeenNotifications] = useState(false);
   const [dismissedNotifIds, setDismissedNotifIds] = useState([]);
   const [activeNotifCategory, setActiveNotifCategory] = useState("all");
+  const notifCloseTimerRef = useRef(null);
+
+  const handleMouseEnterNotif = () => {
+    if (notifCloseTimerRef.current) {
+      clearTimeout(notifCloseTimerRef.current);
+      notifCloseTimerRef.current = null;
+    }
+  };
+
+  const handleMouseLeaveNotif = () => {
+    if (showNotifications) {
+      if (notifCloseTimerRef.current) clearTimeout(notifCloseTimerRef.current);
+      notifCloseTimerRef.current = setTimeout(() => {
+        setShowNotifications(false);
+      }, 1000); // 1-second auto-close when mouse leaves
+    }
+  };
+
+  const notifRef = useRef(null);
+
+  // Close Notification Center on Click Outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (notifRef.current && !notifRef.current.contains(event.target)) {
+        setShowNotifications(false);
+      }
+    };
+    if (showNotifications) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [showNotifications]);
 
   useEffect(() => {
     const options = { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' };
@@ -169,6 +203,18 @@ export default function Navbar({ onMenuClick, isSidebarOpen = true }) {
       if (saved) setDismissedNotifIds(JSON.parse(saved));
     } catch(e) {}
   }, [userEmail]);
+
+  const handleDismissNotification = (itemId) => {
+    if (!itemId) return;
+    setDismissedNotifIds((prev) => {
+      const updated = [...prev, itemId];
+      try {
+        const email = localStorage.getItem("current_user_email") || "admin";
+        localStorage.setItem(`dismissed_notifs_${email}`, JSON.stringify(updated));
+      } catch (e) {}
+      return updated;
+    });
+  };
 
   const loadAllNotifications = async () => {
     try {
@@ -467,7 +513,12 @@ export default function Navbar({ onMenuClick, isSidebarOpen = true }) {
         </button>
 
         {/* Notifications Bell */}
-        <div className="relative">
+        <div
+          ref={notifRef}
+          className="relative"
+          onMouseEnter={handleMouseEnterNotif}
+          onMouseLeave={handleMouseLeaveNotif}
+        >
           <button
             onClick={handleToggleNotifications}
             className="relative p-2 text-[#64748B] hover:bg-[#F8FAFC] rounded-xl transition-colors border border-[#E2E8F0] cursor-pointer"
@@ -578,6 +629,7 @@ export default function Navbar({ onMenuClick, isSidebarOpen = true }) {
                           type="button"
                           onClick={() => {
                             setSelectedLeaveModal(l);
+                            handleDismissNotification(l.id);
                             setShowNotifications(false);
                           }}
                           className="flex-1 flex items-center justify-center gap-1 py-1.5 px-2 rounded-xl bg-blue-50 hover:bg-blue-600 text-blue-600 hover:text-white font-bold text-[10px] border border-blue-200 transition-all cursor-pointer shadow-xs"
@@ -587,7 +639,10 @@ export default function Navbar({ onMenuClick, isSidebarOpen = true }) {
 
                         <button
                           type="button"
-                          onClick={() => handleApproveLeave(l.id)}
+                          onClick={() => {
+                            handleApproveLeave(l.id);
+                            handleDismissNotification(l.id);
+                          }}
                           className="flex items-center justify-center gap-1 py-1.5 px-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] transition-all cursor-pointer shadow-xs"
                           title="Approve Leave"
                         >
@@ -597,7 +652,10 @@ export default function Navbar({ onMenuClick, isSidebarOpen = true }) {
 
                         <button
                           type="button"
-                          onClick={() => handleRejectLeave(l.id)}
+                          onClick={() => {
+                            handleRejectLeave(l.id);
+                            handleDismissNotification(l.id);
+                          }}
                           className="flex items-center justify-center gap-1 py-1.5 px-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-[10px] transition-all cursor-pointer shadow-xs"
                           title="Reject Leave"
                         >
@@ -613,11 +671,24 @@ export default function Navbar({ onMenuClick, isSidebarOpen = true }) {
                 {(activeNotifCategory === "all" || activeNotifCategory === "complaints") && activeComplaints.map((c) => (
                   <div
                     key={c.id}
-                    className="p-3.5 rounded-2xl bg-[#F8FAFC] hover:bg-[#F1F5F9] border border-[#E2E8F0] space-y-2 transition-all shadow-xs"
+                    className="p-3.5 rounded-2xl bg-[#F8FAFC] hover:bg-[#F1F5F9] border border-[#E2E8F0] space-y-2 transition-all shadow-xs relative"
                   >
                     <div className="flex items-center justify-between font-bold text-[#0F172A] text-xs">
-                      <span className="text-slate-900">{c.submitted_by || "Anonymous"}</span>
-                      <span className="text-[9px] bg-[#EFF6FF] text-[#2563EB] px-2 py-0.5 rounded-full font-bold">{c.category || "Complaint"}</span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-slate-900 font-bold">{c.submitted_by || "Anonymous"}</span>
+                        <span className="text-[9px] bg-[#EFF6FF] text-[#2563EB] px-2 py-0.5 rounded-full font-bold">{c.category || "Complaint"}</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDismissNotification(c.id);
+                        }}
+                        className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                        title="Dismiss notification"
+                      >
+                        <FaTimes className="text-xs" />
+                      </button>
                     </div>
                     <p className="text-[11px] text-[#475569] leading-snug line-clamp-2 bg-white p-2 rounded-lg border border-[#E2E8F0]">"{c.title || c.description}"</p>
                     <div className="flex items-center justify-between text-[10px] pt-1 border-t border-[#E2E8F0]/60">
@@ -626,11 +697,12 @@ export default function Navbar({ onMenuClick, isSidebarOpen = true }) {
                         type="button"
                         onClick={() => {
                           setSelectedComplaintModal(c);
+                          handleDismissNotification(c.id);
                           setShowNotifications(false);
                         }}
-                        className="text-[#2563EB] font-bold hover:underline cursor-pointer"
+                        className="text-[#2563EB] font-bold hover:underline cursor-pointer flex items-center gap-1"
                       >
-                        View Ticket →
+                        <span>View Ticket →</span>
                       </button>
                     </div>
                   </div>
@@ -769,7 +841,7 @@ export default function Navbar({ onMenuClick, isSidebarOpen = true }) {
               <div className="flex items-center justify-between">
                 <span className="text-[10px] uppercase font-bold text-[#2563EB] tracking-wider">Leave Application Details</span>
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#FEF3C7] text-[#92400E] border border-[#F59E0B]/20 flex items-center gap-1">
-                  <FaClock className="text-[9px]" /> Pending HR Review
+                  <FaClock className="text-[9px]" /> Pending
                 </span>
               </div>
               <h3 className="text-sm font-bold text-[#0F172A]">

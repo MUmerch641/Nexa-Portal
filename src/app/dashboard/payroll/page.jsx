@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { generatePrintablePayslipPdf } from "@/lib/generatePayslipPdf";
 import Modal from "@/components/Modal";
@@ -27,10 +28,19 @@ import {
 } from "react-icons/fa";
 
 export default function PayrollDashboardPage() {
+  const router = useRouter();
   const [role, setRole] = useState("admin");
   const [userEmail, setUserEmail] = useState("");
   const [selectedMonth, setSelectedMonth] = useState("2026-08");
   const [loading, setLoading] = useState(true);
+  const [showCalculatorModal, setShowCalculatorModal] = useState(false);
+  const [sandboxForm, setSandboxForm] = useState({
+    basic_salary: 80000,
+    overtime_hours: 10,
+    overtime_rate: 600,
+    bonus_amount: 5000,
+    leave_deduction: 2000,
+  });
 
   // Employee Master Salary & Payroll List (Fetched from Cloud Database)
   const [payrolls, setPayrolls] = useState([]);
@@ -40,7 +50,7 @@ export default function PayrollDashboardPage() {
   const [newEmpForm, setNewEmpForm] = useState({
     employee_name: "",
     email: "",
-    assigned_password: "employeepassword123",
+    assigned_password: "",
     department: "Engineering",
     designation: "Software Engineer",
     basic_salary: 75000,
@@ -151,64 +161,72 @@ export default function PayrollDashboardPage() {
           dbFetch("payrolls", [], true).catch(() => []),
         ]);
 
-        const payrollMap = new Map();
-        (cloudPayrolls || []).forEach(p => {
-          if (p && p.email) {
-            payrollMap.set(p.email.toLowerCase().trim(), p);
-          }
-        });
-
-        // Auto-generate / link payrolls for every registered employee in database
-        const integratedPayrolls = (cloudEmployees || []).map((emp, idx) => {
-          const empEmail = (emp.email || "").toLowerCase().trim();
-          const existing = payrollMap.get(empEmail);
-          const basic = Number(emp.basic_salary || existing?.basic_salary || 45000);
-
-          if (existing) {
-            return {
-              ...existing,
-              employee_name: emp.full_name || existing.employee_name || "Staff Member",
-              department: emp.department || existing.department || "Web Development",
-              designation: emp.designation || existing.designation || "Staff Member",
-              basic_salary: basic,
-              final_payable_salary: calculateNetSalary({ ...existing, basic_salary: basic })
-            };
-          }
-
-          const defaultRec = {
-            id: `p-${emp.id || idx + 1}`,
-            employee_id: emp.id || `emp-${idx + 101}`,
-            employee_name: emp.full_name || "Staff Member",
-            department: emp.department || "Web Development",
-            designation: emp.designation || "Staff Member",
-            email: empEmail,
-            month: selectedMonth,
+        // 1. Process cloudPayrolls records (Each record from Supabase payrolls table)
+        const loadedPayrolls = (cloudPayrolls || []).map((p, idx) => {
+          const basic = Number(p.basic_salary || 45000);
+          return {
+            ...p,
+            id: p.id || `p-cloud-${idx}`,
+            employee_name: p.employee_name || "Staff Member",
+            email: (p.email || "").toLowerCase().trim(),
+            department: p.department || "Engineering",
+            designation: p.designation || "Staff Member",
             basic_salary: basic,
-            overtime_hours: 0,
-            overtime_amount: 0,
-            leave_deduction: 0,
-            late_penalty: 0,
-            bonus_amount: 0,
-            incentive_amount: 0,
-            advance_deduction: 0,
-            loan_deduction: 0,
-            final_payable_salary: basic,
-            status: "processed"
+            final_payable_salary: calculateNetSalary({ ...p, basic_salary: basic })
           };
-
-          return defaultRec;
         });
 
-        // Also include any standalone payroll records that may exist
-        (cloudPayrolls || []).forEach(p => {
-          if (p && p.email && !integratedPayrolls.some(ip => ip.email === p.email.toLowerCase().trim())) {
-            integratedPayrolls.push(p);
+        // 2. Add default payroll for registered employees who don't have a payroll record yet
+        (cloudEmployees || []).forEach((emp, idx) => {
+          const empEmail = (emp.email || "").toLowerCase().trim();
+          const empName = (emp.full_name || "").toLowerCase().trim();
+          const hasRecord = loadedPayrolls.some(p => (empEmail && p.email === empEmail) || (empName && (p.employee_name || "").toLowerCase().trim() === empName));
+          if (!hasRecord && empEmail) {
+            const basic = Number(emp.basic_salary || 45000);
+            loadedPayrolls.push({
+              id: `p-${emp.id || idx + 1}-${idx}`,
+              employee_id: emp.id || `emp-${idx + 101}`,
+              employee_name: emp.full_name || "Staff Member",
+              department: emp.department || "Engineering",
+              designation: emp.designation || "Staff Member",
+              email: empEmail,
+              month: selectedMonth,
+              basic_salary: basic,
+              overtime_hours: 0,
+              overtime_amount: 0,
+              leave_deduction: 0,
+              late_penalty: 0,
+              bonus_amount: 0,
+              incentive_amount: 0,
+              advance_deduction: 0,
+              loan_deduction: 0,
+              final_payable_salary: basic,
+              status: "processed"
+            });
           }
         });
 
-        setPayrolls(integratedPayrolls);
-        if (integratedPayrolls.length > 0 && typeof window !== "undefined") {
-          localStorage.setItem("software_house_payrolls", JSON.stringify(integratedPayrolls));
+        // 3. Deduplicate by employee identity (email/name) so each employee appears EXACTLY ONCE
+        const deduplicatedPayrolls = [];
+        const seenEmployees = new Set();
+
+        loadedPayrolls.forEach((rec, idx) => {
+          const emailKey = (rec.email || "").toLowerCase().trim();
+          const nameKey = (rec.employee_name || "").toLowerCase().trim();
+          const dedupeKey = emailKey || nameKey || `rec-${idx}`;
+
+          if (!seenEmployees.has(dedupeKey)) {
+            seenEmployees.add(dedupeKey);
+            deduplicatedPayrolls.push({
+              ...rec,
+              id: rec.id || `p-unique-${idx}`
+            });
+          }
+        });
+
+        setPayrolls(deduplicatedPayrolls);
+        if (deduplicatedPayrolls.length > 0 && typeof window !== "undefined") {
+          localStorage.setItem("software_house_payrolls", JSON.stringify(deduplicatedPayrolls));
         }
       } catch (e) {}
       setLoading(false);
@@ -332,7 +350,7 @@ export default function PayrollDashboardPage() {
     setNewEmpForm({
       employee_name: "",
       email: "",
-      assigned_password: "employeepassword123",
+      assigned_password: "",
       department: "Engineering",
       designation: "Software Engineer",
       basic_salary: 75000,
@@ -444,13 +462,30 @@ export default function PayrollDashboardPage() {
       {/* Top Banner */}
       <div className="bg-white rounded-2xl p-6 border border-[#E2E8F0] shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-[#2563EB] bg-[#EFF6FF] px-2.5 py-1 rounded-full border border-[#2563EB]/20">
-              Finance & Payroll Sub-Module
-            </span>
-            <span className="text-[10px] font-semibold text-[#64748B] bg-[#F8FAFC] px-2.5 py-1 rounded-full border border-[#E2E8F0]">
-              Automated Salary Calculation Engine
-            </span>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => router.push("/dashboard/finance")}
+              className="text-[10px] font-bold uppercase tracking-wider text-[#2563EB] hover:text-white bg-[#EFF6FF] hover:bg-[#2563EB] px-3 py-1 rounded-full border border-[#2563EB]/20 transition-all cursor-pointer shadow-2xs flex items-center gap-1.5 group"
+              title="Click to navigate to Finance Management Hub"
+            >
+              <FaLandmark className="text-[10px] text-[#2563EB] group-hover:text-white transition-colors" />
+              <span>Finance & Payroll Sub-Module</span>
+              <FaArrowRight className="text-[9px] opacity-70 group-hover:translate-x-0.5 transition-transform" />
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setShowCalculatorModal(true)}
+              className="text-[10px] font-semibold text-[#64748B] hover:text-[#0F172A] bg-[#F8FAFC] hover:bg-slate-100 px-3 py-1 rounded-full border border-[#E2E8F0] transition-all cursor-pointer shadow-2xs flex items-center gap-1.5 group"
+              title="Click to view Automated Salary Calculation Engine & Formula Sandbox"
+            >
+              <FaCalculator className="text-[10px] text-[#2563EB] group-hover:scale-110 transition-transform" />
+              <span>Automated Salary Calculation Engine</span>
+              <span className="text-[9px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.2 rounded-full border border-emerald-300">
+                Live Formula
+              </span>
+            </button>
           </div>
           <h1 className="text-xl md:text-2xl font-bold mt-1.5 text-[#0F172A] flex items-center gap-2.5">
             <FaMoneyBillWave className="text-[#2563EB]" />
@@ -589,13 +624,14 @@ export default function PayrollDashboardPage() {
                   </td>
                 </tr>
               ) : (
-                displayPayrolls.map((p) => {
+                displayPayrolls.map((p, idx) => {
                   const empObj = { full_name: p.employee_name, email: p.email, department: p.department, designation: p.designation };
                   const totalDeductions = Number(p.leave_deduction || 0) + Number(p.late_penalty || 0) + Number(p.advance_deduction || 0) + Number(p.loan_deduction || 0);
                   const totalAdditions = Number(p.overtime_amount || 0) + Number(p.bonus_amount || 0) + Number(p.incentive_amount || 0);
+                  const rowKey = `payroll-row-${p.id || 'rec'}-${p.email || 'mail'}-${idx}`;
 
                   return (
-                    <tr key={p.id} className="hover:bg-slate-50/60 transition-colors">
+                    <tr key={rowKey} className="hover:bg-slate-50/60 transition-colors">
                       <td className="py-3 px-3">
                         <div className="font-bold text-slate-900 text-sm">{p.employee_name}</div>
                         <div className="text-[11px] text-slate-500">{p.designation} • {p.department}</div>
@@ -728,16 +764,15 @@ export default function PayrollDashboardPage() {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Assigned Login Password *</label>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Assigned Login Password</label>
                 <input
                   type="text"
-                  required
                   value={newEmpForm.assigned_password}
                   onChange={(e) => setNewEmpForm({ ...newEmpForm, assigned_password: e.target.value })}
-                  placeholder="userpassword123"
+                  placeholder="Set Login Password (e.g. Pass123)"
                   className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-xs text-slate-900 outline-none focus:border-emerald-600 font-mono"
                 />
-                <p className="text-[10px] text-slate-400 mt-0.5">Password used by the user to log in at /login</p>
+                <p className="text-[10px] text-slate-400 mt-0.5">Custom password for the user to log in at /login (leave empty for default)</p>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -957,6 +992,123 @@ export default function PayrollDashboardPage() {
           </div>
         </div>
       )}
+
+      {/* AUTOMATED SALARY CALCULATION ENGINE MODAL */}
+      <Modal
+        isOpen={showCalculatorModal}
+        onClose={() => setShowCalculatorModal(false)}
+        title="Automated Salary Calculation Engine & Live Formula Sandbox"
+        type="info"
+        maxWidth="max-w-2xl"
+      >
+        <div className="space-y-5 text-xs text-[#0F172A]">
+          {/* Formula Banner */}
+          <div className="p-4 rounded-xl bg-[#EFF6FF] border border-[#2563EB]/20 space-y-2">
+            <div className="flex items-center gap-2 text-[#2563EB] font-bold text-xs uppercase tracking-wider">
+              <FaCalculator className="text-sm" />
+              <span>Enterprise Salary Payout Formula</span>
+            </div>
+            <div className="p-3 rounded-lg bg-white border border-[#2563EB]/20 font-mono font-bold text-xs text-[#0F172A] text-center shadow-2xs">
+              Net Payable = Basic + (Overtime Hrs × Rate) + Bonus + Incentives − (Leave Cuts + Late Fines + Loans)
+            </div>
+            <p className="text-[11px] text-[#64748B] leading-relaxed">
+              This automated logic processes all staff payouts, deductions, overtime compensation, and bonuses across Antigravity Enterprise Portal.
+            </p>
+          </div>
+
+          {/* Live Interactive Calculation Sandbox */}
+          <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+              <h4 className="font-bold text-xs uppercase text-slate-800">
+                Live Interactive Calculation Sandbox
+              </h4>
+              <span className="text-[10px] font-bold text-[#2563EB] bg-white px-2 py-0.5 rounded border border-slate-200">
+                Real-Time Test Engine
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 text-xs">
+              <div>
+                <label className="block font-semibold text-slate-600 mb-1">Basic Salary (PKR)</label>
+                <input
+                  type="number"
+                  value={sandboxForm.basic_salary}
+                  onChange={(e) => setSandboxForm({ ...sandboxForm, basic_salary: e.target.value })}
+                  className="w-full p-2 rounded-lg border border-slate-300 font-mono font-bold text-slate-900 bg-white"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-600 mb-1">Overtime (Hours × Rs. {sandboxForm.overtime_rate})</label>
+                <input
+                  type="number"
+                  value={sandboxForm.overtime_hours}
+                  onChange={(e) => setSandboxForm({ ...sandboxForm, overtime_hours: e.target.value })}
+                  className="w-full p-2 rounded-lg border border-slate-300 font-mono font-bold text-slate-900 bg-white"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-600 mb-1">Bonus & Incentives (PKR)</label>
+                <input
+                  type="number"
+                  value={sandboxForm.bonus_amount}
+                  onChange={(e) => setSandboxForm({ ...sandboxForm, bonus_amount: e.target.value })}
+                  className="w-full p-2 rounded-lg border border-slate-300 font-mono font-bold text-slate-900 bg-white"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-600 mb-1">Total Deductions (Leaves/Fines)</label>
+                <input
+                  type="number"
+                  value={sandboxForm.leave_deduction}
+                  onChange={(e) => setSandboxForm({ ...sandboxForm, leave_deduction: e.target.value })}
+                  className="w-full p-2 rounded-lg border border-slate-300 font-mono font-bold text-slate-900 bg-white"
+                />
+              </div>
+            </div>
+
+            {/* Calculated Net Result */}
+            <div className="p-3.5 rounded-xl bg-white border border-emerald-300 flex items-center justify-between shadow-2xs">
+              <div>
+                <span className="text-[10px] font-bold uppercase text-emerald-800 tracking-wider block">Calculated Net Payable Payout</span>
+                <span className="text-[11px] text-slate-500 font-medium">Overtime: +Rs. {(Number(sandboxForm.overtime_hours || 0) * Number(sandboxForm.overtime_rate || 600)).toLocaleString()}</span>
+              </div>
+              <p className="text-xl font-black text-emerald-600 font-mono">
+                Rs. {(
+                  Number(sandboxForm.basic_salary || 0) +
+                  (Number(sandboxForm.overtime_hours || 0) * Number(sandboxForm.overtime_rate || 600)) +
+                  Number(sandboxForm.bonus_amount || 0) -
+                  Number(sandboxForm.leave_deduction || 0)
+                ).toLocaleString()}
+              </p>
+            </div>
+          </div>
+
+          {/* Footer buttons */}
+          <div className="pt-2 border-t border-slate-200 flex justify-between gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                setShowCalculatorModal(false);
+                setCreateModalOpen(true);
+              }}
+              className="bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold px-4 py-2 rounded-xl text-xs flex items-center gap-1.5 cursor-pointer"
+            >
+              <FaPlusCircle className="text-xs" /> Apply to New Employee Salary
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setShowCalculatorModal(false)}
+              className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-4 py-2 rounded-xl text-xs cursor-pointer"
+            >
+              Close Engine
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

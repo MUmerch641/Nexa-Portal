@@ -32,7 +32,8 @@ import {
   FaSearch,
   FaInfoCircle,
   FaCheck,
-  FaChevronRight
+  FaChevronRight,
+  FaEdit
 } from "react-icons/fa";
 
 /* ─────────────────────────────────────────────────────────────────────────
@@ -190,7 +191,18 @@ export default function AttendancePage() {
   
   // Table Search & Filter State
   const [adminFilter, setAdminFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all"); // 'all' | 'present' | 'late' | 'leave' | 'absent'
   const [tableSearch, setTableSearch] = useState("");
+
+  const handleCardClick = (filterKey) => {
+    setStatusFilter((prev) => (prev === filterKey ? "all" : filterKey));
+    setTimeout(() => {
+      const el = document.getElementById("master-attendance-log");
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    }, 100);
+  };
 
   // Modals State
   const [activeKebabId, setActiveKebabId] = useState(null);
@@ -198,6 +210,41 @@ export default function AttendancePage() {
   const [inspectModal, setInspectModal] = useState(null);
   const [showIpManagerModal, setShowIpManagerModal] = useState(false);
   const [customOfficeIp, setCustomOfficeIp] = useState("39.46.102.129");
+
+  // Attendance Policy Edit Modal State
+  const [showPolicyModal, setShowPolicyModal] = useState(false);
+  const [policyForm, setPolicyForm] = useState({
+    shift_start: "10:00 AM",
+    grace_period_minutes: 14,
+    late_warning_minutes: 29,
+  });
+
+  const handleOpenPolicyModal = () => {
+    setPolicyForm({
+      shift_start: attendancePolicy?.shift_start || "10:00 AM",
+      grace_period_minutes: parseInt(attendancePolicy?.grace_period_minutes) || 14,
+      late_warning_minutes: parseInt(attendancePolicy?.late_warning_minutes) || 29,
+    });
+    setShowPolicyModal(true);
+  };
+
+  const handleSavePolicy = async () => {
+    const updatedPolicy = {
+      ...attendancePolicy,
+      shift_start: policyForm.shift_start,
+      grace_period_minutes: Number(policyForm.grace_period_minutes) || 14,
+      late_warning_minutes: Number(policyForm.late_warning_minutes) || 29,
+    };
+    setAttendancePolicy(updatedPolicy);
+    try {
+      localStorage.setItem("attendance_policy", JSON.stringify(updatedPolicy));
+      localStorage.setItem("software_house_attendance_policy", JSON.stringify(updatedPolicy));
+      await dbSaveRecord("settings", { id: "attendance_policy", ...updatedPolicy }).catch(() => {});
+    } catch(e) {}
+    setShowPolicyModal(false);
+    showToast("Policy Updated 🛡️", "Attendance Policy Timeline hours updated successfully!", "success");
+    window.dispatchEvent(new Event("storage"));
+  };
 
   useEffect(() => {
     setFormattedTimeString(new Date().toLocaleTimeString());
@@ -541,11 +588,25 @@ export default function AttendancePage() {
       localStorage.setItem("software_house_master_attendance_logs", JSON.stringify(updatedMaster));
 
       dbSaveRecord("attendance", {
+        id: newRecord.id,
+        user_email: userEmail,
+        employee_id: userEmail,
+        email: userEmail,
+        user_name: userName,
+        name: userName,
+        user_role: role,
+        attendance_date: todayDateStr,
         date: todayDateStr,
+        check_in_time: newRecord.check_in_time,
         check_in: newRecord.check_in_time,
+        check_out_time: newRecord.check_out_time,
         check_out: newRecord.check_out_time,
+        attendance_status: attendanceStatus,
         status: attendanceStatus,
-        created_at: nowIso
+        public_ip: livePublicIp,
+        ip_address: livePublicIp,
+        created_at: nowIso,
+        timestamp: nowIso
       }).catch(() => {});
     } catch(e) {}
 
@@ -669,23 +730,42 @@ export default function AttendancePage() {
 
   // Filtered System Logs for Full-Width Bottom Table
   const filteredSystemLogs = useMemo(() => {
-    let list = currentRole === "admin"
+    const cleanUserEmail = (userEmail || "").toLowerCase().trim();
+    const isAdminUser = currentRole === "admin" || currentRole === "hr" || currentRole === "manager";
+
+    let list = isAdminUser
       ? allSystemLogs.filter(l => 
           adminFilter === "all" ? true : adminFilter === "student" ? (l.user_role === "student" || l.user_role === "course_student") : (l.user_role !== "student" && l.user_role !== "course_student")
         )
-      : todayRecords;
+      : allSystemLogs.filter(l => {
+          if (!l) return false;
+          const emailKey = (l.user_email || l.email || l.employee_id || l.user_id || "").toLowerCase().trim();
+          return emailKey === cleanUserEmail || (cleanUserEmail && emailKey.includes(cleanUserEmail.split("@")[0])) || isRecordFromToday(l);
+        });
+
+    if (statusFilter !== "all") {
+      list = list.filter(r => {
+        const st = (r.attendance_status || r.status || "").toLowerCase();
+        if (statusFilter === "present") return st.includes("present") || st.includes("on time");
+        if (statusFilter === "late") return st.includes("late") || st.includes("deduction");
+        if (statusFilter === "leave") return st.includes("leave");
+        if (statusFilter === "absent") return st.includes("absent") || st.includes("no check-in") || !r.check_in_time;
+        return true;
+      });
+    }
 
     if (tableSearch.trim()) {
       const q = tableSearch.toLowerCase().trim();
       list = list.filter(r =>
         (r.user_name || "").toLowerCase().includes(q) ||
         (r.user_id || "").toLowerCase().includes(q) ||
+        (r.user_email || "").toLowerCase().includes(q) ||
         (r.attendance_status || "").toLowerCase().includes(q)
       );
     }
 
     return list;
-  }, [currentRole, allSystemLogs, adminFilter, todayRecords, tableSearch]);
+  }, [currentRole, allSystemLogs, adminFilter, todayRecords, tableSearch, statusFilter]);
 
   if (loading) {
     return (
@@ -763,31 +843,95 @@ export default function AttendancePage() {
 
             {/* Organization Attendance Metrics Grid */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-              <div className="p-4 rounded-xl bg-emerald-50/70 border border-emerald-200 space-y-1">
-                <span className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider block">Present & On Time</span>
+              <button
+                type="button"
+                onClick={() => handleCardClick("present")}
+                className={`p-4 rounded-xl text-left transition-all cursor-pointer ${
+                  statusFilter === "present"
+                    ? "bg-emerald-100 border-2 border-emerald-500 shadow-md ring-2 ring-emerald-400/30 scale-[1.02]"
+                    : "bg-emerald-50/70 border border-emerald-200 hover:bg-emerald-100/70 hover:shadow-xs"
+                } space-y-1`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider block">Present & On Time</span>
+                  {statusFilter === "present" && (
+                    <span className="text-[9px] bg-emerald-600 text-white font-bold px-1.5 py-0.5 rounded">Active</span>
+                  )}
+                </div>
                 <p className="text-2xl font-black text-emerald-700">{attendanceMetrics.present}</p>
-                <span className="text-[10px] text-emerald-600 font-medium">Verified Active</span>
-              </div>
+                <span className="text-[10px] text-emerald-600 font-medium flex items-center justify-between">
+                  <span>Verified Active</span>
+                  <span className="text-[9px] underline font-semibold">Filter List ↓</span>
+                </span>
+              </button>
 
-              <div className="p-4 rounded-xl bg-amber-50/70 border border-amber-200 space-y-1">
-                <span className="text-[10px] font-bold text-amber-800 uppercase tracking-wider block">Late Warning</span>
+              <button
+                type="button"
+                onClick={() => handleCardClick("late")}
+                className={`p-4 rounded-xl text-left transition-all cursor-pointer ${
+                  statusFilter === "late"
+                    ? "bg-amber-100 border-2 border-amber-500 shadow-md ring-2 ring-amber-400/30 scale-[1.02]"
+                    : "bg-amber-50/70 border border-amber-200 hover:bg-amber-100/70 hover:shadow-xs"
+                } space-y-1`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold text-amber-800 uppercase tracking-wider block">Late Warning</span>
+                  {statusFilter === "late" && (
+                    <span className="text-[9px] bg-amber-600 text-white font-bold px-1.5 py-0.5 rounded">Active</span>
+                  )}
+                </div>
                 <p className="text-2xl font-black text-amber-700">{attendanceMetrics.late}</p>
-                <span className="text-[10px] text-amber-600 font-medium">After 10:15 AM</span>
-              </div>
+                <span className="text-[10px] text-amber-600 font-medium flex items-center justify-between">
+                  <span>After 10:15 AM</span>
+                  <span className="text-[9px] underline font-semibold">Filter List ↓</span>
+                </span>
+              </button>
 
-              <div className="p-4 rounded-xl bg-purple-50/70 border border-purple-200 space-y-1">
-                <span className="text-[10px] font-bold text-purple-800 uppercase tracking-wider block">On Leave</span>
+              <button
+                type="button"
+                onClick={() => handleCardClick("leave")}
+                className={`p-4 rounded-xl text-left transition-all cursor-pointer ${
+                  statusFilter === "leave"
+                    ? "bg-purple-100 border-2 border-purple-500 shadow-md ring-2 ring-purple-400/30 scale-[1.02]"
+                    : "bg-purple-50/70 border border-purple-200 hover:bg-purple-100/70 hover:shadow-xs"
+                } space-y-1`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold text-purple-800 uppercase tracking-wider block">On Leave</span>
+                  {statusFilter === "leave" && (
+                    <span className="text-[9px] bg-purple-600 text-white font-bold px-1.5 py-0.5 rounded">Active</span>
+                  )}
+                </div>
                 <p className="text-2xl font-black text-purple-700">
                   {allSystemLogs.filter(l => (l.attendance_status || "").toLowerCase().includes("leave")).length}
                 </p>
-                <span className="text-[10px] text-purple-600 font-medium">Approved by Admin</span>
-              </div>
+                <span className="text-[10px] text-purple-600 font-medium flex items-center justify-between">
+                  <span>Approved by Admin</span>
+                  <span className="text-[9px] underline font-semibold">Filter List ↓</span>
+                </span>
+              </button>
 
-              <div className="p-4 rounded-xl bg-rose-50/70 border border-rose-200 space-y-1">
-                <span className="text-[10px] font-bold text-rose-800 uppercase tracking-wider block">Absent Today</span>
+              <button
+                type="button"
+                onClick={() => handleCardClick("absent")}
+                className={`p-4 rounded-xl text-left transition-all cursor-pointer ${
+                  statusFilter === "absent"
+                    ? "bg-rose-100 border-2 border-rose-500 shadow-md ring-2 ring-rose-400/30 scale-[1.02]"
+                    : "bg-rose-50/70 border border-rose-200 hover:bg-rose-100/70 hover:shadow-xs"
+                } space-y-1`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold text-rose-800 uppercase tracking-wider block">Absent Today</span>
+                  {statusFilter === "absent" && (
+                    <span className="text-[9px] bg-rose-600 text-white font-bold px-1.5 py-0.5 rounded">Active</span>
+                  )}
+                </div>
                 <p className="text-2xl font-black text-rose-700">{attendanceMetrics.absent}</p>
-                <span className="text-[10px] text-rose-600 font-medium">No check-in recorded</span>
-              </div>
+                <span className="text-[10px] text-rose-600 font-medium flex items-center justify-between">
+                  <span>No check-in recorded</span>
+                  <span className="text-[9px] underline font-semibold">Filter List ↓</span>
+                </span>
+              </button>
             </div>
 
             {/* Quick Supervisory Action Links */}
@@ -819,14 +963,29 @@ export default function AttendancePage() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {/* Widget 1: Policy Timeline */}
             <div className="bg-white rounded-2xl p-5 border border-[#E2E8F0] shadow-sm space-y-3">
-              <div className="border-b border-[#E2E8F0] pb-2">
+              <div className="border-b border-[#E2E8F0] pb-2 flex items-center justify-between">
                 <h3 className="text-xs font-bold text-[#0F172A] uppercase tracking-wider flex items-center gap-1.5">
                   <FaShieldAlt className="text-[#2563EB]" />
                   <span>Attendance Policy Timeline</span>
                 </h3>
+                <button
+                  type="button"
+                  onClick={handleOpenPolicyModal}
+                  className="text-[10px] font-bold text-[#2563EB] bg-[#EFF6FF] hover:bg-blue-600 hover:text-white px-2 py-0.5 rounded-lg border border-[#2563EB]/20 transition-all cursor-pointer flex items-center gap-1"
+                  title="Click to edit policy timing rules"
+                >
+                  <FaEdit className="text-[9px]" />
+                  <span>Edit Policy</span>
+                </button>
               </div>
+
               <div className="space-y-2 text-xs">
-                <div className="p-2.5 rounded-xl bg-[#EFF6FF] border border-[#2563EB]/20 flex justify-between items-center">
+                {/* 1. On Time Row */}
+                <div
+                  onClick={handleOpenPolicyModal}
+                  className="p-2.5 rounded-xl bg-[#EFF6FF] hover:bg-blue-100/80 border border-[#2563EB]/20 flex justify-between items-center transition-all hover:scale-[1.01] cursor-pointer group shadow-xs"
+                  title="Click to edit On-Time timing policy"
+                >
                   <span className="font-semibold text-[#2563EB]">
                     {attendancePolicy?.shift_start || "10:00 AM"} – {(() => {
                       const start = timeToMinutes(attendancePolicy?.shift_start || "10:00 AM");
@@ -834,9 +993,18 @@ export default function AttendancePage() {
                       return minutesToTime(end);
                     })()}
                   </span>
-                  <span className="text-[10px] font-bold text-[#2563EB] bg-white px-2 py-0.5 rounded border border-[#2563EB]/20">On Time 🟢</span>
+                  <span className="text-[10px] font-bold text-[#2563EB] bg-white px-2 py-0.5 rounded border border-[#2563EB]/20 flex items-center gap-1 group-hover:bg-[#2563EB] group-hover:text-white transition-colors">
+                    <span>On Time 🟢</span>
+                    <FaEdit className="text-[9px]" />
+                  </span>
                 </div>
-                <div className="p-2.5 rounded-xl bg-[#FEF3C7] border border-[#F59E0B]/20 flex justify-between items-center">
+
+                {/* 2. Late Warning Row */}
+                <div
+                  onClick={handleOpenPolicyModal}
+                  className="p-2.5 rounded-xl bg-[#FEF3C7] hover:bg-amber-100/80 border border-[#F59E0B]/20 flex justify-between items-center transition-all hover:scale-[1.01] cursor-pointer group shadow-xs"
+                  title="Click to edit Late Warning timing policy"
+                >
                   <span className="font-semibold text-[#92400E]">
                     {(() => {
                       const start = timeToMinutes(attendancePolicy?.shift_start || "10:00 AM");
@@ -845,9 +1013,18 @@ export default function AttendancePage() {
                       return `${minutesToTime(end)} – ${minutesToTime(end2)}`;
                     })()}
                   </span>
-                  <span className="text-[10px] font-bold text-[#92400E] bg-white px-2 py-0.5 rounded border border-[#F59E0B]/20">Late Warning 🟠</span>
+                  <span className="text-[10px] font-bold text-[#92400E] bg-white px-2 py-0.5 rounded border border-[#F59E0B]/20 flex items-center gap-1 group-hover:bg-[#D97706] group-hover:text-white transition-colors">
+                    <span>Late Warning 🟠</span>
+                    <FaEdit className="text-[9px]" />
+                  </span>
                 </div>
-                <div className="p-2.5 rounded-xl bg-[#FEE2E2] border border-[#EF4444]/20 flex justify-between items-center">
+
+                {/* 3. Salary Deduction Row */}
+                <div
+                  onClick={handleOpenPolicyModal}
+                  className="p-2.5 rounded-xl bg-[#FEE2E2] hover:bg-rose-100/80 border border-[#EF4444]/20 flex justify-between items-center transition-all hover:scale-[1.01] cursor-pointer group shadow-xs"
+                  title="Click to edit Salary Deduction threshold policy"
+                >
                   <span className="font-semibold text-[#991B1B]">
                     {(() => {
                       const start = timeToMinutes(attendancePolicy?.shift_start || "10:00 AM");
@@ -855,18 +1032,21 @@ export default function AttendancePage() {
                       return `${minutesToTime(end)} & After`;
                     })()}
                   </span>
-                  <span className="text-[10px] font-bold text-[#991B1B] bg-white px-2 py-0.5 rounded border border-[#EF4444]/20">Salary Deduction 🔴</span>
+                  <span className="text-[10px] font-bold text-[#991B1B] bg-white px-2 py-0.5 rounded border border-[#EF4444]/20 flex items-center gap-1 group-hover:bg-[#DC2626] group-hover:text-white transition-colors">
+                    <span>Salary Deduction 🔴</span>
+                    <FaEdit className="text-[9px]" />
+                  </span>
                 </div>
               </div>
-              {currentRole === "admin" && (
-                <button
-                  type="button"
-                  onClick={() => router.push("/dashboard/settings/attendance-policy")}
-                  className="w-full mt-2 py-1.5 px-3 rounded-lg bg-[#F8FAFC] hover:bg-[#EFF6FF] text-[#2563EB] border border-[#E2E8F0] font-semibold text-[10px] transition-colors cursor-pointer"
-                >
-                  Configure Policy Settings
-                </button>
-              )}
+
+              <button
+                type="button"
+                onClick={handleOpenPolicyModal}
+                className="w-full mt-2 py-2 px-3 rounded-xl bg-[#2563EB] hover:bg-blue-700 text-white font-bold text-xs transition-all cursor-pointer shadow-xs flex items-center justify-center gap-1.5"
+              >
+                <FaEdit className="text-xs" />
+                <span>Edit Policy Timeline & Rules</span>
+              </button>
             </div>
 
             {/* Widget 2: Quick Rules & Notices */}
@@ -1113,23 +1293,47 @@ export default function AttendancePage() {
               </div>
 
               <div className="grid grid-cols-2 gap-3 text-xs">
-                <div className="p-3.5 rounded-xl bg-[#EFF6FF] border border-[#2563EB]/20 space-y-0.5">
-                  <span className="text-[10px] font-semibold text-[#2563EB] uppercase">Present Today</span>
+                <button
+                  type="button"
+                  onClick={() => handleCardClick("present")}
+                  className={`p-3.5 rounded-xl text-left transition-all cursor-pointer ${
+                    statusFilter === "present"
+                      ? "bg-[#EFF6FF] border-2 border-[#2563EB] shadow-xs"
+                      : "bg-[#EFF6FF] border border-[#2563EB]/20 hover:border-[#2563EB]"
+                  } space-y-0.5`}
+                >
+                  <span className="text-[10px] font-semibold text-[#2563EB] uppercase block">Present Today</span>
                   <p className="text-lg font-bold text-[#2563EB]">{attendanceMetrics.present}</p>
-                </div>
+                </button>
 
-                <div className="p-3.5 rounded-xl bg-[#FEF3C7] border border-[#F59E0B]/20 space-y-0.5">
-                  <span className="text-[10px] font-semibold text-[#92400E] uppercase">Late Today</span>
+                <button
+                  type="button"
+                  onClick={() => handleCardClick("late")}
+                  className={`p-3.5 rounded-xl text-left transition-all cursor-pointer ${
+                    statusFilter === "late"
+                      ? "bg-[#FEF3C7] border-2 border-[#F59E0B] shadow-xs"
+                      : "bg-[#FEF3C7] border border-[#F59E0B]/20 hover:border-[#F59E0B]"
+                  } space-y-0.5`}
+                >
+                  <span className="text-[10px] font-semibold text-[#92400E] uppercase block">Late Today</span>
                   <p className="text-lg font-bold text-[#92400E]">{attendanceMetrics.late}</p>
-                </div>
+                </button>
 
-                <div className="p-3.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-0.5">
-                  <span className="text-[10px] font-semibold text-[#64748B] uppercase">Absent Today</span>
+                <button
+                  type="button"
+                  onClick={() => handleCardClick("absent")}
+                  className={`p-3.5 rounded-xl text-left transition-all cursor-pointer ${
+                    statusFilter === "absent"
+                      ? "bg-[#FEE2E2] border-2 border-rose-500 shadow-xs"
+                      : "bg-[#F8FAFC] border border-[#E2E8F0] hover:border-rose-300"
+                  } space-y-0.5`}
+                >
+                  <span className="text-[10px] font-semibold text-[#64748B] uppercase block">Absent Today</span>
                   <p className="text-lg font-bold text-[#0F172A]">{attendanceMetrics.absent}</p>
-                </div>
+                </button>
 
                 <div className="p-3.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-0.5">
-                  <span className="text-[10px] font-semibold text-[#64748B] uppercase">Attendance Rate</span>
+                  <span className="text-[10px] font-semibold text-[#64748B] uppercase block">Attendance Rate</span>
                   <p className="text-lg font-bold text-[#0F172A]">{attendanceMetrics.ratePct}%</p>
                 </div>
               </div>
@@ -1142,15 +1346,28 @@ export default function AttendancePage() {
 
             {/* Widget 2: Vertical Compact Policy Timeline */}
             <div className="bg-white rounded-2xl p-6 border border-[#E2E8F0] shadow-sm space-y-3">
-              <div className="border-b border-[#E2E8F0] pb-3">
+              <div className="border-b border-[#E2E8F0] pb-3 flex items-center justify-between">
                 <h3 className="text-sm font-bold text-[#0F172A] flex items-center gap-2">
                   <FaShieldAlt className="text-[#2563EB]" />
                   <span>Attendance Policy Timeline</span>
                 </h3>
+                <button
+                  type="button"
+                  onClick={handleOpenPolicyModal}
+                  className="text-[10px] font-bold text-[#2563EB] bg-[#EFF6FF] hover:bg-blue-600 hover:text-white px-2 py-0.5 rounded-lg border border-[#2563EB]/20 transition-all cursor-pointer flex items-center gap-1"
+                  title="Click to edit policy timing rules"
+                >
+                  <FaEdit className="text-[9px]" />
+                  <span>Edit Policy</span>
+                </button>
               </div>
 
               <div className="space-y-3 text-xs">
-                <div className="p-3.5 rounded-xl bg-[#EFF6FF] border border-[#2563EB]/20 flex justify-between items-center">
+                <div
+                  onClick={handleOpenPolicyModal}
+                  className="p-3.5 rounded-xl bg-[#EFF6FF] hover:bg-blue-100/80 border border-[#2563EB]/20 flex justify-between items-center transition-all hover:scale-[1.01] cursor-pointer group shadow-xs"
+                  title="Click to edit On-Time timing policy"
+                >
                   <span className="font-semibold text-[#2563EB]">
                     {attendancePolicy?.shift_start || "10:00 AM"} – {(() => {
                       const start = timeToMinutes(attendancePolicy?.shift_start || "10:00 AM");
@@ -1158,10 +1375,17 @@ export default function AttendancePage() {
                       return minutesToTime(end);
                     })()}
                   </span>
-                  <span className="text-[10px] font-bold text-[#2563EB] bg-white px-2.5 py-1 rounded border border-[#2563EB]/20">On Time 🟢</span>
+                  <span className="text-[10px] font-bold text-[#2563EB] bg-white px-2.5 py-1 rounded border border-[#2563EB]/20 flex items-center gap-1 group-hover:bg-[#2563EB] group-hover:text-white transition-colors">
+                    <span>On Time 🟢</span>
+                    <FaEdit className="text-[9px]" />
+                  </span>
                 </div>
 
-                <div className="p-3.5 rounded-xl bg-[#FEF3C7] border border-[#F59E0B]/20 flex justify-between items-center">
+                <div
+                  onClick={handleOpenPolicyModal}
+                  className="p-3.5 rounded-xl bg-[#FEF3C7] hover:bg-amber-100/80 border border-[#F59E0B]/20 flex justify-between items-center transition-all hover:scale-[1.01] cursor-pointer group shadow-xs"
+                  title="Click to edit Late Warning timing policy"
+                >
                   <span className="font-semibold text-[#92400E]">
                     {(() => {
                       const start = timeToMinutes(attendancePolicy?.shift_start || "10:00 AM");
@@ -1170,10 +1394,17 @@ export default function AttendancePage() {
                       return `${minutesToTime(end)} – ${minutesToTime(end2)}`;
                     })()}
                   </span>
-                  <span className="text-[10px] font-bold text-[#92400E] bg-white px-2.5 py-1 rounded border border-[#F59E0B]/20">Late Warning 🟠</span>
+                  <span className="text-[10px] font-bold text-[#92400E] bg-white px-2.5 py-1 rounded border border-[#F59E0B]/20 flex items-center gap-1 group-hover:bg-[#D97706] group-hover:text-white transition-colors">
+                    <span>Late Warning 🟠</span>
+                    <FaEdit className="text-[9px]" />
+                  </span>
                 </div>
 
-                <div className="p-3.5 rounded-xl bg-[#FEE2E2] border border-[#EF4444]/20 flex justify-between items-center">
+                <div
+                  onClick={handleOpenPolicyModal}
+                  className="p-3.5 rounded-xl bg-[#FEE2E2] hover:bg-rose-100/80 border border-[#EF4444]/20 flex justify-between items-center transition-all hover:scale-[1.01] cursor-pointer group shadow-xs"
+                  title="Click to edit Salary Deduction threshold policy"
+                >
                   <span className="font-semibold text-[#991B1B]">
                     {(() => {
                       const start = timeToMinutes(attendancePolicy?.shift_start || "10:00 AM");
@@ -1181,9 +1412,21 @@ export default function AttendancePage() {
                       return `${minutesToTime(end)} & After`;
                     })()}
                   </span>
-                  <span className="text-[10px] font-bold text-[#991B1B] bg-white px-2.5 py-1 rounded border border-[#EF4444]/20">Salary Deduction 🔴</span>
+                  <span className="text-[10px] font-bold text-[#991B1B] bg-white px-2.5 py-1 rounded border border-[#EF4444]/20 flex items-center gap-1 group-hover:bg-[#DC2626] group-hover:text-white transition-colors">
+                    <span>Salary Deduction 🔴</span>
+                    <FaEdit className="text-[9px]" />
+                  </span>
                 </div>
               </div>
+
+              <button
+                type="button"
+                onClick={handleOpenPolicyModal}
+                className="w-full mt-2 py-2 px-3 rounded-xl bg-[#2563EB] hover:bg-blue-700 text-white font-bold text-xs transition-all cursor-pointer shadow-xs flex items-center justify-center gap-1.5"
+              >
+                <FaEdit className="text-xs" />
+                <span>Edit Policy Timeline & Rules</span>
+              </button>
             </div>
 
             {/* Widget 3: Quick Rules & Notices */}
@@ -1244,19 +1487,58 @@ export default function AttendancePage() {
         </div>
       )}
 
-      {/* 3. MASTER SYSTEM ATTENDANCE LOG (FULL 100% WIDTH BELOW BOTH COLUMNS - Requirement #1 & #3) */}
-      <div className="bg-white rounded-2xl p-6 border border-[#E2E8F0] shadow-sm space-y-4">
+      {/* 3. MASTER SYSTEM ATTENDANCE LOG */}
+      <div id="master-attendance-log" className="bg-white rounded-2xl p-6 border border-[#E2E8F0] shadow-sm space-y-4 scroll-mt-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#E2E8F0] pb-3">
           <div>
             <h3 className="font-bold text-[#0F172A] text-base flex items-center gap-2">
               <FaHistory className="text-[#2563EB]" />
               <span>Master System Attendance Log</span>
             </h3>
-            <p className="text-xs text-[#64748B]">Full width attendance historical database.</p>
+            <p className="text-xs text-[#64748B] flex items-center gap-2 flex-wrap mt-0.5">
+              <span>Full width attendance historical database.</span>
+              {statusFilter !== "all" && (
+                <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-[#2563EB] bg-[#EFF6FF] px-2 py-0.5 rounded-md border border-[#2563EB]/20">
+                  Filtered by: <strong className="capitalize">{statusFilter === "present" ? "Present & On Time" : statusFilter === "late" ? "Late Warning" : statusFilter === "leave" ? "On Leave" : statusFilter === "absent" ? "Absent Today (No Check-In)" : statusFilter}</strong>
+                  <button
+                    type="button"
+                    onClick={() => setStatusFilter("all")}
+                    className="hover:text-rose-600 font-black cursor-pointer text-xs ml-0.5"
+                    title="Clear status filter"
+                  >
+                    ✕
+                  </button>
+                </span>
+              )}
+            </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            <div className="relative w-full sm:w-60">
+            {/* Status Filter Chips */}
+            <div className="flex items-center gap-1 bg-[#F8FAFC] p-1 rounded-xl border border-[#E2E8F0] text-xs font-medium overflow-x-auto">
+              {[
+                { id: "all", label: "All Status" },
+                { id: "present", label: "Present 🟢" },
+                { id: "late", label: "Late 🟠" },
+                { id: "leave", label: "Leave 🟣" },
+                { id: "absent", label: "Absent 🔴" },
+              ].map(st => (
+                <button
+                  key={st.id}
+                  type="button"
+                  onClick={() => setStatusFilter(st.id)}
+                  className={`px-2.5 py-1 rounded-lg text-[10px] font-bold whitespace-nowrap cursor-pointer transition-colors ${
+                    statusFilter === st.id
+                      ? "bg-white text-[#2563EB] shadow-xs border border-[#E2E8F0]"
+                      : "text-[#64748B] hover:text-[#0F172A]"
+                  }`}
+                >
+                  {st.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="relative w-full sm:w-48">
               <FaSearch className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#64748B] text-xs" />
               <input
                 type="text"
@@ -1536,6 +1818,100 @@ export default function AttendancePage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* EDIT ATTENDANCE POLICY RULES MODAL */}
+      {showPolicyModal && (
+        <Modal
+          isOpen={showPolicyModal}
+          onClose={() => setShowPolicyModal(false)}
+          title="✏️ Edit Attendance Policy Timeline & Rules"
+        >
+          <div className="space-y-4 text-xs text-slate-900">
+            <div className="p-3.5 rounded-2xl bg-blue-50 border border-blue-200 text-blue-900 space-y-1">
+              <p className="font-bold text-xs">Configure Official Shift Timings & Grace Periods</p>
+              <p className="text-[11px] text-blue-700">Admin settings to control On-Time cutoff, Late Warning window, and Salary Deduction threshold.</p>
+            </div>
+
+            <div className="space-y-3 bg-slate-50 p-4 rounded-2xl border border-slate-200">
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 mb-1">Official Shift Start Time *</label>
+                <input
+                  type="text"
+                  value={policyForm.shift_start}
+                  onChange={(e) => setPolicyForm({ ...policyForm, shift_start: e.target.value })}
+                  placeholder="e.g. 10:00 AM"
+                  className="w-full px-3 py-2 rounded-xl bg-white border border-slate-300 font-semibold text-slate-900 text-xs focus:ring-2 focus:ring-blue-500 outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-emerald-800 mb-1">On-Time Grace Window (Minutes after shift start) 🟢</label>
+                <input
+                  type="number"
+                  value={policyForm.grace_period_minutes}
+                  onChange={(e) => setPolicyForm({ ...policyForm, grace_period_minutes: e.target.value })}
+                  placeholder="14"
+                  className="w-full px-3 py-2 rounded-xl bg-white border border-emerald-300 font-semibold text-emerald-900 text-xs focus:ring-2 focus:ring-emerald-500 outline-none"
+                />
+                <span className="text-[10px] text-slate-500 mt-1 block">
+                  Calculated On-Time Range: <strong>{policyForm.shift_start || "10:00 AM"} – {(() => {
+                    const start = timeToMinutes(policyForm.shift_start || "10:00 AM");
+                    const end = start + (parseInt(policyForm.grace_period_minutes) || 14);
+                    return minutesToTime(end);
+                  })()}</strong>
+                </span>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-amber-800 mb-1">Late Warning Window (Minutes after shift start) 🟠</label>
+                <input
+                  type="number"
+                  value={policyForm.late_warning_minutes}
+                  onChange={(e) => setPolicyForm({ ...policyForm, late_warning_minutes: e.target.value })}
+                  placeholder="29"
+                  className="w-full px-3 py-2 rounded-xl bg-white border border-amber-300 font-semibold text-amber-900 text-xs focus:ring-2 focus:ring-amber-500 outline-none"
+                />
+                <span className="text-[10px] text-slate-500 mt-1 block">
+                  Calculated Late Warning Range: <strong>{(() => {
+                    const start = timeToMinutes(policyForm.shift_start || "10:00 AM");
+                    const end = start + (parseInt(policyForm.grace_period_minutes) || 14);
+                    const end2 = start + (parseInt(policyForm.late_warning_minutes) || 29);
+                    return `${minutesToTime(end)} – ${minutesToTime(end2)}`;
+                  })()}</strong>
+                </span>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-rose-800 mb-1">Salary Deduction Cutoff 🔴</label>
+                <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 font-semibold text-xs">
+                  {(() => {
+                    const start = timeToMinutes(policyForm.shift_start || "10:00 AM");
+                    const end2 = start + (parseInt(policyForm.late_warning_minutes) || 29);
+                    return `${minutesToTime(end2)} & After (Salary Cut Policy Applies)`;
+                  })()}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-200">
+              <button
+                type="button"
+                onClick={() => setShowPolicyModal(false)}
+                className="px-4 py-2 rounded-xl border border-slate-300 text-slate-700 font-semibold text-xs hover:bg-slate-100 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSavePolicy}
+                className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-xs cursor-pointer"
+              >
+                Save Updated Policy 💾
+              </button>
+            </div>
+          </div>
+        </Modal>
       )}
 
     </div>
