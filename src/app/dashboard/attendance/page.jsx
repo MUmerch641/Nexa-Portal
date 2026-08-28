@@ -246,6 +246,78 @@ export default function AttendancePage() {
     window.dispatchEvent(new Event("storage"));
   };
 
+  // Attendance Adjustment Request Modal State
+  const [showAdjustmentModal, setShowAdjustmentModal] = useState(false);
+  const [adjustmentForm, setAdjustmentForm] = useState({
+    target_date: new Date().toISOString().split("T")[0],
+    request_type: "Missed Punch Correction",
+    requested_clock_in: "10:00 AM",
+    requested_clock_out: "06:00 PM",
+    reason: ""
+  });
+
+  const handleOpenAdjustmentModal = () => {
+    const todayStr = new Date().toISOString().split("T")[0];
+    setAdjustmentForm({
+      target_date: todayStr,
+      request_type: "Missed Punch Correction",
+      requested_clock_in: "10:00 AM",
+      requested_clock_out: "06:00 PM",
+      reason: ""
+    });
+    setShowAdjustmentModal(true);
+  };
+
+  const handleSubmitAdjustmentRequest = async () => {
+    if (!adjustmentForm.reason.trim()) {
+      showToast("Reason Required ⚠️", "Please provide a brief explanation for the attendance adjustment request.", "warning");
+      return;
+    }
+
+    const currentEmail = (localStorage.getItem("current_user_email") || userEmail || "staff@nexa.com").toLowerCase().trim();
+    const currentName = localStorage.getItem("current_user_name") || userName || currentEmail.split("@")[0];
+
+    const recordId = `adj-${Date.now()}`;
+    const newAdjustmentRequest = {
+      id: recordId,
+      applicant_email: currentEmail,
+      submitted_by: currentName,
+      target_date: adjustmentForm.target_date,
+      request_type: adjustmentForm.request_type,
+      requested_clock_in: adjustmentForm.requested_clock_in,
+      requested_clock_out: adjustmentForm.requested_clock_out,
+      reason: adjustmentForm.reason,
+      status: "Pending HR Review",
+      created_at: new Date().toISOString()
+    };
+
+    try {
+      const existing = JSON.parse(localStorage.getItem("software_house_attendance_adjustments") || "[]");
+      const updated = [newAdjustmentRequest, ...existing];
+      localStorage.setItem("software_house_attendance_adjustments", JSON.stringify(updated));
+
+      const newComplaintTicket = {
+        id: `ticket-adj-${Date.now()}`,
+        submitted_by: `${currentName} (${currentEmail})`,
+        category: "Attendance Adjustment",
+        title: `Attendance Adjustment: ${adjustmentForm.request_type} (${adjustmentForm.target_date})`,
+        description: `Date: ${adjustmentForm.target_date} | Type: ${adjustmentForm.request_type} | Clock-In: ${adjustmentForm.requested_clock_in} | Clock-Out: ${adjustmentForm.requested_clock_out}\nReason: ${adjustmentForm.reason}`,
+        status: "Pending",
+        created_at: new Date().toISOString()
+      };
+
+      const existingComplaints = JSON.parse(localStorage.getItem("software_house_complaints_list") || "[]");
+      localStorage.setItem("software_house_complaints_list", JSON.stringify([newComplaintTicket, ...existingComplaints]));
+
+      await dbSaveRecord("complaints", newComplaintTicket).catch(() => {});
+      await dbSaveRecord("settings", { id: recordId, ...newAdjustmentRequest }).catch(() => {});
+    } catch (e) {}
+
+    setShowAdjustmentModal(false);
+    showToast("Adjustment Request Submitted 📩", `Request for ${adjustmentForm.target_date} sent to HR & Admin for review.`, "success");
+    window.dispatchEvent(new Event("storage"));
+  };
+
   useEffect(() => {
     setFormattedTimeString(new Date().toLocaleTimeString());
     const timer = setInterval(() => {
@@ -1085,8 +1157,8 @@ export default function AttendancePage() {
                 </div>
                 <button
                   type="button"
-                  onClick={() => showToast("Request Submitted 📩", "HR Support notified for manual attendance adjustment review.", "info")}
-                  className="w-full py-2.5 px-3 rounded-xl bg-white hover:bg-[#EFF6FF] text-[#2563EB] border border-[#E2E8F0] font-semibold text-xs transition-colors cursor-pointer text-center flex items-center justify-center gap-1.5 shadow-xs"
+                  onClick={handleOpenAdjustmentModal}
+                  className="w-full py-2.5 px-3 rounded-xl bg-white hover:bg-[#EFF6FF] text-[#2563EB] border border-[#E2E8F0] font-semibold text-xs transition-all cursor-pointer text-center flex items-center justify-center gap-1.5 shadow-xs hover:border-[#2563EB]"
                 >
                   <span>📩 Request Attendance Adjustment</span>
                 </button>
@@ -1476,8 +1548,8 @@ export default function AttendancePage() {
 
                 <button
                   type="button"
-                  onClick={() => showToast("Request Submitted 📩", "HR Support notified for manual attendance adjustment review.", "info")}
-                  className="w-full py-2.5 px-3 rounded-xl bg-white hover:bg-[#EFF6FF] text-[#2563EB] border border-[#E2E8F0] font-semibold text-xs transition-colors cursor-pointer text-center flex items-center justify-center gap-1.5 shadow-xs"
+                  onClick={handleOpenAdjustmentModal}
+                  className="w-full py-2.5 px-3 rounded-xl bg-white hover:bg-[#EFF6FF] text-[#2563EB] border border-[#E2E8F0] font-semibold text-xs transition-all cursor-pointer text-center flex items-center justify-center gap-1.5 shadow-xs hover:border-[#2563EB]"
                 >
                   <span>📩 Request Attendance Adjustment</span>
                 </button>
@@ -1908,6 +1980,103 @@ export default function AttendancePage() {
                 className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-xs cursor-pointer"
               >
                 Save Updated Policy 💾
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* REQUEST ATTENDANCE ADJUSTMENT MODAL */}
+      {showAdjustmentModal && (
+        <Modal
+          isOpen={showAdjustmentModal}
+          onClose={() => setShowAdjustmentModal(false)}
+          title="📩 Request Attendance Adjustment"
+        >
+          <div className="space-y-4 text-xs text-slate-900">
+            <div className="p-3.5 rounded-2xl bg-blue-50 border border-blue-200 text-blue-900 space-y-1">
+              <p className="font-bold text-xs">Submit Official Attendance Correction Request</p>
+              <p className="text-[11px] text-blue-700">Request manual clock-in/out adjustment or late penalty waiver from Admin & HR Support.</p>
+            </div>
+
+            <div className="space-y-3 bg-slate-50 p-4 rounded-2xl border border-slate-200">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">Target Date *</label>
+                  <input
+                    type="date"
+                    value={adjustmentForm.target_date}
+                    onChange={(e) => setAdjustmentForm({ ...adjustmentForm, target_date: e.target.value })}
+                    className="w-full px-3 py-2 rounded-xl bg-white border border-slate-300 font-semibold text-slate-900 text-xs focus:ring-2 focus:ring-blue-500 outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">Adjustment Type *</label>
+                  <select
+                    value={adjustmentForm.request_type}
+                    onChange={(e) => setAdjustmentForm({ ...adjustmentForm, request_type: e.target.value })}
+                    className="w-full px-3 py-2 rounded-xl bg-white border border-slate-300 font-semibold text-slate-900 text-xs focus:ring-2 focus:ring-blue-500 outline-none"
+                  >
+                    <option value="Missed Punch Correction">Missed Punch (Forgot Clock-In/Out)</option>
+                    <option value="Time Correction">Time Correction (System Error)</option>
+                    <option value="Network / IP Issue">Office Wi-Fi / IP Gateway Mismatch</option>
+                    <option value="Late Arrival Waiver">Late Arrival Penalty Waiver</option>
+                    <option value="Emergency Work Adjustment">Off-Site / Emergency Work</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">Requested Clock-In Time</label>
+                  <input
+                    type="text"
+                    value={adjustmentForm.requested_clock_in}
+                    onChange={(e) => setAdjustmentForm({ ...adjustmentForm, requested_clock_in: e.target.value })}
+                    placeholder="e.g. 10:00 AM"
+                    className="w-full px-3 py-2 rounded-xl bg-white border border-slate-300 font-semibold text-slate-900 text-xs focus:ring-2 focus:ring-blue-500 outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">Requested Clock-Out Time</label>
+                  <input
+                    type="text"
+                    value={adjustmentForm.requested_clock_out}
+                    onChange={(e) => setAdjustmentForm({ ...adjustmentForm, requested_clock_out: e.target.value })}
+                    placeholder="e.g. 06:00 PM"
+                    className="w-full px-3 py-2 rounded-xl bg-white border border-slate-300 font-semibold text-slate-900 text-xs focus:ring-2 focus:ring-blue-500 outline-none"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 mb-1">Reason & Explanation *</label>
+                <textarea
+                  rows={3}
+                  value={adjustmentForm.reason}
+                  onChange={(e) => setAdjustmentForm({ ...adjustmentForm, reason: e.target.value })}
+                  placeholder="Please explain why the adjustment is needed (e.g. power outage, network issue, approved offsite task)..."
+                  className="w-full px-3 py-2 rounded-xl bg-white border border-slate-300 font-medium text-slate-900 text-xs focus:ring-2 focus:ring-blue-500 outline-none resize-none"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-200">
+              <button
+                type="button"
+                onClick={() => setShowAdjustmentModal(false)}
+                className="px-4 py-2 rounded-xl border border-slate-300 text-slate-700 font-semibold text-xs hover:bg-slate-100 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSubmitAdjustmentRequest}
+                className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-xs cursor-pointer flex items-center gap-1.5"
+              >
+                <span>Submit Request 📩</span>
               </button>
             </div>
           </div>
