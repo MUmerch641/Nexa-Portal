@@ -41,7 +41,18 @@ export default function DashboardLayout({ children }) {
         return;
       }
 
-      // RBAC Route Guarding for Direct URL Access Protection
+      const cleanRole = (userRole || "").toLowerCase().trim();
+
+      // Admin, HR, Manager, Accounts roles have full unrestricted access to all routes
+      const isAdminUser = ["admin", "super_admin", "hr", "manager", "accounts"].includes(cleanRole);
+
+      if (isAdminUser) {
+        setAuthorized(true);
+        setRole(cleanRole);
+        return;
+      }
+
+      // RBAC Route Guarding for Direct URL Access Protection (Non-Admin Users)
       const adminOnlyPaths = [
         "/dashboard",
         "/dashboard/employees",
@@ -55,25 +66,25 @@ export default function DashboardLayout({ children }) {
 
       const currentPath = pathname ? pathname.replace(/\/$/, "") : "";
 
-      if (userRole === "employee") {
+      if (cleanRole === "employee") {
         if (adminOnlyPaths.includes(currentPath) || currentPath === "/dashboard" || currentPath === "/dashboard/student") {
           showToast("403 Forbidden 🛑", "Access Denied: You do not have permission to access this area. Redirecting to Employee Portal...", "error");
           router.replace("/dashboard/employee");
           return;
         }
-      } else if (userRole === "student") {
+      } else if (cleanRole === "student") {
         if (adminOnlyPaths.includes(currentPath) || currentPath === "/dashboard" || currentPath === "/dashboard/employee") {
           showToast("403 Forbidden 🛑", "Access Denied: You do not have permission to access this area. Redirecting to Student Portal...", "error");
           router.replace("/dashboard/student");
           return;
         }
-      } else if (userRole === "intern") {
+      } else if (cleanRole === "intern") {
         if (adminOnlyPaths.includes(currentPath) || currentPath === "/dashboard" || currentPath === "/dashboard/employee") {
           showToast("403 Forbidden 🛑", "Access Denied. Redirecting to Internships Portal...", "error");
           router.replace("/dashboard/internships");
           return;
         }
-      } else if (userRole === "client") {
+      } else if (cleanRole === "client") {
         if (adminOnlyPaths.includes(currentPath) || currentPath === "/dashboard") {
           showToast("403 Forbidden 🛑", "Redirecting to Client Portal...", "info");
           router.replace("/dashboard/client-portal");
@@ -82,7 +93,7 @@ export default function DashboardLayout({ children }) {
       }
 
       setAuthorized(true);
-      setRole(userRole);
+      setRole(cleanRole);
     };
 
     checkAuth();
