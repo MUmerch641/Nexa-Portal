@@ -61,7 +61,7 @@ export default function LoginPage() {
         router.replace("/dashboard/client-portal");
       } else if (userRole === "admin") {
         router.replace("/dashboard");
-      } else if (userRole === "student") {
+      } else if (userRole === "student" || userRole === "intern") {
         router.replace("/dashboard/student");
       } else {
         router.replace("/dashboard/employee");
@@ -356,9 +356,7 @@ export default function LoginPage() {
 
       if (activeRole === "client") {
         setTimeout(() => router.replace("/dashboard/client-portal"), 700);
-      } else if (activeRole === "intern") {
-        setTimeout(() => router.replace("/dashboard/internships"), 700);
-      } else if (activeRole === "student") {
+      } else if (activeRole === "intern" || activeRole === "student") {
         setTimeout(() => router.replace("/dashboard/student"), 700);
       } else if (activeRole === "admin") {
         setTimeout(() => router.replace("/dashboard"), 700);

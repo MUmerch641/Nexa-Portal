@@ -48,6 +48,38 @@ export default function Navbar({ onMenuClick, isSidebarOpen = true }) {
   const [role, setRole] = useState("admin");
   const [userEmail, setUserEmail] = useState("");
   const [userName, setUserName] = useState("");
+  const [userAvatarUrl, setUserAvatarUrl] = useState("");
+  const [isAvatarModalOpen, setIsAvatarModalOpen] = useState(false);
+  const [modalAvatarUrlInput, setModalAvatarUrlInput] = useState("");
+
+  const handleSaveAvatar = (newPicUrl) => {
+    if (!newPicUrl) return;
+    const eClean = (userEmail || localStorage.getItem("current_user_email") || "").toLowerCase().trim();
+    if (eClean) {
+      localStorage.setItem(`user_avatar_${eClean}`, newPicUrl);
+      setUserAvatarUrl(newPicUrl);
+    }
+    localStorage.removeItem("current_user_avatar");
+    localStorage.removeItem("user_profile_avatar");
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event("avatarChanged"));
+    }
+    setIsAvatarModalOpen(false);
+    showToast("Profile Photo Updated 🖼️", "Your profile picture has been updated for your account.", "success");
+  };
+
+  const handleAvatarFileUpload = (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        if (reader.result) {
+          handleSaveAvatar(reader.result);
+        }
+      };
+      reader.readAsDataURL(file);
+    }
+  };
   
   // Header Date
   const [currentDateStr, setCurrentDateStr] = useState("");
@@ -74,6 +106,40 @@ export default function Navbar({ onMenuClick, isSidebarOpen = true }) {
   const [activeNotifCategory, setActiveNotifCategory] = useState("all");
   const [isDarkMode, setIsDarkMode] = useState(false);
   const notifCloseTimerRef = useRef(null);
+
+  // Smart Auto-Hiding Navbar on Scroll (Hide on Down, Show on Up)
+  const [isNavVisible, setIsNavVisible] = useState(true);
+  const lastScrollYRef = useRef(0);
+
+  useEffect(() => {
+    let ticking = false;
+    const handleScroll = () => {
+      if (!ticking) {
+        window.requestAnimationFrame(() => {
+          const currentScrollY = window.scrollY || document.documentElement.scrollTop || 0;
+          
+          // Always visible near the top
+          if (currentScrollY <= 40) {
+            setIsNavVisible(true);
+          } else if (currentScrollY > lastScrollYRef.current + 6) {
+            // Scrolling DOWN -> Hide navbar smoothly
+            setIsNavVisible(false);
+            setShowNotifications(false);
+          } else if (currentScrollY < lastScrollYRef.current - 6) {
+            // Scrolling UP -> Reveal navbar smoothly
+            setIsNavVisible(true);
+          }
+
+          lastScrollYRef.current = currentScrollY;
+          ticking = false;
+        });
+        ticking = true;
+      }
+    };
+
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -152,13 +218,31 @@ export default function Navbar({ onMenuClick, isSidebarOpen = true }) {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
+  const searchCloseTimerRef = useRef(null);
+
+  const handleMouseEnterSearch = () => {
+    if (searchCloseTimerRef.current) {
+      clearTimeout(searchCloseTimerRef.current);
+      searchCloseTimerRef.current = null;
+    }
+  };
+
+  const handleMouseLeaveSearch = () => {
+    if (isSearchOpen) {
+      if (searchCloseTimerRef.current) clearTimeout(searchCloseTimerRef.current);
+      searchCloseTimerRef.current = setTimeout(() => {
+        setIsSearchOpen(false);
+      }, 600); // 600ms smooth auto-close when cursor leaves search box
+    }
+  };
+
   useEffect(() => {
     if (isSearchOpen && searchInputRef.current) {
       setTimeout(() => searchInputRef.current?.focus(), 100);
     }
   }, [isSearchOpen]);
 
-  // Global Search logic
+  // Global Search logic (Searches Projects, Employees, Interns, Students, Tasks & Navigation)
   useEffect(() => {
     if (!searchQuery.trim()) {
       setSearchResults([]);
@@ -169,17 +253,39 @@ export default function Navbar({ onMenuClick, isSidebarOpen = true }) {
     const results = [];
 
     try {
+      // 1. SEARCH PROJECTS & SOFTWARE HOUSE DELIVERABLES
+      const rawProjs = JSON.parse(localStorage.getItem("persistent_projects") || "[]");
+      rawProjs.forEach(p => {
+        if (!p) return;
+        const title = (p.title || p.project_name || p.name || "").toLowerCase();
+        const client = (p.client_name || p.client || "").toLowerCase();
+        const tech = (p.tech_stack || p.technology || p.domain || "").toLowerCase();
+        const status = (p.status || "").toLowerCase();
+        if (title.includes(q) || client.includes(q) || tech.includes(q) || status.includes(q) || "projects".includes(q)) {
+          results.push({
+            id: `proj-${p.id || p.title}`,
+            title: p.title || p.project_name || "Client Project",
+            subtitle: `${p.tech_stack || "Full Stack"} • ${p.client_name || "In-House"} • ${p.status || "In Progress"}`,
+            category: "Projects",
+            icon: FaProjectDiagram,
+            link: "/dashboard/projects"
+          });
+        }
+      });
+
+      // 2. SEARCH EMPLOYEES & STAFF
       const emps = JSON.parse(localStorage.getItem("persistent_employees") || "[]");
       emps.forEach(e => {
         if (!e) return;
         const name = (e.full_name || e.name || "").toLowerCase();
         const email = (e.email || "").toLowerCase();
         const dept = (e.department || "").toLowerCase();
-        if (name.includes(q) || email.includes(q) || dept.includes(q)) {
+        const desig = (e.designation || e.role || "").toLowerCase();
+        if (name.includes(q) || email.includes(q) || dept.includes(q) || desig.includes(q) || "employees".includes(q)) {
           results.push({
             id: `emp-${e.id || e.email}`,
             title: e.full_name || "Employee",
-            subtitle: `${e.department || "Staff"} • ${e.email}`,
+            subtitle: `${e.department || "Engineering"} • ${e.designation || "Team Member"} • ${e.email}`,
             category: "Employees",
             icon: FaUsers,
             link: "/dashboard/employees"
@@ -187,17 +293,38 @@ export default function Navbar({ onMenuClick, isSidebarOpen = true }) {
         }
       });
 
-      const stus = JSON.parse(localStorage.getItem("persistent_courses") || "[]");
+      // 3. SEARCH INTERNS & TRAINEES
+      const internsList = JSON.parse(localStorage.getItem("persistent_interns") || localStorage.getItem("interns") || "[]");
+      internsList.forEach(it => {
+        if (!it) return;
+        const name = (it.full_name || it.name || "").toLowerCase();
+        const email = (it.email || "").toLowerCase();
+        const domain = (it.course_name || it.domain || "").toLowerCase();
+        const mode = (it.internship_mode || "").toLowerCase();
+        if (name.includes(q) || email.includes(q) || domain.includes(q) || mode.includes(q) || "interns".includes(q) || "internship".includes(q)) {
+          results.push({
+            id: `intern-${it.id || it.email}`,
+            title: it.full_name || "Intern",
+            subtitle: `${it.course_name || "Practical Internship"} • ${it.internship_mode || "On-Site"} • ${it.email}`,
+            category: "Interns",
+            icon: FaUserGraduate,
+            link: "/dashboard/internships"
+          });
+        }
+      });
+
+      // 4. SEARCH STUDENTS & COURSE ENROLLMENTS
+      const stus = JSON.parse(localStorage.getItem("persistent_courses") || localStorage.getItem("persistent_students") || "[]");
       stus.forEach(s => {
         if (!s) return;
         const name = (s.full_name || s.name || "").toLowerCase();
         const email = (s.email || "").toLowerCase();
-        const course = (s.course_name || "").toLowerCase();
-        if (name.includes(q) || email.includes(q) || course.includes(q)) {
+        const course = (s.course_name || s.course || "").toLowerCase();
+        if (name.includes(q) || email.includes(q) || course.includes(q) || "students".includes(q)) {
           results.push({
             id: `stu-${s.id || s.email}`,
             title: s.full_name || "Student",
-            subtitle: `${s.course_name || "Course Student"} • ${s.email}`,
+            subtitle: `${s.course_name || "Tech Student"} • Roll: ${s.enrollment_no || s.id || "Enrolled"}`,
             category: "Students",
             icon: FaGraduationCap,
             link: "/dashboard/student"
@@ -205,25 +332,57 @@ export default function Navbar({ onMenuClick, isSidebarOpen = true }) {
         }
       });
 
-      const projs = JSON.parse(localStorage.getItem("software_house_assigned_tasks") || "[]");
-      projs.forEach(p => {
-        if (!p) return;
-        const title = (p.title || p.task || "").toLowerCase();
-        const assignee = (p.assignedToName || p.assignedToEmail || "").toLowerCase();
-        if (title.includes(q) || assignee.includes(q)) {
+      // 5. SEARCH TASKS & DELIVERABLES
+      const tasks = JSON.parse(localStorage.getItem("software_house_assigned_tasks") || localStorage.getItem("daily_tasks") || "[]");
+      tasks.forEach(t => {
+        if (!t) return;
+        const title = (t.title || t.task || "").toLowerCase();
+        const assignee = (t.assignedToName || t.assignedToEmail || t.assignee || "").toLowerCase();
+        if (title.includes(q) || assignee.includes(q) || "tasks".includes(q)) {
           results.push({
-            id: `proj-${p.id}`,
-            title: p.title || p.task || "Project Task",
-            subtitle: `Assigned to: ${p.assignedToName || p.assignedToEmail || "Team"}`,
-            category: "Projects & Tasks",
-            icon: FaProjectDiagram,
+            id: `task-${t.id || t.title}`,
+            title: t.title || t.task || "Assigned Task",
+            subtitle: `Assigned: ${t.assignedToName || t.assignee || "Team"} • Status: ${t.status || "Active"}`,
+            category: "Tasks",
+            icon: FaTasks,
             link: "/dashboard/projects"
+          });
+        }
+      });
+
+      // 6. QUICK NAVIGATION SYSTEM ROUTES
+      const routes = [
+        { name: "Projects & Tasks Hub", desc: "Software house client deliverables and sprint tasks", path: "/dashboard/projects", keys: "project projects task tasks sprint client work" },
+        { name: "Internship Practical Program", desc: "Manage 3-month on-site and remote interns", path: "/dashboard/internships", keys: "intern interns internship remote onsite training" },
+        { name: "Student Learning Portal (LMS)", desc: "Student curriculum, testing suite, and daily work", path: "/dashboard/student", keys: "student students course lms exam lecture learn" },
+        { name: "Employee Directory & HR", desc: "Staff profiles, salaries, shifts, and credentials", path: "/dashboard/employees", keys: "employee employees staff hr team member profile salary" },
+        { name: "Attendance & Biometric Desk", desc: "Daily check-in, check-out, and attendance ledger", path: "/dashboard/attendance", keys: "attendance check in out time desk clock biometric" },
+        { name: "Leave Approvals & Requests", desc: "Student and employee leave management", path: "/dashboard/leaves", keys: "leave leaves chutti holiday sick casual vacation" },
+        { name: "Accounts & Financial Ledger", desc: "Revenue, expenses, fee cycles, and balance sheet", path: "/dashboard/accounts", keys: "account accounts finance fee invoice billing money ledger" },
+        { name: "System Settings & Roles", desc: "Portal settings, notifications, and security", path: "/dashboard/settings", keys: "setting settings config admin access password security" }
+      ];
+
+      routes.forEach(r => {
+        if (r.name.toLowerCase().includes(q) || r.keys.includes(q)) {
+          results.push({
+            id: `route-${r.path}`,
+            title: r.name,
+            subtitle: r.desc,
+            category: "Navigation",
+            icon: FaSearch,
+            link: r.path
           });
         }
       });
     } catch(e) {}
 
-    setSearchResults(results.slice(0, 8));
+    // Remove duplicate items by id and limit to 10 top results
+    const uniqueMap = new Map();
+    results.forEach(item => {
+      if (!uniqueMap.has(item.id)) uniqueMap.set(item.id, item);
+    });
+
+    setSearchResults(Array.from(uniqueMap.values()).slice(0, 10));
   }, [searchQuery]);
 
   useEffect(() => {
@@ -269,13 +428,10 @@ export default function Navbar({ onMenuClick, isSidebarOpen = true }) {
 
     // Async live Supabase DB fetch
     try {
-      const dbLeaves = await dbFetch("leaves", [], true);
+      const dbLeaves = await dbFetch("leaves", []);
       if (Array.isArray(dbLeaves)) {
         const pending = dbLeaves.filter(l => (l.status || "").toLowerCase() === "pending");
         setPendingLeaves(pending);
-        if (typeof window !== "undefined") {
-          localStorage.setItem("software_house_leaves", JSON.stringify(dbLeaves));
-        }
       }
     } catch (e) {}
   };
@@ -364,12 +520,12 @@ export default function Navbar({ onMenuClick, isSidebarOpen = true }) {
     };
 
     window.addEventListener("roleChanged", handleRoleChange);
-    window.addEventListener("storage", loadAllNotifications);
     window.addEventListener("leaveSubmitted", loadAllNotifications);
+    window.addEventListener("dataChanged", loadAllNotifications);
     return () => {
       window.removeEventListener("roleChanged", handleRoleChange);
-      window.removeEventListener("storage", loadAllNotifications);
       window.removeEventListener("leaveSubmitted", loadAllNotifications);
+      window.removeEventListener("dataChanged", loadAllNotifications);
     };
   }, []);
 
@@ -425,20 +581,24 @@ export default function Navbar({ onMenuClick, isSidebarOpen = true }) {
         resolvedName = resolvedEmail.split("@")[0].replace(/[._-]+/g, " ");
       }
 
+      const eClean = resolvedEmail.toLowerCase().trim();
+      const customAvatar = eClean ? (localStorage.getItem(`user_avatar_${eClean}`) || "") : "";
+
       if (isMounted) {
         setUserEmail(resolvedEmail);
         setUserName(resolvedName);
+        setUserAvatarUrl(customAvatar);
       }
     };
 
     loadUserProfile();
     window.addEventListener("roleChanged", loadUserProfile);
-    window.addEventListener("storage", loadUserProfile);
+    window.addEventListener("avatarChanged", loadUserProfile);
 
     return () => {
       isMounted = false;
       window.removeEventListener("roleChanged", loadUserProfile);
-      window.removeEventListener("storage", loadUserProfile);
+      window.removeEventListener("avatarChanged", loadUserProfile);
     };
   }, []);
 
@@ -474,7 +634,9 @@ export default function Navbar({ onMenuClick, isSidebarOpen = true }) {
   };
 
   return (
-    <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-[#E2E8F0] bg-white/95 backdrop-blur-md px-6">
+    <header className={`sticky top-0 z-30 flex h-16 items-center justify-between border-b border-[#E2E8F0] bg-white/95 backdrop-blur-md px-6 transition-all duration-300 ease-in-out ${
+      isNavVisible ? "translate-y-0 opacity-100 shadow-xs" : "-translate-y-full opacity-0 pointer-events-none shadow-none"
+    }`}>
       {/* Left: Hamburger & Breadcrumb */}
       <div className="flex items-center gap-4">
         {isAdminRole && (
@@ -782,14 +944,29 @@ export default function Navbar({ onMenuClick, isSidebarOpen = true }) {
           )}
         </div>
 
-        {/* Profile Avatar Badge */}
-        <Link
-          href={role === "student" ? "/dashboard/student" : role === "employee" ? "/dashboard/employee" : "/dashboard/settings"}
+        {/* Profile Avatar Badge - Click to Upload / Change Photo */}
+        <div
+          onClick={() => {
+            setModalAvatarUrlInput(userAvatarUrl || "");
+            setIsAvatarModalOpen(true);
+          }}
           className="flex items-center gap-2 pl-2 border-l border-[#E2E8F0] hover:opacity-85 transition-opacity cursor-pointer group"
-          title="Click to view My Profile"
+          title="Click to Upload / Change Profile Picture"
         >
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#EFF6FF] text-[#2563EB] text-xs font-bold border border-[#2563EB]/20 group-hover:scale-105 transition-transform">
-            {getUserInitials(userName, userEmail)}
+          <div className="relative flex h-9 w-9 items-center justify-center rounded-xl bg-[#EFF6FF] text-[#2563EB] text-xs font-bold border border-[#2563EB]/20 group-hover:scale-105 transition-transform overflow-hidden shrink-0 shadow-xs">
+            {userAvatarUrl ? (
+              <img
+                src={userAvatarUrl}
+                alt={userName || "Profile"}
+                className="h-full w-full object-cover"
+                onError={(e) => {
+                  e.currentTarget.style.display = "none";
+                }}
+              />
+            ) : null}
+            <span className="absolute inset-0 flex items-center justify-center text-[#2563EB] text-xs font-bold -z-10">
+              {getUserInitials(userName, userEmail)}
+            </span>
           </div>
           <div className="text-left hidden xl:block">
             <p className="text-xs font-bold text-[#0F172A] leading-tight group-hover:text-[#2563EB] transition-colors">
@@ -797,7 +974,7 @@ export default function Navbar({ onMenuClick, isSidebarOpen = true }) {
             </p>
             <p className="text-[10px] text-[#64748B] uppercase font-medium tracking-wider">{role}</p>
           </div>
-        </Link>
+        </div>
 
         {/* Sign Out Button */}
         <button
@@ -810,64 +987,113 @@ export default function Navbar({ onMenuClick, isSidebarOpen = true }) {
         </button>
       </div>
 
-      {/* GLOBAL SEARCH MODAL (Ctrl + K) */}
+      {/* GLOBAL SEARCH MODAL (Ctrl + K / Auto-close on Mouse Leave / Crystal Clean Floating Dropdown) */}
       {isSearchOpen && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center bg-slate-900/40 backdrop-blur-xs pt-20 p-4">
-          <div className="bg-white rounded-2xl max-w-xl w-full p-4 shadow-xl border border-[#E2E8F0] space-y-3 animate-in fade-in zoom-in-95 duration-150">
+        <div 
+          onClick={() => setIsSearchOpen(false)}
+          className="fixed inset-0 z-50 flex items-start justify-center pt-16 sm:pt-18 p-4 bg-transparent"
+        >
+          <div 
+            onClick={(e) => e.stopPropagation()}
+            onMouseEnter={handleMouseEnterSearch}
+            onMouseLeave={handleMouseLeaveSearch}
+            className="bg-white/95 backdrop-blur-xl rounded-3xl max-w-2xl w-full p-5 shadow-[0_25px_60px_-15px_rgba(15,23,42,0.25)] border border-slate-200 space-y-4 animate-in fade-in zoom-in-95 duration-150 relative ring-1 ring-slate-900/5"
+          >
+            {/* Search Input Bar */}
             <div className="flex items-center gap-3 border-b border-[#E2E8F0] pb-3 px-2">
-              <FaSearch className="text-[#2563EB] text-base" />
+              <FaSearch className="text-[#2563EB] text-lg shrink-0" />
               <input
                 ref={searchInputRef}
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search employees, students, projects, tasks..."
-                className="w-full text-sm font-semibold text-[#0F172A] outline-none placeholder:text-[#94A3B8] bg-transparent"
+                placeholder="Search projects, employees, interns, students, tasks..."
+                className="w-full text-sm font-bold text-[#0F172A] outline-none placeholder:text-[#94A3B8] placeholder:font-normal bg-transparent"
               />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery("")}
+                  className="text-slate-400 hover:text-slate-600 text-xs px-1.5 py-0.5 rounded cursor-pointer"
+                >
+                  ✕
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => setIsSearchOpen(false)}
-                className="text-[#64748B] text-xs font-mono font-semibold px-2 py-1 bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg cursor-pointer"
+                className="text-[#64748B] text-xs font-mono font-bold px-2 py-1 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl hover:bg-slate-100 transition-colors cursor-pointer"
+                title="Close Search"
               >
                 ESC
               </button>
             </div>
 
-            <div className="max-h-80 overflow-y-auto space-y-1 text-xs">
+            {/* Results Feed */}
+            <div className="max-h-96 overflow-y-auto space-y-1.5 text-xs pr-1">
               {!searchQuery.trim() ? (
-                <div className="py-8 text-center text-[#64748B] font-medium space-y-1">
-                  <p className="text-xs">Type any keyword to search across the system.</p>
+                <div className="py-10 text-center text-[#64748B] space-y-2">
+                  <FaSearch className="mx-auto text-2xl text-blue-500/50" />
+                  <p className="text-xs font-bold text-slate-700">Type any keyword to search across the entire portal.</p>
+                  <p className="text-[11px] text-slate-400">Search projects, employees, practical interns, LMS students, and deliverables.</p>
                 </div>
               ) : searchResults.length === 0 ? (
-                <div className="py-8 text-center text-[#64748B] italic">
-                  No matching records found for "{searchQuery}".
+                <div className="py-10 text-center text-[#64748B] space-y-1">
+                  <p className="text-xs font-bold text-slate-700">No matching records found for "{searchQuery}".</p>
+                  <p className="text-[11px] text-slate-400">Try searching by project title, person name, email, or tech domain.</p>
                 </div>
               ) : (
                 searchResults.map((res) => {
                   const Icon = res.icon || FaSearch;
+                  const categoryStyle =
+                    res.category === "Projects"
+                      ? "bg-blue-50 text-blue-700 border-blue-200"
+                      : res.category === "Employees"
+                      ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                      : res.category === "Interns"
+                      ? "bg-purple-50 text-purple-700 border-purple-200"
+                      : res.category === "Students"
+                      ? "bg-cyan-50 text-cyan-700 border-cyan-200"
+                      : res.category === "Tasks"
+                      ? "bg-amber-50 text-amber-700 border-amber-200"
+                      : "bg-slate-100 text-slate-700 border-slate-200";
+
                   return (
                     <Link
                       key={res.id}
                       href={res.link}
                       onClick={() => setIsSearchOpen(false)}
-                      className="flex items-center justify-between p-3 rounded-xl hover:bg-[#EFF6FF] border border-transparent hover:border-[#2563EB]/20 transition-colors group cursor-pointer"
+                      className="flex items-center justify-between p-3 rounded-2xl hover:bg-[#EFF6FF] border border-transparent hover:border-[#2563EB]/20 transition-all group cursor-pointer"
                     >
                       <div className="flex items-center gap-3">
-                        <div className="p-2 rounded-lg bg-[#EFF6FF] text-[#2563EB]">
-                          <Icon className="text-sm" />
+                        <div className="p-2.5 rounded-xl bg-slate-50 group-hover:bg-[#EFF6FF] text-[#2563EB] border border-slate-200 group-hover:border-blue-200 transition-colors">
+                          <Icon className="text-base" />
                         </div>
                         <div>
-                          <p className="font-bold text-[#0F172A] group-hover:text-[#2563EB] text-xs">{res.title}</p>
-                          <p className="text-[11px] text-[#64748B]">{res.subtitle}</p>
+                          <p className="font-bold text-[#0F172A] group-hover:text-[#2563EB] text-xs leading-tight">
+                            {res.title}
+                          </p>
+                          <p className="text-[11px] text-[#64748B] mt-0.5">{res.subtitle}</p>
                         </div>
                       </div>
-                      <span className="text-[10px] font-bold text-[#2563EB] uppercase tracking-wider bg-[#EFF6FF] px-2 py-0.5 rounded-md">
+                      <span className={`text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-1 rounded-lg border ${categoryStyle}`}>
                         {res.category}
                       </span>
                     </Link>
                   );
                 })
               )}
+            </div>
+
+            {/* Auto-Close Hint Footer */}
+            <div className="flex items-center justify-between border-t border-[#E2E8F0] pt-3 text-[11px] text-[#64748B] px-1">
+              <span className="flex items-center gap-1.5 text-slate-500 font-medium">
+                <span>💡</span>
+                <span>Auto-closes when cursor moves away or click outside</span>
+              </span>
+              <span className="font-bold text-[#2563EB] bg-[#EFF6FF] px-2 py-0.5 rounded-md border border-blue-100">
+                {searchResults.length} Results
+              </span>
             </div>
           </div>
         </div>
@@ -992,6 +1218,84 @@ export default function Navbar({ onMenuClick, isSidebarOpen = true }) {
                 className="px-4 py-2 rounded-xl border border-[#E2E8F0] text-[#64748B] font-semibold text-xs hover:bg-[#F8FAFC]"
               >
                 Close
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* NAVBAR DIRECT PROFILE PHOTO UPLOAD MODAL */}
+      {isAvatarModalOpen && (
+        <Modal
+          isOpen={isAvatarModalOpen}
+          onClose={() => setIsAvatarModalOpen(false)}
+          title="Upload Profile Picture 📷"
+        >
+          <div className="space-y-4 text-xs p-1">
+            <div className="flex items-center gap-4 bg-[#F8FAFC] p-4 rounded-2xl border border-[#E2E8F0]">
+              <div className="relative h-16 w-16 rounded-2xl overflow-hidden bg-[#EFF6FF] border border-[#2563EB]/30 shadow-xs flex items-center justify-center shrink-0">
+                {userAvatarUrl ? (
+                  <img src={userAvatarUrl} alt="Preview" className="h-full w-full object-cover" />
+                ) : (
+                  <span className="text-[#2563EB] text-lg font-bold">
+                    {getUserInitials(userName, userEmail)}
+                  </span>
+                )}
+              </div>
+              <div>
+                <h4 className="font-bold text-[#0F172A] text-sm">{userName || "User Account"}</h4>
+                <p className="text-[#64748B] text-[11px] font-mono">{userEmail || "user@nexa.com"}</p>
+                <p className="text-[10px] text-[#2563EB] font-bold mt-0.5 uppercase">Role: {role}</p>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-bold text-[#0F172A] uppercase mb-1">
+                  Choose Image File from Device
+                </label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleAvatarFileUpload}
+                  className="w-full text-xs text-[#64748B] file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-[#EFF6FF] file:text-[#2563EB] hover:file:bg-[#2563EB] hover:file:text-white cursor-pointer"
+                />
+              </div>
+
+              <div className="relative flex items-center my-2">
+                <div className="flex-grow border-t border-[#E2E8F0]"></div>
+                <span className="flex-shrink mx-3 text-[10px] text-[#64748B] font-bold uppercase">OR</span>
+                <div className="flex-grow border-t border-[#E2E8F0]"></div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-[#0F172A] uppercase mb-1">
+                  Paste Custom Image URL
+                </label>
+                <input
+                  type="text"
+                  value={modalAvatarUrlInput}
+                  onChange={(e) => setModalAvatarUrlInput(e.target.value)}
+                  placeholder="https://images.unsplash.com/..."
+                  className="w-full rounded-xl border border-[#E2E8F0] px-3.5 py-2 text-xs text-[#0F172A] outline-none focus:border-[#2563EB] bg-white font-mono"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#E2E8F0]">
+              <button
+                type="button"
+                onClick={() => setIsAvatarModalOpen(false)}
+                className="px-4 py-2 rounded-xl border border-[#E2E8F0] text-[#64748B] font-semibold hover:bg-[#F8FAFC] cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSaveAvatar(modalAvatarUrlInput)}
+                className="px-5 py-2 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold transition-all shadow-xs cursor-pointer"
+              >
+                Save Profile Photo
               </button>
             </div>
           </div>

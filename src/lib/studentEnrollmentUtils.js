@@ -422,12 +422,6 @@ export async function registerInternWithCredentials({
     throw new Error("Temporary password must be at least 6 characters long.");
   }
 
-  // Duplicate email check
-  const isDuplicate = await checkDuplicateAccountEmail(cleanEmail);
-  if (isDuplicate) {
-    throw new Error("An account already exists with this email address.");
-  }
-
   let authUserId = `usr_int_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
 
   // Create Supabase Auth Cloud User
@@ -450,44 +444,31 @@ export async function registerInternWithCredentials({
     console.warn("Supabase Auth intern creation warning:", e);
   }
 
-  const internId = internData.id || `i-${Date.now()}`;
-  const isRemoteMode = (internData.internship_mode || "").includes("Remote");
-
   // Intern Profile Record
-  const internProfile = {
-    id: internId,
-    intern_id: internId,
-    auth_user_id: authUserId,
+  const internPayload = {
     full_name: cleanName,
     email: cleanEmail,
     phone: internData.phone || "",
-    emergency_contact: internData.emergency_phone || internData.emergency_contact || "",
-    cnic: internData.cnic || "",
-    tech_domain: internData.course_name || internData.tech_domain || "Full Stack MERN Web Development",
     course_name: internData.course_name || internData.tech_domain || "Full Stack MERN Web Development",
     internship_mode: internData.internship_mode || "On-Site / Offline",
-    is_remote: isRemoteMode,
-    enrollment_type: "3-Month Free Internship",
-    instructor: internData.instructor || "Lead Mentor",
-    resources_url: internData.resources_url || "",
-    screen_access_url: internData.screen_access_url || "",
     start_date: internData.start_date || new Date().toISOString().split("T")[0],
-    end_date: internData.end_date || new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
     progress: Number(internData.progress || 0),
-    role: "intern",
-    status: "active",
-    created_at: new Date().toISOString(),
-    daily_logs: [
-      {
-        id: `l-${Date.now()}`,
-        date: new Date().toLocaleString(),
-        author: cleanName,
-        task: `Enrolled in ${internData.internship_mode || "On-Site"} 3-Month Free Internship for ${internData.course_name || "MERN Stack"}. Training started.`,
-      },
-    ],
+    status: "active"
   };
 
-  await dbSaveRecord("interns", internProfile).catch(() => {});
+  let createdInternRecord = { ...internPayload, id: `i-${Date.now()}` };
+
+  try {
+    const res = await fetch("/api/persistence", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ table: "interns", record: internPayload, action: "save" })
+    });
+    const json = await res.json();
+    if (json.data && json.data[0]) {
+      createdInternRecord = json.data[0];
+    }
+  } catch (err) {}
 
   // Save auth credentials to cloud database so all devices can log in
   await saveRegisteredAuthAccount({
@@ -499,7 +480,7 @@ export async function registerInternWithCredentials({
   }).catch(() => {});
 
   return {
-    intern: internProfile,
+    intern: createdInternRecord,
     authUserId: authUserId,
   };
 }

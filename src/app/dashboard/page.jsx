@@ -75,7 +75,7 @@ export default function DashboardPage() {
   const overallProgressPercentage = useMemo(() => {
     if (!projectsProgressList || projectsProgressList.length === 0) return 0;
     const total = projectsProgressList.reduce((acc, p) => {
-      const prog = p.progress !== undefined ? Number(p.progress) : (p.status === "Completed" ? 100 : p.status === "In Progress" ? 50 : 20);
+      const prog = p.progress !== undefined ? Number(p.progress) : (p.status === "Completed" ? 100 : p.status === "In Progress" ? 25 : 0);
       return acc + prog;
     }, 0);
     return Math.round(total / projectsProgressList.length);
@@ -110,23 +110,7 @@ export default function DashboardPage() {
       ]);
 
       const employeeCount = (allEmps || []).filter(e => (e.status || "").toLowerCase() !== "inactive" && (e.status || "").toLowerCase() !== "terminated").length;
-
-      let combinedProjects = Array.isArray(fullProjList) && fullProjList.length > 0 ? [...fullProjList] : [];
-      try {
-        const p1 = localStorage.getItem("software_house_full_projects");
-        const p2 = localStorage.getItem("software_house_projects");
-        const p3 = localStorage.getItem("software_house_client_projects");
-        if (p1) combinedProjects = [...combinedProjects, ...JSON.parse(p1)];
-        if (p2) combinedProjects = [...combinedProjects, ...JSON.parse(p2)];
-        if (p3) combinedProjects = [...combinedProjects, ...JSON.parse(p3)];
-      } catch (e) { }
-
-      const uniqueProjMap = new Map();
-      combinedProjects.forEach(p => {
-        const key = p.id || p.title || p.name;
-        if (key) uniqueProjMap.set(key, p);
-      });
-      let finalProjectsList = Array.from(uniqueProjMap.values());
+      let finalProjectsList = Array.isArray(fullProjList) ? fullProjList : [];
 
       const incomesSum = (incList || [])
         .filter(item => !item.status || item.status.toLowerCase() === "paid" || item.status.toLowerCase() === "cleared")
@@ -160,6 +144,40 @@ export default function DashboardPage() {
         if (atLocal) rawTasks = [...rawTasks, ...JSON.parse(atLocal)];
       } catch (e) { }
 
+      const allRoster = [...(allEmps || []), ...(studentList || []), ...(internList || [])];
+
+      const resolveAssigneeName = (item) => {
+        const raw = item.assignedToName || item.assignedTo || item.assigned_to || item.assignedToEmail || item.assigned_to_email || item.client_name || "";
+        const rawStr = String(raw).trim();
+        if (rawStr && rawStr.toLowerCase() !== "non" && rawStr.toLowerCase() !== "unassigned member" && rawStr.toLowerCase() !== "undefined" && rawStr.toLowerCase() !== "null") {
+          return rawStr;
+        }
+        const searchKey = (item.assignedToEmail || item.assigned_to_email || item.assigned_to || item.assignedTo || "").toLowerCase().trim();
+        if (searchKey) {
+          const match = allRoster.find(m => 
+            (m.email && m.email.toLowerCase().trim() === searchKey) || 
+            (m.id && String(m.id).toLowerCase().trim() === searchKey)
+          );
+          if (match) return match.full_name || match.name || match.email;
+        }
+        return "Assigned Engineer";
+      };
+
+      const calculateTaskProgress = (item) => {
+        if (item.status === "Completed") return 100;
+        if (item.progress !== undefined && item.progress !== null && !isNaN(Number(item.progress))) {
+          return Math.min(100, Math.max(0, Number(item.progress)));
+        }
+        const curSecs = Number(item.timerSeconds || item.total_working_seconds || 0);
+        if (curSecs > 0) {
+          const targetSecs = (Number(item.target_days) || 1) * 3600;
+          return Math.min(95, Math.max(1, Math.round((curSecs / targetSecs) * 100)));
+        }
+        if (item.status === "In Progress") return 10;
+        // Strictly 0% when newly assigned or Pending
+        return 0;
+      };
+
       let combinedDeliverables = [];
 
       rawTasks.forEach(t => {
@@ -167,9 +185,9 @@ export default function DashboardPage() {
         combinedDeliverables.push({
           id: t.id || `t-${Math.random()}`,
           title: t.task || t.title || t.task_name || "Untitled Project Task",
-          client_name: t.assignedToName || t.assignedTo || t.assigned_to || t.assignedToEmail || "Unassigned Member",
-          progress: t.progress !== undefined ? Number(t.progress) : (t.status === "Completed" ? 100 : t.status === "In Progress" ? 50 : 20),
-          status: t.status || "In Progress"
+          client_name: resolveAssigneeName(t),
+          progress: calculateTaskProgress(t),
+          status: t.status || (Number(t.timerSeconds || 0) > 0 ? "In Progress" : "Pending")
         });
       });
 
@@ -178,8 +196,8 @@ export default function DashboardPage() {
         combinedDeliverables.push({
           id: p.id || `p-${Math.random()}`,
           title: p.title || p.name || "Untitled Project",
-          client_name: p.client_name || p.client || "Client Deal",
-          progress: p.progress !== undefined ? Number(p.progress) : (p.completion ? Number(p.completion) : (p.status === "Completed" ? 100 : 75)),
+          client_name: p.client_name || p.client || resolveAssigneeName(p),
+          progress: p.progress !== undefined ? Number(p.progress) : (p.completion ? Number(p.completion) : (p.status === "Completed" ? 100 : p.status === "In Progress" ? 25 : 0)),
           status: p.status || "Active"
         });
       });
@@ -572,8 +590,8 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Sticky Segmented Filter Bar */}
-        <div className="sticky top-16 z-20 bg-[#F8FAFC] p-1.5 rounded-xl border border-[#E2E8F0] flex flex-wrap items-center gap-1 text-xs font-medium">
+        {/* Segmented Filter Bar */}
+        <div className="bg-[#F8FAFC] p-1.5 rounded-xl border border-[#E2E8F0] flex flex-wrap items-center gap-1 text-xs font-medium">
           {[
             { id: "all", label: "All Members" },
             { id: "employees", label: "Paid Staff" },
@@ -660,13 +678,25 @@ export default function DashboardPage() {
 
                     {/* Action Link / Kebab Menu */}
                     <td className="py-3.5 px-4 text-right">
-                      <button
-                        type="button"
-                        onClick={() => setSelectedUserModal(m)}
-                        className="text-[#2563EB] hover:text-[#1D4ED8] font-semibold hover:bg-[#EFF6FF] px-2.5 py-1 rounded-lg transition-colors cursor-pointer"
-                      >
-                        Inspect →
-                      </button>
+                      <div className="flex items-center justify-end gap-1.5">
+                        {Boolean((m.category || "").toLowerCase().includes("remote") || (m.department || "").toLowerCase().includes("remote") || (m.mode || "").toLowerCase().includes("remote")) && (
+                          <Link
+                            href="/dashboard/internships"
+                            className="text-purple-600 hover:text-purple-800 font-bold hover:bg-purple-50 px-2 py-1 rounded-lg border border-purple-200 transition-colors text-[11px] flex items-center gap-1"
+                            title="Access Remote Screen on Monitoring Desk"
+                          >
+                            <FaDesktop className="text-[10px]" />
+                            <span>Screen 🖥️</span>
+                          </Link>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setSelectedUserModal(m)}
+                          className="text-[#2563EB] hover:text-[#1D4ED8] font-semibold hover:bg-[#EFF6FF] px-2.5 py-1 rounded-lg transition-colors cursor-pointer"
+                        >
+                          Inspect →
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))

@@ -1,11 +1,27 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
-// Use anon key for read operations (safe for production)
-const supabaseUrl = "https://uzwmwtkldgchnuqxamov.supabase.co";
-const supabaseKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV6d213dGtsZGdjaG51cXhhbW92Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU0MDUxMjYsImV4cCI6MjEwMDk4MTEyNn0.dTw41DhaS-qDVqX4jj3WsrAvYE9CLigjOLZFiDt_7Rk";
+const supabaseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL && !process.env.NEXT_PUBLIC_SUPABASE_URL.includes("placeholder"))
+  ? process.env.NEXT_PUBLIC_SUPABASE_URL
+  : "https://uzwmwtkldgchnuqxamov.supabase.co";
 
-const supabase = createClient(supabaseUrl, supabaseKey);
+const LIVE_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV6d213dGtsZGdjaG51cXhhbW92Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU0MDUxMjYsImV4cCI6MjEwMDk4MTEyNn0.dTw41DhaS-qDVqX4jj3WsrAvYE9CLigjOLZFiDt_7Rk";
+const supabaseKey = (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY && !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY.includes("placeholder"))
+  ? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  : LIVE_SUPABASE_ANON_KEY;
+
+const supabase = createClient(supabaseUrl, supabaseKey, {
+  auth: {
+    persistSession: false,
+    autoRefreshToken: false,
+  },
+  global: {
+    headers: {
+      apikey: supabaseKey,
+      Authorization: `Bearer ${supabaseKey}`
+    }
+  }
+});
 
 function convertTo24HourTime(timeStr) {
   if (!timeStr || timeStr === "--:--" || String(timeStr).includes("Not Checked Out")) return null;
@@ -114,43 +130,44 @@ export async function POST(request) {
       return NextResponse.json({ error: "Table required" }, { status: 400 });
     }
 
+    // 0. CLEAR ALL ACTION
+    if (action === "clear_all" || action === "delete_all") {
+      const { error } = await supabase.from(table).delete().neq("id", "00000000-0000-0000-0000-000000000000");
+      return NextResponse.json({ success: true, cleared: !error, error: error ? error.message : null });
+    }
+
     // 1. DELETE ACTION
     if (action === "delete") {
-      const { id, email, full_name, name } = record || {};
+      const { id, email, full_name, name, task_title, title } = record || {};
       const cleanEmail = email ? email.toLowerCase().trim() : "";
       let deleted = false;
       let errRes = null;
 
+      // Try deleting by ID first
+      if (id) {
+        const { error } = await supabase.from(table).delete().eq("id", id);
+        if (!error) deleted = true; else errRes = error;
+      }
+
+      // Try deleting by email
+      if (!deleted && cleanEmail) {
+        const { error } = await supabase.from(table).delete().eq("email", cleanEmail);
+        if (!error) deleted = true; else if (!errRes) errRes = error;
+      }
+
+      // For tasks or projects, delete by title if ID was local/temporary
+      if (!deleted && (task_title || title)) {
+        const titleField = table === "daily_tasks" ? "task_title" : "title";
+        const { error } = await supabase.from(table).delete().eq(titleField, task_title || title);
+        if (!error) deleted = true; else if (!errRes) errRes = error;
+      }
+
       // Special handling for attendance table - delete by multiple possible fields
-      if (table === "attendance") {
-        // Try deleting by id first
-        if (id) {
-          const { error } = await supabase.from("attendance").delete().eq("id", id);
+      if (table === "attendance" && !deleted && cleanEmail) {
+        const { data: existing } = await supabase.from("attendance").select("id").or(`student_id.eq.${cleanEmail},user_email.eq.${cleanEmail}`).limit(1);
+        if (existing && existing.length > 0) {
+          const { error } = await supabase.from("attendance").delete().eq("id", existing[0].id);
           if (!error) deleted = true; else errRes = error;
-        }
-        
-        // Also try deleting by user_email/date combination (for student attendance)
-        if (!deleted && cleanEmail) {
-          // Check if this is a student attendance record
-          const { data: existing } = await supabase.from("attendance").select("id").or(`student_id.eq.${cleanEmail},user_email.eq.${cleanEmail}`).limit(1);
-          if (existing && existing.length > 0) {
-            const { error } = await supabase.from("attendance").delete().eq("id", existing[0].id);
-            if (!error) deleted = true; else errRes = error;
-          }
-        }
-      } else {
-        // For other tables, use standard deletion
-        if (cleanEmail) {
-          const { error } = await supabase.from(table).delete().eq("email", cleanEmail);
-          if (!error) deleted = true; else errRes = error;
-        }
-        if (id && String(id).includes("-") && isNaN(Number(id))) {
-          const { error } = await supabase.from(table).delete().eq("id", id);
-          if (!error) deleted = true; else if (!errRes) errRes = error;
-        }
-        if (full_name || name) {
-          const { error } = await supabase.from(table).delete().eq("full_name", full_name || name);
-          if (!error) deleted = true; else if (!errRes) errRes = error;
         }
       }
 
@@ -426,7 +443,78 @@ export async function POST(request) {
         return NextResponse.json({ success: !lastError, error: lastError ? String(lastError) : null });
       }
 
-      // 2.6 General Tables (Projects, Incomes, Expenses, etc.)
+      // 2.6 Daily Tasks Table Explicit Handler
+      if (table === "daily_tasks") {
+        const assignedEmail = (record.assigned_to_email || record.email || "staff@nexa-portal.com").toLowerCase().trim();
+
+        const payload = {
+          task_title: record.task_title || record.task || "Workstream Deliverable",
+          description: record.description || record.task || "Task Description",
+          priority: record.priority || "Medium",
+          assigned_to_email: assignedEmail,
+          assigned_by_name: record.assigned_by_name || "System Admin",
+          due_date: record.due_date || record.dueDate || null,
+          status: record.status || "Pending",
+          total_working_seconds: Number(record.total_working_seconds || record.timerSeconds) || 0
+        };
+
+        const { data: insertedData, error: taskErr } = await supabase.from("daily_tasks").insert([payload]).select();
+        return NextResponse.json({ success: !taskErr, data: insertedData, error: taskErr ? taskErr.message : null });
+      }
+
+      // 2.7 Projects Table Explicit Handler
+      if (table === "projects") {
+        const payload = {
+          title: record.title || "New Project",
+          client: record.client || "Client Deal",
+          department: record.department || "Engineering",
+          deadline: record.deadline || null,
+          budget: record.budget || "Rs. 0",
+          status: record.status || "In Progress",
+          description: record.description || "",
+          progress: Number(record.progress) || 0
+        };
+
+        const { data: insertedData, error: projErr } = await supabase.from("projects").insert([payload]).select();
+        return NextResponse.json({ success: !projErr, data: insertedData, error: projErr ? projErr.message : null });
+      }
+
+      // 2.8 Interns Table Explicit Handler
+      if (table === "interns") {
+        const payload = {
+          full_name: record.full_name || record.name || "Intern Member",
+          email: (record.email || "").toLowerCase().trim(),
+          phone: record.phone || null,
+          internship_mode: record.internship_mode || "On-Site / Offline",
+          course_name: record.course_name || record.tech_domain || "Full Stack MERN Web Development",
+          start_date: record.start_date || new Date().toISOString().split("T")[0],
+          progress: Number(record.progress) || 0,
+          status: record.status || "active"
+        };
+
+        const { data: insertedData, error: intErr } = await supabase.from("interns").insert([payload]).select();
+        return NextResponse.json({ success: !intErr, data: insertedData, error: intErr ? intErr.message : null });
+      }
+
+      // 2.9 Students Table Explicit Handler
+      if (table === "students") {
+        const payload = {
+          enrollment_no: record.enrollment_no || `STD-${Math.random().toString(36).substring(2, 8)}`,
+          full_name: record.full_name || record.name || "Student Member",
+          email: (record.email || "").toLowerCase().trim(),
+          phone: record.phone || null,
+          course_name: record.course_name || record.tech_domain || "Full Stack MERN Web Development",
+          start_date: record.start_date || new Date().toISOString().split("T")[0],
+          status: record.status || "active",
+          fee_status: record.fee_status || "Paid",
+          progress: Number(record.progress) || 0
+        };
+
+        const { data: insertedData, error: stuErr } = await supabase.from("students").insert([payload]).select();
+        return NextResponse.json({ success: !stuErr, data: insertedData, error: stuErr ? stuErr.message : null });
+      }
+
+      // 2.10 General Tables (Incomes, Expenses, etc.)
       const cleaned = {};
       const invalidColumns = [
         "cnic", "internship_mode", "resources_url", "screen_access_url",

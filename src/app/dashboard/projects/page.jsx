@@ -31,59 +31,11 @@ import {
   FaLayerGroup,
   FaCheckDouble,
   FaHourglassHalf,
-  FaChartPie
+  FaChartPie,
+  FaArrowRight
 } from "react-icons/fa";
 
-const INITIAL_PROJECTS = [
-  {
-    id: "proj-101",
-    title: "Nexa ERP Enterprise Portal v2.0",
-    client: "Nexa Internal Workstream",
-    department: "Web Development & Engineering",
-    deadline: "2026-09-15",
-    budget: "Rs. 450,000",
-    status: "In Progress",
-    description: "Next-gen multi-tenant enterprise portal with real-time payroll, attendance tracking, remote monitoring, and automated Supabase synchronization.",
-    progress: 75,
-    assignedTeam: "Senior Engineering Team"
-  },
-  {
-    id: "proj-102",
-    title: "FinTech Automated Billing & Payment API Suite",
-    client: "Global Logistics Ltd",
-    department: "Backend & Cloud Architecture",
-    deadline: "2026-10-01",
-    budget: "Rs. 780,000",
-    status: "In Progress",
-    description: "Secure payment gateway integration, invoice auto-generation, and multi-currency transaction audit engine.",
-    progress: 60,
-    assignedTeam: "FinTech Web Team"
-  },
-  {
-    id: "proj-103",
-    title: "AI Attendance & Facial Recognition Edge App",
-    client: "Corporate Partner",
-    department: "AI & Embedded Systems",
-    deadline: "2026-08-30",
-    budget: "Rs. 320,000",
-    status: "Review Phase",
-    description: "Real-time automated check-in and check-out logger using edge AI camera stream and biometric data sync.",
-    progress: 90,
-    assignedTeam: "AI & Innovation Labs"
-  },
-  {
-    id: "proj-104",
-    title: "Client Self-Service Mobile Web App",
-    client: "Alpha Retail Group",
-    department: "Mobile Development",
-    deadline: "2026-11-20",
-    budget: "Rs. 550,000",
-    status: "Planning Phase",
-    description: "Cross-platform mobile client app for project milestone tracking, invoice downloads, and support ticket submission.",
-    progress: 35,
-    assignedTeam: "Mobile & UI/UX Team"
-  }
-];
+const INITIAL_PROJECTS = [];
 
 export default function ProjectsPage() {
   const [role, setRole] = useState("admin");
@@ -124,7 +76,8 @@ export default function ProjectsPage() {
     assignedToName: "",
     assignedToEmail: "",
     priority: "High",
-    dueDate: new Date().toISOString().split("T")[0]
+    targetDays: 1,
+    dueDate: new Date(Date.now() + 1 * 86400000).toISOString().split("T")[0]
   });
 
   // Kebab Menu & Confirm Modal State
@@ -144,13 +97,8 @@ export default function ProjectsPage() {
     setUserEmail(savedEmail);
 
     dbFetch("daily_tasks", []).then(tasks => setDailyTasks(tasks || []));
-    dbFetch("projects", INITIAL_PROJECTS, true).then(projs => {
-      if (!projs || projs.length === 0) {
-        setProjects(INITIAL_PROJECTS);
-        dbSaveList("projects", INITIAL_PROJECTS);
-      } else {
-        setProjects(projs);
-      }
+    dbFetch("projects", []).then(projs => {
+      setProjects(projs || []);
     });
 
     // Load full organization directory (Employees, Remote Students, Interns)
@@ -241,6 +189,15 @@ export default function ProjectsPage() {
     setProjects(updatedProjects);
     dbSaveList("projects", updatedProjects);
     dbSaveRecord("projects", newProjObj).catch(() => {});
+
+    try {
+      await fetch("/api/persistence", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ table: "projects", record: newProjObj, action: "save" })
+      });
+    } catch (err) {}
+
     setCreateProjectModalOpen(false);
     setNewProjectForm({
       title: "",
@@ -254,15 +211,29 @@ export default function ProjectsPage() {
       assignedTeam: "Development Team"
     });
     showToast("New Project Created 🎉", `Client project "${newProjObj.title}" registered successfully!`, "success");
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event("dataChanged"));
+    }
   };
 
   const handleDeleteProject = async (projId) => {
-    if (!confirm("Are you sure you want to delete this project?")) return;
     const updated = projects.filter(p => p.id !== projId);
     setProjects(updated);
     dbSaveList("projects", updated);
     dbDeleteRecord("projects", projId).catch(() => {});
+
+    try {
+      await fetch("/api/persistence", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ table: "projects", action: "delete", record: { id: projId } })
+      });
+    } catch (err) {}
+
     showToast("Project Removed 🗑️", "Project record removed from directory.", "info");
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event("dataChanged"));
+    }
   };
 
   // Live Timer Interval
@@ -340,13 +311,35 @@ export default function ProjectsPage() {
         localStorage.setItem("software_house_daily_tasks", JSON.stringify([]));
         localStorage.setItem("software_house_assigned_tasks", JSON.stringify([]));
         localStorage.setItem("student_daily_tasks", JSON.stringify([]));
+        await fetch("/api/persistence", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ table: "daily_tasks", action: "clear_all" })
+        });
       } catch(e) {}
-      showToast("All Tasks Cleared 🗑️", "All task entries wiped clean permanently.", "info");
+      showToast("All Tasks Cleared 🗑️", "All task entries wiped clean from portal & database permanently.", "info");
     } else if (confirmModal.type === "single_task") {
       const targetId = confirmModal.taskId;
+      const taskToDelete = dailyTasks.find(t => String(t.id) === String(targetId));
       const updated = dailyTasks.filter(t => String(t.id) !== String(targetId));
       saveTasksState(updated);
-      showToast("Task Deleted 🗑️", "Task permanently removed.", "info");
+      try {
+        dbDeleteRecord("daily_tasks", targetId).catch(() => {});
+        await fetch("/api/persistence", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            table: "daily_tasks",
+            action: "delete",
+            record: {
+              id: targetId,
+              task_title: taskToDelete?.task_title || taskToDelete?.task,
+              email: taskToDelete?.assigned_to_email || taskToDelete?.email
+            }
+          })
+        });
+      } catch(e) {}
+      showToast("Task Deleted 🗑️", "Task permanently removed from database.", "info");
     }
 
     if (typeof window !== "undefined") {
@@ -362,27 +355,33 @@ export default function ProjectsPage() {
       return;
     }
 
+    let targetEmail = (newTaskForm.assignedToEmail || "").toLowerCase().trim();
+    let selectedUser = assigneeDirectory.find(a => a.email.toLowerCase() === targetEmail);
+    if (!selectedUser && assigneeDirectory.length > 0) {
+      selectedUser = assigneeDirectory[0];
+      targetEmail = selectedUser.email.toLowerCase().trim();
+    }
+    const userName = selectedUser ? selectedUser.name : (newTaskForm.assignedToName || "Assigned User");
+
     let newTasksToInsert = [];
+
+    const tDays = Number(newTaskForm.targetDays) || 1;
+    const computedDueDate = newTaskForm.dueDate || new Date(Date.now() + tDays * 86400000).toISOString().split("T")[0];
 
     if (newTaskForm.targetType === "all_employees") {
       const emps = assigneeDirectory.filter(a => a.roleGroup === "Staff / Employees");
       newTasksToInsert = emps.map((emp) => ({
         id: "dt-" + Date.now() + "-" + Math.random().toString(36).substring(2, 6),
         task_title: newTaskForm.task,
-        task: newTaskForm.task,
+        description: newTaskForm.task,
         assigned_to_name: emp.name,
-        assignedTo: `${emp.name} (${emp.badge})`,
         assigned_to_email: emp.email.toLowerCase().trim(),
-        email: emp.email.toLowerCase().trim(),
-        targetAudience: "All Paid Staff Employees",
         status: "Pending",
-        timerSeconds: 0,
         total_working_seconds: 0,
-        isTimerRunning: false,
         category: newTaskForm.category,
         priority: newTaskForm.priority,
-        due_date: newTaskForm.dueDate,
-        dueDate: newTaskForm.dueDate,
+        target_days: tDays,
+        due_date: computedDueDate,
         created_at: new Date().toISOString()
       }));
     } else if (newTaskForm.targetType === "all_students") {
@@ -390,20 +389,15 @@ export default function ProjectsPage() {
       newTasksToInsert = stList.map((st) => ({
         id: "dt-" + Date.now() + "-" + Math.random().toString(36).substring(2, 6),
         task_title: newTaskForm.task,
-        task: newTaskForm.task,
+        description: newTaskForm.task,
         assigned_to_name: st.name,
-        assignedTo: `${st.name} (${st.badge})`,
         assigned_to_email: st.email.toLowerCase().trim(),
-        email: st.email.toLowerCase().trim(),
-        targetAudience: "All Enrolled Students",
         status: "Pending",
-        timerSeconds: 0,
         total_working_seconds: 0,
-        isTimerRunning: false,
         category: newTaskForm.category,
         priority: newTaskForm.priority,
-        due_date: newTaskForm.dueDate,
-        dueDate: newTaskForm.dueDate,
+        target_days: tDays,
+        due_date: computedDueDate,
         created_at: new Date().toISOString()
       }));
     } else if (newTaskForm.targetType === "all_interns") {
@@ -411,90 +405,58 @@ export default function ProjectsPage() {
       newTasksToInsert = inList.map((inItem) => ({
         id: "dt-" + Date.now() + "-" + Math.random().toString(36).substring(2, 6),
         task_title: newTaskForm.task,
-        task: newTaskForm.task,
+        description: newTaskForm.task,
         assigned_to_name: inItem.name,
-        assignedTo: `${inItem.name} (${inItem.badge})`,
         assigned_to_email: inItem.email.toLowerCase().trim(),
-        email: inItem.email.toLowerCase().trim(),
-        targetAudience: "All Remote & Onsite Interns",
         status: "Pending",
-        timerSeconds: 0,
         total_working_seconds: 0,
-        isTimerRunning: false,
         category: newTaskForm.category,
         priority: newTaskForm.priority,
-        due_date: newTaskForm.dueDate,
-        dueDate: newTaskForm.dueDate,
+        target_days: tDays,
+        due_date: computedDueDate,
         created_at: new Date().toISOString()
       }));
     } else {
-      let targetEmail = (newTaskForm.assignedToEmail || "").toLowerCase().trim();
-      let selectedUser = assigneeDirectory.find(a => a.email.toLowerCase() === targetEmail);
-      if (!selectedUser && assigneeDirectory.length > 0) {
-        selectedUser = assigneeDirectory[0];
-        targetEmail = selectedUser.email.toLowerCase().trim();
-      }
-      const userName = selectedUser ? selectedUser.name : (newTaskForm.assignedToName || "Assigned User");
-      const userBadge = selectedUser ? selectedUser.badge : "Team Member";
-
       newTasksToInsert = [
         {
           id: "dt-" + Date.now() + "-" + Math.random().toString(36).substring(2, 6),
           task_title: newTaskForm.task,
-          task: newTaskForm.task,
+          description: newTaskForm.task,
           assigned_to_name: userName,
-          assignedTo: `${userName} (${userBadge})`,
-          assigned_to_email: targetEmail,
-          email: targetEmail,
-          targetAudience: userBadge,
+          assigned_to_email: targetEmail || "bugtirahim450@gmail.com",
           status: "Pending",
-          timerSeconds: 0,
           total_working_seconds: 0,
-          isTimerRunning: false,
           category: newTaskForm.category,
           priority: newTaskForm.priority,
-          due_date: newTaskForm.dueDate,
-          dueDate: newTaskForm.dueDate,
+          target_days: tDays,
+          due_date: computedDueDate,
           created_at: new Date().toISOString()
         }
       ];
     }
 
-    const updated = [...newTasksToInsert, ...dailyTasks];
-    saveTasksState(updated);
-
-    for (const t of newTasksToInsert) {
-      const validEmail = (t.assigned_to_email || t.email || (assigneeDirectory[0] ? assigneeDirectory[0].email : "staff@nexa-portal.com")).toLowerCase().trim() || "staff@nexa-portal.com";
-      const validName = t.assigned_to_name || t.assignedTo || validEmail.split("@")[0] || "Staff Member";
-
-      const taskPayload = {
-        task_title: t.task_title || t.task || "Untitled Task",
-        description: t.task || t.description || "Workstream deliverable",
-        priority: t.priority || "Medium",
-        status: t.status || "Pending",
-        assigned_to_name: validName,
-        assigned_to_email: validEmail
-      };
-
+    // Persist to Supabase exactly once per task
+    for (let i = 0; i < newTasksToInsert.length; i++) {
+      const t = newTasksToInsert[i];
       try {
         const res = await fetch("/api/persistence", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ table: "daily_tasks", record: taskPayload, action: "save" })
+          body: JSON.stringify({ table: "daily_tasks", record: t, action: "save" })
         });
         const json = await res.json();
-        if (json.error) {
-          console.error("Server persistence error for daily_tasks:", json.error);
-          showToast("Database Notice ⚠️", `Task saved locally! DB note: ${json.error}`, "warning");
+        if (json.data && json.data[0] && json.data[0].id) {
+          newTasksToInsert[i].id = json.data[0].id;
         }
-      } catch (err) {
-        console.error("Failed to post to /api/persistence:", err);
-      }
-
-      await dbSaveRecord("daily_tasks", t).catch(() => {});
+      } catch (err) {}
     }
 
+    const updated = [...newTasksToInsert, ...dailyTasks];
+    setDailyTasks(updated);
     if (typeof window !== "undefined") {
+      try {
+        localStorage.setItem("software_house_daily_tasks", JSON.stringify(updated));
+      } catch(e) {}
       window.dispatchEvent(new Event("dataChanged"));
     }
 
@@ -509,11 +471,7 @@ export default function ProjectsPage() {
       dueDate: new Date().toISOString().split("T")[0]
     });
 
-    showToast(
-      "Task Assigned 🎉",
-      `Task assigned specifically to ${newTasksToInsert.length === 1 ? newTasksToInsert[0].assignedTo : `${newTasksToInsert.length} user(s)`}.`,
-      "success"
-    );
+    showToast("Task Assigned 🎉", `Task assigned successfully!`, "success");
   };
 
   const formatTimer = (totalSec = 0) => {
@@ -549,12 +507,26 @@ export default function ProjectsPage() {
   // Analytics Metrics
   const taskAnalytics = useMemo(() => {
     const total = userFilteredTasks.length;
-    const pending = userFilteredTasks.filter(t => t.status === "Pending").length;
-    const inProgress = userFilteredTasks.filter(t => t.status === "In Progress" || t.status === "Paused").length;
+    const pending = userFilteredTasks.filter(t => t.status === "Pending" && !t.timerSeconds).length;
+    const inProgress = userFilteredTasks.filter(t => t.status === "In Progress" || t.status === "Paused" || (t.status === "Pending" && t.timerSeconds > 0)).length;
     const completed = userFilteredTasks.filter(t => t.status === "Completed").length;
     const totalSecs = userFilteredTasks.reduce((sum, t) => sum + (t.timerSeconds || 0), 0);
 
-    const completionRatePct = total > 0 ? Math.round((completed / total) * 100) : 0;
+    // Dynamic real-time progress: Starts at 0%, increases with time worked, reaches 100% on complete
+    let completionRatePct = 0;
+    if (total > 0) {
+      const taskProgressSum = userFilteredTasks.reduce((acc, t) => {
+        if (t.status === "Completed") return acc + 100;
+        const curSecs = Number(t.timerSeconds || t.total_working_seconds || 0);
+        if (t.status === "In Progress" || t.status === "Paused" || curSecs > 0) {
+          const targetSeconds = (Number(t.target_days) || 1) * 3600;
+          const timeProgress = Math.min(95, Math.max(5, Math.round((curSecs / targetSeconds) * 100)));
+          return acc + timeProgress;
+        }
+        return acc + 0;
+      }, 0);
+      completionRatePct = Math.round(taskProgressSum / total);
+    }
 
     return {
       total,
@@ -764,10 +736,21 @@ export default function ProjectsPage() {
                 </div>
               ) : (
                 userFilteredTasks.map((t, idx) => {
-                  const safeTitle = safeText(t.task || t.title, "Untitled Task");
-                  const safeAssignee = safeText(t.assignedTo, "Unassigned Member");
+                  const safeTitle = safeText(t.task || t.task_title || t.title, "Untitled Task");
+                  const assigneeEmail = (t.assigned_to_email || t.email || "").toLowerCase().trim();
+                  const matchedUser = assigneeDirectory.find(a => a.email.toLowerCase() === assigneeEmail);
+                  const safeAssignee = (t.assigned_to_name && !t.assigned_to_name.includes("Unassigned") && t.assigned_to_name !== "Assigned User")
+                    ? t.assigned_to_name
+                    : (t.assignedTo && !t.assignedTo.includes("Unassigned")
+                    ? t.assignedTo
+                    : (matchedUser
+                    ? matchedUser.name
+                    : (assigneeEmail
+                    ? assigneeEmail.split("@")[0].replace(/[._-]/g, " ").replace(/\b\w/g, c => c.toUpperCase())
+                    : "Assigned Staff")));
+
                   const safeCategory = safeText(t.category, "General");
-                  const safeDueDate = safeText(t.dueDate, "No Due Date");
+                  const safeDueDate = safeText(t.dueDate || t.due_date, "No Due Date");
                   const safePriority = safeText(t.priority, "Normal");
 
                   const isCompleted = t.status === "Completed";
@@ -786,9 +769,9 @@ export default function ProjectsPage() {
                             {safeCategory}
                           </span>
                           <span className="text-xs font-medium text-[#64748B]">
-                            Assignee: <strong className="text-[#0F172A] font-bold">{t.assigned_to_name || safeAssignee}</strong>
-                            {(t.assigned_to_email || t.email) && (
-                              <span className="text-[11px] text-[#2563EB] font-medium ml-1 font-mono">({t.assigned_to_email || t.email})</span>
+                            Assignee: <strong className="text-[#0F172A] font-bold">{safeAssignee}</strong>
+                            {assigneeEmail && (
+                              <span className="text-[11px] text-[#2563EB] font-medium ml-1 font-mono">({assigneeEmail})</span>
                             )}
                           </span>
                           <span className="text-[10px] font-semibold text-[#64748B] bg-[#F1F5F9] px-2 py-0.5 rounded-md">
@@ -800,8 +783,25 @@ export default function ProjectsPage() {
                           {safeTitle}
                         </h3>
 
-                        <div className="flex items-center gap-4 text-[11px] text-[#64748B] pt-0.5">
-                          <span>Due: {safeDueDate}</span>
+                        <div className="flex flex-wrap items-center gap-3 text-[11px] text-[#64748B] pt-0.5">
+                          <span className="font-semibold text-slate-700">Due: {safeDueDate}</span>
+                          {t.target_days && (
+                            <span className="px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 font-bold border border-blue-200">
+                              ⏱️ Target: {t.target_days} Day(s)
+                            </span>
+                          )}
+                          {t.due_date && (
+                            <span className="text-[10px] font-semibold text-slate-500">
+                              {(() => {
+                                const days = Math.ceil((new Date(t.due_date).getTime() - new Date().setHours(0,0,0,0)) / 86400000);
+                                if (isCompleted) return "✓ Done";
+                                if (days > 1) return `⏳ ${days} days remaining`;
+                                if (days === 1) return "⏳ Due tomorrow";
+                                if (days === 0) return "⚠️ Due today";
+                                return `🔴 Overdue by ${Math.abs(days)} day(s)`;
+                              })()}
+                            </span>
+                          )}
                         </div>
                       </div>
 
@@ -1214,6 +1214,40 @@ export default function ProjectsPage() {
                     <option value="Medium">Medium Priority</option>
                     <option value="Low">Low Priority</option>
                   </select>
+                </div>
+              </div>
+
+              {/* Target Days Duration / Deadline */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="font-semibold text-[#64748B]">Target Duration (Days to Complete)</label>
+                  <select
+                    value={newTaskForm.targetDays}
+                    onChange={(e) => {
+                      const days = Number(e.target.value);
+                      const due = new Date(Date.now() + days * 86400000).toISOString().split("T")[0];
+                      setNewTaskForm({ ...newTaskForm, targetDays: days, dueDate: due });
+                    }}
+                    className="w-full p-2.5 rounded-xl border border-[#E2E8F0] font-bold text-[#2563EB] outline-none focus:border-[#2563EB] bg-white"
+                  >
+                    <option value={1}>⏱️ 1 Day (Complete Today / 24h)</option>
+                    <option value={2}>⏱️ 2 Days (48 Hours)</option>
+                    <option value={3}>⏱️ 3 Days (Standard Sprint)</option>
+                    <option value={5}>⏱️ 5 Days (Full Work Week)</option>
+                    <option value={7}>⏱️ 7 Days (1 Week Sprint)</option>
+                    <option value={14}>⏱️ 14 Days (2 Weeks)</option>
+                    <option value={30}>⏱️ 30 Days (1 Month Phase)</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="font-semibold text-[#64748B]">Target Due Date</label>
+                  <input
+                    type="date"
+                    value={newTaskForm.dueDate}
+                    onChange={(e) => setNewTaskForm({ ...newTaskForm, dueDate: e.target.value })}
+                    className="w-full p-2.5 rounded-xl border border-[#E2E8F0] font-semibold text-[#0F172A] outline-none focus:border-[#2563EB]"
+                  />
                 </div>
               </div>
 

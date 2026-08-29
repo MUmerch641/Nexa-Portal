@@ -86,6 +86,38 @@ export default function EmployeeDedicatedDashboardPage() {
   };
 
   const [orgEmployeesAttendance, setOrgEmployeesAttendance] = useState([]);
+  const [userAvatarUrl, setUserAvatarUrl] = useState("");
+  const [avatarModalOpen, setAvatarModalOpen] = useState(false);
+  const [inputAvatarUrl, setInputAvatarUrl] = useState("");
+
+  const handleSaveProfileAvatar = (newPicUrl) => {
+    if (!newPicUrl) return;
+    const eClean = (employeeEmail || localStorage.getItem("current_user_email") || "").toLowerCase().trim();
+    if (eClean) {
+      localStorage.setItem(`user_avatar_${eClean}`, newPicUrl);
+      setUserAvatarUrl(newPicUrl);
+    }
+    localStorage.removeItem("current_user_avatar");
+    localStorage.removeItem("user_profile_avatar");
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event("avatarChanged"));
+    }
+    setAvatarModalOpen(false);
+    showToast("Profile Photo Updated 🖼️", "Your avatar image has been updated successfully.", "success");
+  };
+
+  const handleAvatarFileUpload = (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        if (reader.result) {
+          handleSaveProfileAvatar(reader.result);
+        }
+      };
+      reader.readAsDataURL(file);
+    }
+  };
 
   useEffect(() => {
     const savedRole = localStorage.getItem("user_role") || "employee";
@@ -97,13 +129,17 @@ export default function EmployeeDedicatedDashboardPage() {
     setEmployeeEmail(savedEmail);
     setEmployeeName(savedName);
 
+    const savedPic = savedEmail ? (localStorage.getItem(`user_avatar_${savedEmail}`) || "") : "";
+    setUserAvatarUrl(savedPic);
+    setInputAvatarUrl(savedPic);
+
     fetchEmployeeDashboardData(savedEmail, isAdmin);
 
-    const handleStorageChange = () => {
+    const handleDataChange = () => {
       fetchEmployeeDashboardData(savedEmail, isAdmin);
     };
-    window.addEventListener("storage", handleStorageChange);
-    return () => window.removeEventListener("storage", handleStorageChange);
+    window.addEventListener("dataChanged", handleDataChange);
+    return () => window.removeEventListener("dataChanged", handleDataChange);
   }, []);
 
   const fetchEmployeeDashboardData = async (email, isAdmin = false) => {
@@ -510,19 +546,45 @@ export default function EmployeeDedicatedDashboardPage() {
 
       {/* HEADER BANNER */}
       <div className="bg-white rounded-2xl p-6 border border-[#E2E8F0] shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-[#2563EB] bg-[#EFF6FF] px-2.5 py-1 rounded-full border border-[#2563EB]/20">
-              Official Employee Workspace
+        <div className="flex items-center gap-4">
+          <div
+            onClick={() => {
+              setInputAvatarUrl(userAvatarUrl || "");
+              setAvatarModalOpen(true);
+            }}
+            className="relative h-14 w-14 rounded-2xl overflow-hidden bg-[#EFF6FF] border-2 border-[#2563EB]/30 shadow-xs flex items-center justify-center shrink-0 cursor-pointer group hover:scale-105 transition-transform"
+            title="Click to change profile picture"
+          >
+            {userAvatarUrl ? (
+              <img
+                src={userAvatarUrl}
+                alt="Profile"
+                className="h-full w-full object-cover"
+                onError={(e) => {
+                  e.currentTarget.style.display = "none";
+                }}
+              />
+            ) : null}
+            <span className="text-[#2563EB] text-base font-bold">
+              {(employeeName || "E").slice(0, 2).toUpperCase()}
             </span>
+            <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity text-white text-[10px] font-bold">
+              📷
+            </div>
           </div>
-          <h1 className="text-xl md:text-2xl font-bold text-[#0F172A] mt-1.5 flex items-center gap-2.5">
-            <FaBriefcase className="text-[#2563EB]" />
-            <span>Welcome Back, {employeeName}!</span>
-          </h1>
-          <p className="text-xs text-[#64748B] mt-1">
-            Logged in as <strong className="text-[#0F172A]">{employeeEmail}</strong> • Employee Portal Active
-          </p>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-[#2563EB] bg-[#EFF6FF] px-2.5 py-1 rounded-full border border-[#2563EB]/20">
+                Official Employee Workspace
+              </span>
+            </div>
+            <h1 className="text-xl md:text-2xl font-bold text-[#0F172A] mt-1.5 flex items-center gap-2.5">
+              <span>Welcome Back, {employeeName}!</span>
+            </h1>
+            <p className="text-xs text-[#64748B] mt-1">
+              Logged in as <strong className="text-[#0F172A]">{employeeEmail}</strong> • Employee Portal Active
+            </p>
+          </div>
         </div>
 
         <div className="flex items-center gap-3">
@@ -1262,34 +1324,99 @@ export default function EmployeeDedicatedDashboardPage() {
             </div>
           </div>
 
+          {myTasks.length > 0 && (() => {
+            const completedCount = myTasks.filter(t => t.status === "Completed").length;
+            const taskProgressSum = myTasks.reduce((acc, t) => {
+              if (t.status === "Completed") return acc + 100;
+              const curSecs = Number(t.timerSeconds || t.total_working_seconds || 0);
+              if (t.status === "In Progress" || curSecs > 0) {
+                const targetSeconds = (Number(t.target_days) || 1) * 3600;
+                const timeProgress = Math.min(95, Math.max(5, Math.round((curSecs / targetSeconds) * 100)));
+                return acc + timeProgress;
+              }
+              return acc;
+            }, 0);
+            const employeeTaskPct = Math.round(taskProgressSum / myTasks.length);
+
+            return (
+              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200/80 rounded-2xl p-4 space-y-2">
+                <div className="flex justify-between items-center text-xs">
+                  <span className="font-bold text-slate-800 flex items-center gap-1.5">
+                    <FaChartLine className="text-blue-600" />
+                    <span>Deliverables Completion Score</span>
+                  </span>
+                  <span className="font-black text-blue-600 font-mono text-sm">
+                    {employeeTaskPct}%
+                    <span className="text-[11px] text-slate-500 font-normal ml-1.5">
+                      ({completedCount} of {myTasks.length} Done)
+                    </span>
+                  </span>
+                </div>
+                <div className="w-full bg-white rounded-full h-2.5 overflow-hidden border border-blue-200 p-0.5">
+                  <div
+                    className="h-full bg-gradient-to-r from-blue-600 to-indigo-600 rounded-full transition-all duration-500 shadow-xs"
+                    style={{ width: `${employeeTaskPct}%` }}
+                  />
+                </div>
+              </div>
+            );
+          })()}
+
           {myTasks.length === 0 ? (
             <div className="p-8 text-center bg-[#F8FAFC] rounded-xl border border-[#E2E8F0] text-[#64748B] text-xs italic">
               No tasks assigned to you currently. Check back later or notify Admin.
             </div>
           ) : (
             <div className="space-y-3">
-              {myTasks.map((t) => (
-                <div key={t.id} className="p-4 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] space-y-2">
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <h3 className="text-xs font-bold text-[#0F172A]">{t.task || t.task_title || "Assigned Work Item"}</h3>
-                      <p className="text-[11px] text-[#64748B] mt-0.5">{t.description || "Complete assigned project deliverables as per guidelines."}</p>
-                    </div>
-                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md uppercase border shrink-0 ${
-                      t.status === "Completed"
-                        ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                        : t.status === "In Progress"
-                        ? "bg-blue-50 text-blue-700 border-blue-200"
-                        : "bg-amber-50 text-amber-700 border-amber-200"
-                    }`}>
-                      {t.status || "Pending"}
-                    </span>
-                  </div>
+              {myTasks.map((t) => {
+                const targetDays = t.target_days || 1;
+                const dueDate = t.dueDate || t.due_date;
+                const daysRemaining = dueDate
+                  ? Math.ceil((new Date(dueDate).getTime() - new Date().setHours(0,0,0,0)) / 86400000)
+                  : null;
 
-                  <div className="flex items-center justify-between text-[10px] text-[#64748B] pt-1 border-t border-[#E2E8F0]">
-                    <span>Due: <strong className="text-[#0F172A]">{t.dueDate || t.due_date || "Today"}</strong></span>
-                    <span>Priority: <strong className="text-[#2563EB]">{t.priority || "Normal"}</strong></span>
-                  </div>
+                return (
+                  <div key={t.id} className="p-4 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] space-y-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <h3 className="text-xs font-bold text-[#0F172A]">{t.task || t.task_title || "Assigned Work Item"}</h3>
+                        <p className="text-[11px] text-[#64748B] mt-0.5">{t.description || "Complete assigned project deliverables as per guidelines."}</p>
+                      </div>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md uppercase border shrink-0 ${
+                        t.status === "Completed"
+                          ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                          : t.status === "In Progress"
+                          ? "bg-blue-50 text-blue-700 border-blue-200"
+                          : "bg-amber-50 text-amber-700 border-amber-200"
+                      }`}>
+                        {t.status || "Pending"}
+                      </span>
+                    </div>
+
+                    <div className="flex flex-wrap items-center justify-between gap-2 text-[10px] text-[#64748B] pt-1 border-t border-[#E2E8F0]">
+                      <div className="flex items-center gap-2 font-medium">
+                        <span>Due: <strong className="text-[#0F172A]">{dueDate || "Today"}</strong></span>
+                        {t.target_days && (
+                          <span className="px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 font-bold border border-blue-200">
+                            ⏱️ {targetDays} Day(s) Target
+                          </span>
+                        )}
+                        {daysRemaining !== null && (
+                          <span className={`font-semibold ${daysRemaining < 0 ? "text-rose-600" : daysRemaining === 0 ? "text-amber-600" : "text-slate-600"}`}>
+                            {t.status === "Completed"
+                              ? "✓ Completed"
+                              : daysRemaining > 1
+                              ? `⏳ ${daysRemaining} days remaining`
+                              : daysRemaining === 1
+                              ? "⏳ Due tomorrow"
+                              : daysRemaining === 0
+                              ? "⚠️ Due today"
+                              : `🔴 Overdue by ${Math.abs(daysRemaining)} day(s)`}
+                          </span>
+                        )}
+                      </div>
+                      <span>Priority: <strong className="text-[#2563EB]">{t.priority || "Normal"}</strong></span>
+                    </div>
 
                   {/* Task Actions */}
                   <div className="flex items-center gap-2 pt-2">
@@ -1324,8 +1451,9 @@ export default function EmployeeDedicatedDashboardPage() {
                     )}
                   </div>
                 </div>
-              ))}
-            </div>
+              );
+            })}
+          </div>
           )}
         </div>
       </div>
@@ -1526,6 +1654,84 @@ export default function EmployeeDedicatedDashboardPage() {
                 </button>
               </div>
             )}
+          </div>
+        </Modal>
+      )}
+
+      {/* AVATAR PHOTO UPLOAD MODAL */}
+      {avatarModalOpen && (
+        <Modal
+          isOpen={avatarModalOpen}
+          onClose={() => setAvatarModalOpen(false)}
+          title="Upload Profile Picture 📷"
+        >
+          <div className="space-y-4 text-xs p-1">
+            <div className="flex items-center gap-4 bg-[#F8FAFC] p-4 rounded-2xl border border-[#E2E8F0]">
+              <div className="relative h-16 w-16 rounded-2xl overflow-hidden bg-[#EFF6FF] border border-[#2563EB]/30 shadow-xs flex items-center justify-center shrink-0">
+                {userAvatarUrl ? (
+                  <img src={userAvatarUrl} alt="Preview" className="h-full w-full object-cover" />
+                ) : (
+                  <span className="text-[#2563EB] text-lg font-bold">
+                    {(employeeName || "E").slice(0, 2).toUpperCase()}
+                  </span>
+                )}
+              </div>
+              <div>
+                <h4 className="font-bold text-[#0F172A] text-sm">{employeeName || "Employee"}</h4>
+                <p className="text-[#64748B] text-[11px] font-mono">{employeeEmail}</p>
+                <p className="text-[10px] text-[#2563EB] font-bold mt-0.5 uppercase">Role: Employee</p>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-bold text-[#0F172A] uppercase mb-1">
+                  Choose Image File from Device
+                </label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleAvatarFileUpload}
+                  className="w-full text-xs text-[#64748B] file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-[#EFF6FF] file:text-[#2563EB] hover:file:bg-[#2563EB] hover:file:text-white cursor-pointer"
+                />
+              </div>
+
+              <div className="relative flex items-center my-2">
+                <div className="flex-grow border-t border-[#E2E8F0]"></div>
+                <span className="flex-shrink mx-3 text-[10px] text-[#64748B] font-bold uppercase">OR</span>
+                <div className="flex-grow border-t border-[#E2E8F0]"></div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-[#0F172A] uppercase mb-1">
+                  Paste Custom Image URL
+                </label>
+                <input
+                  type="text"
+                  value={inputAvatarUrl}
+                  onChange={(e) => setInputAvatarUrl(e.target.value)}
+                  placeholder="https://images.unsplash.com/..."
+                  className="w-full rounded-xl border border-[#E2E8F0] px-3.5 py-2 text-xs text-[#0F172A] outline-none focus:border-[#2563EB] bg-white font-mono"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#E2E8F0]">
+              <button
+                type="button"
+                onClick={() => setAvatarModalOpen(false)}
+                className="px-4 py-2 rounded-xl border border-[#E2E8F0] text-[#64748B] font-semibold hover:bg-[#F8FAFC] cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSaveProfileAvatar(inputAvatarUrl)}
+                className="px-5 py-2 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold transition-all shadow-xs cursor-pointer"
+              >
+                Save Profile Photo
+              </button>
+            </div>
           </div>
         </Modal>
       )}

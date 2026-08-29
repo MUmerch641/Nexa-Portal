@@ -12,10 +12,18 @@ const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY && !process.env.NE
   ? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
   : LIVE_SUPABASE_ANON_KEY;
 
-// Use service role key for write operations (has full access)
-const serviceRoleKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV6d213dGtsZGdjaG51cXhhbW92Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4NTQwNTEyNiwiZXhwIjoyMTAwOTgxMTI2fQ.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W3YpPv1ZI";
-
-const supabase = createClient(supabaseUrl, serviceRoleKey);
+const supabase = createClient(supabaseUrl, supabaseKey, {
+  auth: {
+    persistSession: false,
+    autoRefreshToken: false,
+  },
+  global: {
+    headers: {
+      apikey: supabaseKey,
+      Authorization: `Bearer ${supabaseKey}`
+    }
+  }
+});
 
 // Default attendance policy
 const DEFAULT_POLICY = {

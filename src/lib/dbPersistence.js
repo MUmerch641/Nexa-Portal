@@ -2,7 +2,7 @@ import { supabase } from "@/lib/supabase";
 
 export const TABLE_STORAGE_KEYS = {
   employees: "persistent_employees",
-  projects: "software_house_full_projects",
+  projects: "software_house_projects",
   daily_tasks: "software_house_daily_tasks",
   clients: "software_house_clients",
   invoices: "software_house_invoices",
@@ -174,46 +174,31 @@ export async function dbFetch(table, defaultData = [], forceFresh = false) {
     }
   } catch (e) {}
 
-  // 3. Deduplicate and Merge Datasets (Database takes priority over local cached data)
-  const map = new Map();
-
+  // 3. Database is Single Source of Truth
+  let merged = [];
   if (fetchedFromDb) {
-    // DB is active: Use DB data directly as primary truth, filtered against blacklist
-    dbData.forEach(item => {
-      if (item && !isDeleted(item)) {
-        const k = getDedupeKey(item);
-        if (k) map.set(k, item);
-      }
-    });
-
-    // Keep all local items not present in DB (matching by unique dedupe key)
-    localData.forEach(item => {
-      if (item && !isDeleted(item)) {
-        const k = getDedupeKey(item);
-        if (k && !map.has(k)) {
-          map.set(k, item);
+    // DB is live: Use DB data directly as primary truth, filtered against blacklist
+    merged = dbData.filter(i => !isDeleted(i));
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.setItem(storageKey, JSON.stringify(merged));
+        // Clear old aliases
+        if (table === "projects") {
+          localStorage.setItem("software_house_projects", JSON.stringify(merged));
+          localStorage.setItem("software_house_full_projects", JSON.stringify(merged));
         }
-      }
-    });
+      } catch(e) {}
+    }
   } else {
     // Fallback if DB fetch is offline
-    localData.forEach(item => {
-      if (item && !isDeleted(item)) {
-        const k = getDedupeKey(item);
-        if (k) map.set(k, item);
-      }
-    });
+    merged = (localData || []).filter(i => !isDeleted(i));
   }
 
-  const merged = Array.from(map.values()).filter(i => !isDeleted(i));
-
-  // Update RAM Cache & Local Storage with clean merged list
-  MEM_CACHE.set(table, { data: merged, timestamp: Date.now() });
-  if (typeof window !== "undefined") {
-    try {
-      localStorage.setItem(storageKey, JSON.stringify(merged));
-    } catch(e) {}
-  }
+  // Update RAM Cache
+  MEM_CACHE.set(table, {
+    data: merged,
+    timestamp: Date.now()
+  });
 
   return merged;
 }
