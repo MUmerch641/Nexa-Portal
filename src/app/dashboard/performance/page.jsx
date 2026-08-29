@@ -123,50 +123,6 @@ export default function PerformancePage() {
           });
         });
 
-        // 3. Fallback to default enterprise members if list is empty
-        if (list.length === 0) {
-          const defaults = [
-            {
-              id: "perf-emp-rahim",
-              name: "Rahim Bugti",
-              role: "Senior Lead Developer",
-              email: "bugtirahim450@gmail.com",
-              avatarType: "employee",
-              metrics: { attendance: 98, taskCompletion: 96, deadlines: 97, clientFeedback: 98, socialMedia: 92, behavior: 98, leaveRecord: 96, productivity: 97 }
-            },
-            {
-              id: "perf-emp-atsham",
-              name: "Atsham",
-              role: "Senior Lead Developer",
-              email: "atsham@gmail.com",
-              avatarType: "employee",
-              metrics: { attendance: 95, taskCompletion: 94, deadlines: 93, clientFeedback: 95, socialMedia: 90, behavior: 96, leaveRecord: 94, productivity: 94 }
-            },
-            {
-              id: "perf-emp-sara",
-              name: "Sara Khan",
-              role: "Lead UI/UX Designer",
-              email: "sara.khan@gmail.com",
-              avatarType: "employee",
-              metrics: { attendance: 94, taskCompletion: 92, deadlines: 93, clientFeedback: 96, socialMedia: 94, behavior: 96, leaveRecord: 92, productivity: 93 }
-            },
-            {
-              id: "perf-std-student",
-              name: "On-Site Student",
-              role: "Full Stack MERN Student",
-              email: "student@gmail.com",
-              avatarType: "student",
-              metrics: { attendance: 91, taskCompletion: 90, deadlines: 89, clientFeedback: 91, socialMedia: 86, behavior: 95, leaveRecord: 93, productivity: 89 }
-            }
-          ];
-          defaults.forEach((d) => {
-            if (!seenEmails.has(d.email) && !deletedEmails.includes(d.email)) {
-              seenEmails.add(d.email);
-              list.push(d);
-            }
-          });
-        }
-
         setPerformances(list);
         if (typeof window !== "undefined") {
           localStorage.setItem("software_house_performances", JSON.stringify(list));
@@ -192,7 +148,7 @@ export default function PerformancePage() {
     setModal({ isOpen: false, title: "", message: "", type: "info" });
   };
 
-  const handleDeletePerformance = (p) => {
+  const handleDeletePerformance = async (p) => {
     if (!confirm(`Are you sure you want to remove ${p.name} from the Performance Leaderboard?`)) return;
 
     const emailToDelete = (p.email || "").toLowerCase().trim();
@@ -204,6 +160,12 @@ export default function PerformancePage() {
       if (!savedDeleted.includes(emailToDelete)) {
         savedDeleted.push(emailToDelete);
         localStorage.setItem("software_house_deleted_performances", JSON.stringify(savedDeleted));
+      }
+      if (emailToDelete) {
+        await supabase.from("performances").delete().eq("email", emailToDelete);
+      }
+      if (p.id) {
+        await supabase.from("performances").delete().eq("id", p.id);
       }
     } catch (e) {}
 
