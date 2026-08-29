@@ -262,8 +262,22 @@ export default function EmployeesPage() {
       setEmployees(updatedList);
       try {
         localStorage.setItem("persistent_employees", JSON.stringify(updatedList));
+        if (emp.email) {
+          const deletedList = JSON.parse(localStorage.getItem("deleted_payrolls_list") || "[]");
+          if (!deletedList.includes(emp.email.toLowerCase().trim())) {
+            deletedList.push(emp.email.toLowerCase().trim());
+            localStorage.setItem("deleted_payrolls_list", JSON.stringify(deletedList));
+          }
+        }
         await dbDeleteRecord("employees", emp.id);
-        await supabase.from("employees").delete().eq("id", emp.id);
+        if (emp.id) {
+          await supabase.from("employees").delete().eq("id", emp.id);
+          await supabase.from("payrolls").delete().eq("id", emp.id);
+        }
+        if (emp.email) {
+          await supabase.from("employees").delete().eq("email", emp.email.toLowerCase().trim());
+          await supabase.from("payrolls").delete().eq("email", emp.email.toLowerCase().trim());
+        }
         fetch("/api/persistence", {
           method: "POST",
           headers: { "Content-Type": "application/json" },

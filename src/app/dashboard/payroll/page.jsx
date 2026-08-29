@@ -161,25 +161,34 @@ export default function PayrollDashboardPage() {
           dbFetch("payrolls", [], true).catch(() => []),
         ]);
 
+        let deletedPayrollsList = [];
+        try {
+          deletedPayrollsList = JSON.parse(localStorage.getItem("deleted_payrolls_list") || "[]");
+        } catch(e) {}
+
         // 1. Process cloudPayrolls records (Each record from Supabase payrolls table)
-        const loadedPayrolls = (cloudPayrolls || []).map((p, idx) => {
-          const basic = Number(p.basic_salary || 45000);
-          return {
-            ...p,
-            id: p.id || `p-cloud-${idx}`,
-            employee_name: p.employee_name || "Staff Member",
-            email: (p.email || "").toLowerCase().trim(),
-            department: p.department || "Engineering",
-            designation: p.designation || "Staff Member",
-            basic_salary: basic,
-            final_payable_salary: calculateNetSalary({ ...p, basic_salary: basic })
-          };
-        });
+        const loadedPayrolls = (cloudPayrolls || [])
+          .filter(p => !deletedPayrollsList.includes((p.email || "").toLowerCase().trim()))
+          .map((p, idx) => {
+            const basic = Number(p.basic_salary || 45000);
+            return {
+              ...p,
+              id: p.id || `p-cloud-${idx}`,
+              employee_name: p.employee_name || "Staff Member",
+              email: (p.email || "").toLowerCase().trim(),
+              department: p.department || "Engineering",
+              designation: p.designation || "Staff Member",
+              basic_salary: basic,
+              final_payable_salary: calculateNetSalary({ ...p, basic_salary: basic })
+            };
+          });
 
         // 2. Add default payroll for registered employees who don't have a payroll record yet
         (cloudEmployees || []).forEach((emp, idx) => {
           const empEmail = (emp.email || "").toLowerCase().trim();
           const empName = (emp.full_name || "").toLowerCase().trim();
+          if (deletedPayrollsList.includes(empEmail)) return;
+
           const hasRecord = loadedPayrolls.some(p => (empEmail && p.email === empEmail) || (empName && (p.employee_name || "").toLowerCase().trim() === empName));
           if (!hasRecord && empEmail) {
             const basic = Number(emp.basic_salary || 45000);
@@ -418,20 +427,40 @@ export default function PayrollDashboardPage() {
     const updated = payrolls.filter((p) => p.id !== id);
     savePayrollsState(updated);
 
-    // Delete from Supabase Database strictly
+    const emailToDelete = (recordToDelete?.email || "").toLowerCase().trim();
+
+    // Store in deleted_payrolls_list so it is NEVER restored on refresh
     try {
-      if (recordToDelete && recordToDelete.email) {
-        await supabase.from("payrolls").delete().eq("email", recordToDelete.email.toLowerCase().trim());
+      const deletedList = JSON.parse(localStorage.getItem("deleted_payrolls_list") || "[]");
+      if (emailToDelete && !deletedList.includes(emailToDelete)) {
+        deletedList.push(emailToDelete);
+        localStorage.setItem("deleted_payrolls_list", JSON.stringify(deletedList));
+      }
+    } catch(e) {}
+
+    // Delete from Supabase Database strictly (both payrolls and employees tables)
+    try {
+      if (emailToDelete) {
+        await supabase.from("payrolls").delete().eq("email", emailToDelete);
+        await supabase.from("employees").delete().eq("email", emailToDelete);
       }
       if (id) {
         await supabase.from("payrolls").delete().eq("id", id);
+        await supabase.from("employees").delete().eq("id", id);
       }
       fetch("/api/persistence", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ table: "payrolls", record: { id, email: recordToDelete?.email }, action: "delete" })
+        body: JSON.stringify({ table: "payrolls", record: { id, email: emailToDelete }, action: "delete" })
+      }).catch(() => {});
+      fetch("/api/persistence", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ table: "employees", record: { id, email: emailToDelete }, action: "delete" })
       }).catch(() => {});
     } catch(e) {}
+
+    showAlert("Payroll Record Deleted 🗑️", `Payroll record for ${recordToDelete?.employee_name || "Employee"} permanently removed.`, "success");
   };
 
   // Role Filtering:
