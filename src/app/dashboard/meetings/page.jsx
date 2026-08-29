@@ -537,27 +537,36 @@ export default function MeetingsPage() {
 
       {/* CREATE MEETING MODAL (Enhanced with Student / Employee Target Selector) */}
       {createModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4 overflow-y-auto">
-          <div className="bg-white rounded-2xl max-w-xl w-full p-6 shadow-xl space-y-4 border border-[#E2E8F0] text-left animate-in fade-in zoom-in-95 duration-150 my-8 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between border-b border-[#E2E8F0] pb-3">
+        <div 
+          onClick={() => setCreateModalOpen(false)}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4"
+        >
+          <div 
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white rounded-3xl max-w-2xl w-full shadow-2xl border border-slate-200 text-left animate-in fade-in zoom-in-95 duration-150 flex flex-col max-h-[90vh] overflow-hidden"
+          >
+            {/* Modal Fixed Header */}
+            <div className="flex items-center justify-between border-b border-slate-100 p-6 pb-4 shrink-0 bg-white">
               <div>
-                <span className="text-[10px] font-bold uppercase tracking-wider text-[#2563EB] bg-[#EFF6FF] px-2 py-0.5 rounded-full border border-[#2563EB]/20">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-[#2563EB] bg-[#EFF6FF] px-2.5 py-0.5 rounded-full border border-[#2563EB]/20">
                   Meeting Scheduler
                 </span>
-                <h3 className="font-bold text-[#0F172A] text-base flex items-center gap-2 mt-0.5">
+                <h3 className="font-bold text-[#0F172A] text-lg flex items-center gap-2 mt-1">
                   <FaVideo className="text-[#2563EB]" />
                   <span>Create & Schedule New Meeting</span>
                 </h3>
               </div>
               <button
+                type="button"
                 onClick={() => setCreateModalOpen(false)}
-                className="text-[#64748B] hover:text-[#0F172A] text-lg font-bold w-8 h-8 rounded-full hover:bg-slate-100 flex items-center justify-center cursor-pointer"
+                className="text-slate-400 hover:text-slate-700 text-lg font-bold w-8 h-8 rounded-full hover:bg-slate-100 flex items-center justify-center cursor-pointer transition-colors"
               >
                 ✕
               </button>
             </div>
 
-            <form onSubmit={handleCreateMeeting} className="space-y-4 text-xs">
+            {/* Modal Scrollable Form Body */}
+            <form onSubmit={handleCreateMeeting} className="p-6 pt-4 space-y-4 text-xs overflow-y-auto flex-1">
               <div>
                 <label className="block text-xs font-semibold uppercase text-[#0F172A] mb-1">
                   Meeting Title *
