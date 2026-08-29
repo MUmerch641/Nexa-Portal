@@ -122,26 +122,44 @@ export async function dbFetch(table, defaultData = [], forceFresh = false) {
     }
   }
   
-  // Read deleted IDs blacklist
-  let deletedIds = [];
+  // Read deleted IDs and emails universal blacklist
+  let deletedBlacklist = new Set();
   try {
     if (typeof window !== "undefined") {
-      const d = localStorage.getItem("deleted_intern_ids");
-      if (d) deletedIds = JSON.parse(d);
+      const keys = [
+        "deleted_intern_ids",
+        "deleted_employee_ids",
+        "deleted_payrolls_list",
+        "software_house_deleted_performances",
+        "deleted_entity_blacklist"
+      ];
+      keys.forEach(k => {
+        const raw = localStorage.getItem(k);
+        if (raw) {
+          try {
+            const arr = JSON.parse(raw);
+            if (Array.isArray(arr)) {
+              arr.forEach(val => {
+                if (val) deletedBlacklist.add(String(val).toLowerCase().trim());
+              });
+            }
+          } catch(e) {}
+        }
+      });
     }
   } catch (e) {}
 
   const isDeleted = (item) => {
     if (!item) return true;
     const itemId = String(item.id || "").toLowerCase().trim();
-    const itemEmail = String(item.email || "").toLowerCase().trim();
-    const itemName = String(item.full_name || item.name || item.title || "").toLowerCase().trim();
+    const itemEmail = String(item.email || item.student_email || item.assigned_to_email || "").toLowerCase().trim();
+    const itemName = String(item.full_name || item.name || item.title || item.employee_name || "").toLowerCase().trim();
 
-    return deletedIds.some(d => {
-      const del = String(d).toLowerCase().trim();
-      if (!del) return false;
-      return (itemId && itemId === del) || (itemEmail && itemEmail === del) || (itemName && itemName === del);
-    });
+    return (
+      (itemId && deletedBlacklist.has(itemId)) ||
+      (itemEmail && deletedBlacklist.has(itemEmail)) ||
+      (itemName && deletedBlacklist.has(itemName))
+    );
   };
 
   // 1. Load Database Data via Server Persistence Proxy API (Database is Single Source of Truth)
@@ -290,8 +308,14 @@ export async function dbDeleteRecord(table, id, emailField = "") {
   
   if (typeof window !== "undefined") {
     try {
-      const targetKey = String(id || emailField).toLowerCase().trim();
+      const targetKey = String(id || "").toLowerCase().trim();
       const targetEmail = String(emailField || "").toLowerCase().trim();
+
+      // Add to universal blacklist
+      const blacklist = JSON.parse(localStorage.getItem("deleted_entity_blacklist") || "[]");
+      if (targetKey && !blacklist.includes(targetKey)) blacklist.push(targetKey);
+      if (targetEmail && !blacklist.includes(targetEmail)) blacklist.push(targetEmail);
+      localStorage.setItem("deleted_entity_blacklist", JSON.stringify(blacklist));
 
       storageKeys.forEach(key => {
         const saved = localStorage.getItem(key);
@@ -302,9 +326,8 @@ export async function dbDeleteRecord(table, id, emailField = "") {
               if (!item) return false;
               const itemId = String(item.id || "").toLowerCase().trim();
               const itemEmail = String(item.email || "").toLowerCase().trim();
-              if (id && itemId === String(id).toLowerCase().trim()) return false;
-              if (targetEmail && itemEmail === targetEmail) return false;
               if (targetKey && (itemId === targetKey || itemEmail === targetKey)) return false;
+              if (targetEmail && (itemEmail === targetEmail || itemId === targetEmail)) return false;
               return true;
             });
             localStorage.setItem(key, JSON.stringify(filtered));
