@@ -37,7 +37,8 @@ import {
   FaFilter,
   FaSearch,
   FaTimes,
-  FaVideo
+  FaVideo,
+  FaDesktop
 } from "react-icons/fa";
 
 export default function DashboardPage() {
