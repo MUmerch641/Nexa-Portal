@@ -479,6 +479,38 @@ export async function POST(request) {
         return NextResponse.json({ success: !projErr, data: insertedData, error: projErr ? projErr.message : null });
       }
 
+      // 2.7 Payrolls Table Explicit Handler
+      if (table === "payrolls") {
+        const email = (record.email || "").toLowerCase().trim();
+        const payload = {
+          employee_name: record.employee_name || record.full_name || "Employee",
+          email: email,
+          department: record.department || "Engineering",
+          designation: record.designation || "Staff Member",
+          month: record.month || new Date().toISOString().slice(0, 7),
+          basic_salary: Number(record.basic_salary) || 50000,
+          overtime_hours: Number(record.overtime_hours) || 0,
+          overtime_amount: Number(record.overtime_amount) || 0,
+          leave_deduction: Number(record.leave_deduction) || 0,
+          late_penalty: Number(record.late_penalty) || 0,
+          bonus_amount: Number(record.bonus_amount) || 0,
+          incentive_amount: Number(record.incentive_amount) || 0,
+          loan_deduction: Number(record.loan_deduction) || 0,
+          final_payable_salary: Number(record.final_payable_salary) || Number(record.basic_salary) || 50000,
+          status: record.status || "processed"
+        };
+
+        if (email) {
+          const { data: existP } = await supabase.from("payrolls").select("id").eq("email", email).limit(1);
+          if (existP && existP.length > 0) {
+            await supabase.from("payrolls").update(payload).eq("id", existP[0].id);
+          } else {
+            await supabase.from("payrolls").insert([payload]);
+          }
+        }
+        return NextResponse.json({ success: true });
+      }
+
       // 2.8 Interns Table Explicit Handler
       if (table === "interns") {
         const payload = {
