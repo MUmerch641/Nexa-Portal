@@ -294,7 +294,7 @@ export default function AnnouncementsPage() {
                           <button
                             type="button"
                             onClick={() => {
-                              showToast("Announcement Details 📢", `Target Audience: ${a.target_audience || "All Users"}. Posted by: ${a.postedBy}.`, "info");
+                              showToast("Announcement Details 📢", `Target Audience: ${a.target_audience || a.target_type || "All Users"}. Posted by: ${a.posted_by || a.postedBy || a.author || "System Admin / Management"}.`, "info");
                               setActiveKebabId(null);
                             }}
                             className="w-full text-left px-3 py-1.5 rounded-lg hover:bg-[#EFF6FF] text-[#0F172A] hover:text-[#2563EB] font-semibold transition-colors"
@@ -324,9 +324,9 @@ export default function AnnouncementsPage() {
               </p>
 
               <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-[#64748B] pt-1">
-                <span><strong>Posted By:</strong> {a.postedBy}</span>
+                <span><strong>Posted By:</strong> {a.posted_by || a.postedBy || a.author || "System Admin / Management"}</span>
                 <span className="text-[#2563EB] font-semibold bg-[#EFF6FF] px-2.5 py-0.5 rounded-full border border-[#2563EB]/20 flex items-center gap-1">
-                  <FaCheckCircle className="text-[#2563EB]" /> Target: {a.target_audience || "All Users"}
+                  <FaCheckCircle className="text-[#2563EB]" /> Target: {a.target_audience || a.target_type || "All Users"}
                 </span>
               </div>
             </div>
