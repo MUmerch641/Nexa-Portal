@@ -189,11 +189,30 @@ export async function POST(request) {
         const checkOutTime = convertTo24HourTime(record.check_out || record.check_out_time);
 
         let empUuid = null;
-        const targetEmail = (record.employee_id || record.user_email || record.email || "").toLowerCase().trim();
+        const targetEmail = (record.employee_id || record.user_email || record.email || record.student_id || record.user_id || "").toLowerCase().trim();
+        const targetName = (record.user_name || record.employee_name || record.name || record.student_name || "").toLowerCase().trim();
+
         if (targetEmail) {
           const { data: empData } = await supabase.from("employees").select("id").eq("email", targetEmail).limit(1);
           if (empData && empData[0]) {
             empUuid = empData[0].id;
+          } else {
+            const { data: stuData } = await supabase.from("students").select("id").eq("email", targetEmail).limit(1);
+            if (stuData && stuData[0]) {
+              empUuid = stuData[0].id;
+            }
+          }
+        }
+
+        if (!empUuid && targetName) {
+          const { data: empNameData } = await supabase.from("employees").select("id").ilike("full_name", `%${targetName}%`).limit(1);
+          if (empNameData && empNameData[0]) {
+            empUuid = empNameData[0].id;
+          } else {
+            const { data: stuNameData } = await supabase.from("students").select("id").ilike("full_name", `%${targetName}%`).limit(1);
+            if (stuNameData && stuNameData[0]) {
+              empUuid = stuNameData[0].id;
+            }
           }
         }
 
