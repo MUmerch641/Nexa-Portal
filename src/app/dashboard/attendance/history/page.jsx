@@ -3,8 +3,9 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { dbFetch } from "@/lib/dbPersistence";
+import { dbFetch, dbSaveRecord } from "@/lib/dbPersistence";
 import { showToast } from "@/components/Toast";
+import Modal from "@/components/Modal";
 import {
   FaCalendarAlt,
   FaHistory,
@@ -13,62 +14,311 @@ import {
   FaEdit,
   FaExclamationTriangle,
   FaSearch,
-  FaUserCheck
+  FaUserCheck,
+  FaUsers,
+  FaUserGraduate,
+  FaBriefcase,
+  FaCheckCircle,
+  FaTimesCircle,
+  FaClock,
+  FaCalendarCheck,
+  FaFilter
 } from "react-icons/fa";
 
-const StatusBadge = ({ status, lightStatus }) => {
-  const s = (status || lightStatus || "Present").toLowerCase();
+// Helper for Today string
+function getTodayDateString() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
 
-  if (s.includes("late") || lightStatus === "orange") {
-    return (
-      <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-[#FEF3C7] text-[#92400E] border border-[#F59E0B]/20 whitespace-nowrap">
-        Late
-      </span>
-    );
-  }
-  if (s.includes("absent") || s.includes("deduction") || lightStatus === "red") {
-    return (
-      <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-[#F1F5F9] text-[#475569] border border-[#E2E8F0] whitespace-nowrap">
-        Absent
-      </span>
-    );
-  }
-  if (s.includes("half") || s.includes("part")) {
-    return (
-      <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-[#EFF6FF] text-[#2563EB] border border-[#2563EB]/20 whitespace-nowrap">
-        Half Day
-      </span>
-    );
-  }
-  if (s.includes("leave")) {
-    return (
-      <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-[#FEF3C7] text-[#92400E] border border-[#F59E0B]/20 whitespace-nowrap">
-        On Leave
-      </span>
-    );
-  }
-  return (
-    <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-[#EFF6FF] text-[#2563EB] border border-[#2563EB]/20 whitespace-nowrap">
-      Present
-    </span>
-  );
-};
+// Generate Full Day-by-Day Attendance History Calendar for any selected Student/Employee
+function buildTargetUserAttendanceCalendar({ rawLogs, leaves, startDate, todayRecord, isStudent = false }) {
+  const todayStr = getTodayDateString();
+  const now = new Date();
+  const currentMins = now.getHours() * 60 + now.getMinutes();
 
-export default function AttendanceHistory() {
+  const sDate = new Date(startDate || "2026-08-01");
+  const eDate = new Date();
+  const minAllowedDate = new Date();
+  minAllowedDate.setDate(minAllowedDate.getDate() - 30);
+  const effectiveStartDate = sDate > minAllowedDate ? sDate : minAllowedDate;
+
+  const calendar = [];
+  const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+  for (let d = new Date(eDate); d >= effectiveStartDate; d.setDate(d.getDate() - 1)) {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, "0");
+    const dayNum = String(d.getDate()).padStart(2, "0");
+    const dateStr = `${year}-${month}-${dayNum}`;
+    const dayOfWeek = d.getDay(); // 0 = Sunday
+    const dayName = dayNames[dayOfWeek];
+
+    // 1. Check rawLogs
+    const matchedLog = (rawLogs || []).find((l) => {
+      const lDate = l.attendance_date || l.date || (l.timestamp ? l.timestamp.split("T")[0] : "");
+      return lDate === dateStr;
+    });
+
+    // 2. Check leaves
+    const matchedLeave = (leaves || []).find((l) => {
+      const lStart = l.start_date || l.applied_at || "";
+      const lEnd = l.end_date || l.start_date || "";
+      return lStart && lEnd && dateStr >= lStart && dateStr <= lEnd && (l.status === "approved" || l.status === "pending");
+    });
+
+    if (dateStr === todayStr && todayRecord && todayRecord.check_in_time) {
+      calendar.push({
+        id: todayRecord.id || `att-${dateStr}`,
+        attendance_date: dateStr,
+        date: dateStr,
+        day_name: dayName,
+        check_in_time: todayRecord.check_in_time,
+        check_out_time: todayRecord.check_out_time || "Not Checked Out",
+        attendance_status: todayRecord.attendance_status || todayRecord.status || "Present (On Time)",
+        is_today: true,
+      });
+    } else if (matchedLog && (matchedLog.check_in_time || matchedLog.type === "check_in" || (matchedLog.attendance_status && matchedLog.attendance_status !== "Absent"))) {
+      calendar.push({
+        id: matchedLog.id || `att-${dateStr}`,
+        attendance_date: dateStr,
+        date: dateStr,
+        day_name: dayName,
+        check_in_time: matchedLog.check_in_time || matchedLog.time || "--:--",
+        check_out_time:
+          matchedLog.check_out_time && matchedLog.check_out_time !== "Not Checked Out" && matchedLog.check_out_time !== "--:--"
+            ? matchedLog.check_out_time
+            : (dateStr === todayStr ? "Not Checked Out" : "06:00 PM"),
+        attendance_status: matchedLog.attendance_status || matchedLog.status || "Present (On Time)",
+      });
+    } else if (matchedLeave) {
+      calendar.push({
+        id: `leave-${dateStr}`,
+        attendance_date: dateStr,
+        date: dateStr,
+        day_name: dayName,
+        check_in_time: "--:--",
+        check_out_time: "--:--",
+        attendance_status: `On Leave (${matchedLeave.leave_type || matchedLeave.type || "Casual"}) 🌴`,
+        is_leave: true,
+      });
+    } else if (dayOfWeek === 0) {
+      calendar.push({
+        id: `sun-${dateStr}`,
+        attendance_date: dateStr,
+        date: dateStr,
+        day_name: dayName,
+        check_in_time: "--:--",
+        check_out_time: "--:--",
+        attendance_status: "Sunday (Weekend Holiday) 🏖️",
+        is_sunday: true,
+      });
+    } else if (dateStr === todayStr) {
+      if (currentMins >= 1080) { // After 6:00 PM
+        calendar.push({
+          id: `today-absent-${dateStr}`,
+          attendance_date: dateStr,
+          date: dateStr,
+          day_name: dayName,
+          check_in_time: "--:--",
+          check_out_time: "--:--",
+          attendance_status: "Absent (Shift Ended 06:00 PM) 🔴",
+          is_absent: true,
+          is_today: true,
+        });
+      } else {
+        calendar.push({
+          id: `today-pending-${dateStr}`,
+          attendance_date: dateStr,
+          date: dateStr,
+          day_name: dayName,
+          check_in_time: "--:--",
+          check_out_time: "--:--",
+          attendance_status: currentMins < 600 ? "Shift Starts 10:00 AM ⏳" : "Not Checked In (Shift 10:00 AM - 06:00 PM) 🟠",
+          is_pending: true,
+          is_today: true,
+        });
+      }
+    } else {
+      calendar.push({
+        id: `absent-${dateStr}`,
+        attendance_date: dateStr,
+        date: dateStr,
+        day_name: dayName,
+        check_in_time: "--:--",
+        check_out_time: "--:--",
+        attendance_status: "Absent 🔴",
+        is_absent: true,
+      });
+    }
+  }
+
+  return calendar;
+}
+
+export default function AdminAttendanceHistoryHub() {
   const router = useRouter();
-  const [attendance, setAttendance] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
+
+  // Directory State
+  const [allUsersList, setAllUsersList] = useState([]);
+  const [selectedUser, setSelectedUser] = useState(null);
+  const [userFilterRole, setUserFilterRole] = useState("all"); // "all", "students", "employees"
+  const [userSearchQuery, setUserSearchQuery] = useState("");
+
+  // Raw Database Datasets
+  const [masterLogs, setMasterLogs] = useState([]);
+  const [allLeaves, setAllLeaves] = useState([]);
+
+  // Selected User Calendar
+  const [userCalendar, setUserCalendar] = useState([]);
+
+  // View Mode: "individual" (Inspector calendar) vs "master_table" (Global logs)
+  const [activeTab, setActiveTab] = useState("individual");
+
+  // Master Table Filter States
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
-  const [searchQuery, setSearchQuery] = useState("");
-  const [deleteModal, setDeleteModal] = useState({ isOpen: false, record: null, loading: false });
+  const [globalSearch, setGlobalSearch] = useState("");
 
-  const getAttendance = async () => {
+  // Admin Edit Attendance Modal State
+  const [editModal, setEditModal] = useState({
+    isOpen: false,
+    record: null,
+    date: "",
+    status: "Present (On Time)",
+    checkInTime: "10:00 AM",
+    checkOutTime: "06:00 PM",
+  });
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  // Load All System Data
+  const loadAllAttendanceHubData = async () => {
     setLoading(true);
-    const data = await dbFetch("attendance");
-    setAttendance(data || []);
-    setLoading(false);
+    try {
+      const [stuRes, internRes, empRes, attRes, leaveRes] = await Promise.all([
+        dbFetch("students").catch(() => []),
+        dbFetch("interns").catch(() => []),
+        dbFetch("employees").catch(() => []),
+        dbFetch("attendance").catch(() => []),
+        dbFetch("leaves").catch(() => [])
+      ]);
+
+      setMasterLogs(attRes || []);
+      setAllLeaves(leaveRes || []);
+
+      // Build Unified User Directory
+      const userMap = new Map();
+
+      (stuRes || []).forEach((s) => {
+        const email = (s.email || "").toLowerCase().trim();
+        if (!email) return;
+        const isIntern = Boolean(s.intern_id || s.internship_mode || (s.course_name && s.course_name.toLowerCase().includes("intern")));
+        userMap.set(email, {
+          id: s.id || `stu-${email}`,
+          email: email,
+          name: s.full_name || s.student_name || "Student",
+          role: isIntern ? "Remote Intern" : "Student",
+          type: "student",
+          category: isIntern ? "Remote Internship" : "Course Student",
+          department: s.course_name || s.course || "Development",
+          startDate: s.admission_date || s.start_date || s.enrollment_date || "2026-06-01",
+          avatar: s.profile_photo || null,
+        });
+      });
+
+      (internRes || []).forEach((i) => {
+        const email = (i.email || "").toLowerCase().trim();
+        if (!email || userMap.has(email)) return;
+        userMap.set(email, {
+          id: i.id || `intern-${email}`,
+          email: email,
+          name: i.full_name || i.name || "Remote Intern",
+          role: "Remote Intern",
+          type: "student",
+          category: "Remote Internship",
+          department: i.tech_domain || i.domain || "AI & Software Engineering",
+          startDate: i.start_date || "2026-06-01",
+          avatar: i.avatar || null,
+        });
+      });
+
+      (empRes || []).forEach((e) => {
+        const email = (e.email || "").toLowerCase().trim();
+        if (!email) return;
+        userMap.set(email, {
+          id: e.id || `emp-${email}`,
+          email: email,
+          name: e.full_name || e.name || "Employee",
+          role: "Employee",
+          type: "employee",
+          category: e.designation || "Staff Member",
+          department: e.department || "Engineering",
+          startDate: e.joining_date || "2026-05-01",
+          avatar: e.profile_photo || null,
+        });
+      });
+
+      const userList = Array.from(userMap.values());
+      setAllUsersList(userList);
+
+      // Select first user by default (prefer student/intern like Rahim Bugti)
+      if (userList.length > 0) {
+        const defaultUser = userList.find(u => u.name.toLowerCase().includes("rahim") || u.email.toLowerCase().includes("rahim")) || userList[0];
+        selectTargetUser(defaultUser, attRes, leaveRes);
+      }
+    } catch (e) {
+      console.error("Failed to load attendance hub data:", e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Select User and Compute Calendar
+  const selectTargetUser = (user, currentLogs = masterLogs, currentLeaves = allLeaves) => {
+    if (!user) return;
+    setSelectedUser(user);
+
+    const uEmail = user.email.toLowerCase().trim();
+    const uName = user.name.toLowerCase().trim();
+
+    // 1. Filter user logs
+    const userLogs = (currentLogs || []).filter((l) => {
+      const lEmail = (l.user_email || l.email || l.employee_id || l.student_id || l.user_id || "").toLowerCase().trim();
+      const lName = (l.user_name || l.employee_name || l.name || "").toLowerCase().trim();
+      return (uEmail && (lEmail === uEmail || lEmail.includes(uEmail) || uEmail.includes(lEmail))) ||
+             (uName && (lName.includes(uName) || uName.includes(lName)));
+    });
+
+    // 2. Filter user leaves
+    const userLeaves = (currentLeaves || []).filter((l) => {
+      const lEmail = (l.applicant_email || l.email || "").toLowerCase().trim();
+      const lName = (l.applicant_name || l.employee_name || "").toLowerCase().trim();
+      return (uEmail && (lEmail === uEmail || lEmail.includes(uEmail))) ||
+             (uName && lName.includes(uName));
+    });
+
+    // 3. Check today record
+    const todayStr = getTodayDateString();
+    let todayRec = userLogs.find(l => {
+      const lDate = l.attendance_date || l.date || (l.timestamp ? l.timestamp.split("T")[0] : "");
+      return lDate === todayStr;
+    });
+
+    // 4. Build Full Calendar
+    const calendar = buildTargetUserAttendanceCalendar({
+      rawLogs: userLogs,
+      leaves: userLeaves,
+      startDate: user.startDate,
+      todayRecord: todayRec,
+      isStudent: user.type === "student",
+    });
+
+    setUserCalendar(calendar);
   };
 
   useEffect(() => {
@@ -80,67 +330,115 @@ export default function AttendanceHistory() {
 
     if (!adminCheck) {
       setLoading(false);
-      showToast("Access Restricted 🔒", "Attendance history and management is reserved for Admin only.", "warning");
+      showToast("Access Restricted 🔒", "Admin attendance hub is reserved for authorized managers.", "warning");
       router.replace(role === "student" ? "/dashboard/student" : "/dashboard/employee");
       return;
     }
 
-    getAttendance();
+    loadAllAttendanceHubData();
   }, []);
 
-  const confirmDelete = (record) => {
-    setDeleteModal({ isOpen: true, record, loading: false });
-  };
+  // Save Admin Attendance Override
+  const handleSaveAttendanceEdit = async () => {
+    if (!selectedUser || !editModal.date) return;
+    setSavingEdit(true);
 
-  const executeDelete = async () => {
-    if (!deleteModal.record) return;
-    setDeleteModal(prev => ({ ...prev, loading: true }));
-    const id = deleteModal.record.id || deleteModal.record.attendance_id;
+    const isSun = editModal.status.includes("Sunday");
+    const isLev = editModal.status.includes("Leave");
+    const isAbs = editModal.status.includes("Absent");
+
+    const checkInToSave = (isSun || isLev || isAbs) ? "--:--" : editModal.checkInTime;
+    const checkOutToSave = (isSun || isLev || isAbs) ? "--:--" : editModal.checkOutTime;
+
+    const recordToSave = {
+      id: editModal.record?.id || `att-${Date.now()}`,
+      student_id: selectedUser.email,
+      employee_id: selectedUser.email,
+      user_email: selectedUser.email,
+      user_name: selectedUser.name,
+      user_role: selectedUser.type === "student" ? "student" : "employee",
+      attendance_date: editModal.date,
+      date: editModal.date,
+      check_in_time: checkInToSave,
+      check_out_time: checkOutToSave,
+      attendance_status: editModal.status,
+      status: editModal.status,
+      timestamp: `${editModal.date}T10:00:00.000Z`,
+    };
+
     try {
-      await supabase.from("attendance").delete().eq("id", id);
-      const updated = attendance.filter(item => item.id !== id && item.attendance_id !== id);
-      setAttendance(updated);
-      try {
-        localStorage.setItem("software_house_master_attendance_logs", JSON.stringify(updated));
-      } catch (e) {}
-      showToast("Record Deleted 🗑️", "Attendance entry removed successfully.", "info");
-    } catch (e) {
-      showToast("Error", "Failed to delete record.", "error");
+      await dbSaveRecord("attendance", recordToSave);
+
+      // Update Local State
+      const updatedLogs = [recordToSave, ...masterLogs.filter(l => {
+        const lDate = l.attendance_date || l.date;
+        const lEmail = (l.user_email || l.email || l.student_id || "").toLowerCase().trim();
+        return !(lDate === editModal.date && lEmail === selectedUser.email.toLowerCase().trim());
+      })];
+      setMasterLogs(updatedLogs);
+
+      // Rebuild User Calendar
+      selectTargetUser(selectedUser, updatedLogs, allLeaves);
+
+      showToast("Attendance Updated ✏️", `Saved record for ${selectedUser.name} on ${editModal.date}.`, "success");
+      setEditModal({ ...editModal, isOpen: false });
+    } catch (err) {
+      showToast("Save Error ⚠️", "Failed to update attendance record.", "error");
     } finally {
-      setDeleteModal({ isOpen: false, record: null, loading: false });
+      setSavingEdit(false);
     }
   };
 
-  const handleResetFilters = () => {
-    setFromDate("");
-    setToDate("");
-    setSearchQuery("");
-  };
-
-  const filteredAttendance = attendance.filter((item) => {
-    const itemDateStr = item.attendance_date || item.date || (item.timestamp ? item.timestamp.split("T")[0] : "");
-    if (fromDate && itemDateStr && itemDateStr < fromDate) return false;
-    if (toDate && itemDateStr && itemDateStr > toDate) return false;
-
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      const name = (item.user_name || item.employees?.full_name || item.user_email || "").toLowerCase();
-      const role = (item.user_role || "").toLowerCase();
-      if (!name.includes(q) && !role.includes(q)) return false;
+  // Filter Users List
+  const filteredUsers = allUsersList.filter((u) => {
+    if (userFilterRole === "students" && u.type !== "student") return false;
+    if (userFilterRole === "employees" && u.type !== "employee") return false;
+    if (userSearchQuery.trim()) {
+      const q = userSearchQuery.toLowerCase().trim();
+      const n = u.name.toLowerCase();
+      const e = u.email.toLowerCase();
+      const d = u.department.toLowerCase();
+      if (!n.includes(q) && !e.includes(q) && !d.includes(q)) return false;
     }
     return true;
   });
 
+  // Master Global Table Filtering
+  const filteredGlobalLogs = masterLogs.filter((item) => {
+    const itemDateStr = item.attendance_date || item.date || (item.timestamp ? item.timestamp.split("T")[0] : "");
+    if (fromDate && itemDateStr && itemDateStr < fromDate) return false;
+    if (toDate && itemDateStr && itemDateStr > toDate) return false;
+    if (globalSearch.trim()) {
+      const q = globalSearch.toLowerCase();
+      const name = (item.user_name || item.employee_name || item.user_email || "").toLowerCase();
+      const status = (item.attendance_status || item.status || "").toLowerCase();
+      if (!name.includes(q) && !status.includes(q)) return false;
+    }
+    return true;
+  });
+
+  // Calculate Metrics for Selected User
+  const workingDays = userCalendar.filter(d => !d.is_sunday);
+  const presentDays = workingDays.filter(d => (d.attendance_status || "").toLowerCase().includes("present") || (d.attendance_status || "").toLowerCase().includes("on time"));
+  const lateDays = workingDays.filter(d => (d.attendance_status || "").toLowerCase().includes("late") || (d.attendance_status || "").toLowerCase().includes("deduction"));
+  const leaveDays = workingDays.filter(d => (d.attendance_status || "").toLowerCase().includes("leave"));
+  const absentDays = workingDays.filter(d => (d.attendance_status || "").toLowerCase().includes("absent"));
+  const totalSundays = userCalendar.filter(d => d.is_sunday).length;
+
+  const attendanceRate = workingDays.length > 0
+    ? Math.round(((presentDays.length + leaveDays.length) / workingDays.length) * 100)
+    : 100;
+
   if (!isAdmin) {
     return (
-      <div className="min-h-[350px] bg-white rounded-2xl border border-slate-200 p-8 flex flex-col items-center justify-center text-center space-y-4 shadow-sm">
+      <div className="min-h-[350px] bg-white rounded-3xl border border-slate-200 p-8 flex flex-col items-center justify-center text-center space-y-4 shadow-xs">
         <div className="w-14 h-14 rounded-full bg-rose-50 text-rose-600 flex items-center justify-center text-2xl border border-rose-200">
           <FaExclamationTriangle />
         </div>
         <div>
           <h2 className="text-lg font-bold text-slate-900">Admin Access Required</h2>
           <p className="text-xs text-slate-500 max-w-md mt-1">
-            Global attendance records and management tools are restricted to Admin accounts. Redirecting to your dashboard...
+            Global attendance records and individual student inspection are restricted to Admin accounts.
           </p>
         </div>
       </div>
@@ -149,222 +447,484 @@ export default function AttendanceHistory() {
 
   return (
     <div className="space-y-6">
-
-      {/* Header */}
-      <div className="bg-white rounded-2xl p-6 border border-[#E2E8F0] shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      {/* Top Header */}
+      <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <span className="text-[10px] font-bold uppercase tracking-wider text-[#2563EB] bg-[#EFF6FF] px-2.5 py-1 rounded-full border border-[#2563EB]/20">
-            Attendance Records
+          <span className="text-[10px] font-bold uppercase tracking-wider text-blue-600 bg-blue-50 px-2.5 py-1 rounded-full border border-blue-200">
+            Attendance Administration Desk
           </span>
-          <h1 className="text-xl font-bold text-[#0F172A] mt-1.5 flex items-center gap-2.5">
-            <FaHistory className="text-[#2563EB]" />
-            <span>Attendance History & Date Filter</span>
+          <h1 className="text-xl font-bold text-slate-900 mt-1.5 flex items-center gap-2.5">
+            <FaHistory className="text-blue-600" />
+            <span>Master Attendance History & Individual Student Inspector</span>
           </h1>
-          <p className="text-xs text-[#64748B] mt-0.5">
-            Detailed check-in/out logs for employees and students across any date range.
+          <p className="text-xs text-slate-500 mt-0.5">
+            Select any student, remote intern, or employee to inspect their full day-by-day attendance history calendar, shift times, Sunday holidays, and leaves.
           </p>
         </div>
-        <span className="text-xs font-semibold bg-[#EFF6FF] text-[#2563EB] px-3 py-1.5 rounded-xl border border-[#2563EB]/20 shrink-0 self-start">
-          {filteredAttendance.length} Records {(fromDate || toDate || searchQuery) ? `of ${attendance.length}` : ""}
-        </span>
-      </div>
 
-      {/* Filter Bar */}
-      <div className="bg-white rounded-2xl border border-[#E2E8F0] p-5 shadow-sm flex flex-col sm:flex-row flex-wrap items-end gap-4">
-        <div className="flex-1 min-w-[160px]">
-          <label className="block text-xs font-semibold uppercase tracking-wide text-[#64748B] mb-1 flex items-center gap-1.5">
-            <FaCalendarAlt className="text-[#2563EB]" /> From Date
-          </label>
-          <input
-            type="date"
-            value={fromDate}
-            onChange={e => setFromDate(e.target.value)}
-            className="w-full rounded-xl border border-[#E2E8F0] px-3.5 py-2 text-xs text-[#0F172A] outline-none focus:border-[#2563EB] bg-white"
-          />
-        </div>
-
-        <div className="flex-1 min-w-[160px]">
-          <label className="block text-xs font-semibold uppercase tracking-wide text-[#64748B] mb-1 flex items-center gap-1.5">
-            <FaCalendarAlt className="text-[#2563EB]" /> To Date
-          </label>
-          <input
-            type="date"
-            value={toDate}
-            onChange={e => setToDate(e.target.value)}
-            className="w-full rounded-xl border border-[#E2E8F0] px-3.5 py-2 text-xs text-[#0F172A] outline-none focus:border-[#2563EB] bg-white"
-          />
-        </div>
-
-        <div className="flex-1 min-w-[200px]">
-          <label className="block text-xs font-semibold uppercase tracking-wide text-[#64748B] mb-1">Search</label>
-          <div className="relative">
-            <FaSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-[#64748B] text-xs" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              placeholder="Name, email, role..."
-              className="w-full pl-8 pr-3 py-2 rounded-xl border border-[#E2E8F0] text-xs text-[#0F172A] outline-none focus:border-[#2563EB] bg-white"
-            />
-          </div>
-        </div>
-
-        {(fromDate || toDate || searchQuery) && (
+        {/* Tab Switcher */}
+        <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-2xl border border-slate-200 shrink-0 self-start">
           <button
             type="button"
-            onClick={handleResetFilters}
-            className="bg-[#F8FAFC] hover:bg-[#EFF6FF] text-[#2563EB] border border-[#E2E8F0] font-semibold px-4 py-2 rounded-xl text-xs transition-colors cursor-pointer flex items-center gap-1.5"
+            onClick={() => setActiveTab("individual")}
+            className={`px-4 py-2 rounded-xl font-bold text-xs transition-all cursor-pointer flex items-center gap-1.5 ${
+              activeTab === "individual"
+                ? "bg-white text-blue-600 shadow-xs"
+                : "text-slate-600 hover:text-slate-900"
+            }`}
           >
-            <FaUndo className="text-xs" />
-            <span>Reset</span>
+            <FaUserCheck className="text-xs" />
+            <span>Individual User Calendar 👤</span>
           </button>
-        )}
-      </div>
-
-      {/* Table */}
-      <div className="bg-white rounded-2xl border border-[#E2E8F0] shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs border-collapse">
-            <thead className="bg-[#F8FAFC] text-[#64748B] font-semibold uppercase text-[10px] tracking-wider border-b border-[#E2E8F0] sticky top-0">
-              <tr>
-                <th className="py-3 px-4">Employee / User</th>
-                <th className="py-3 px-4">Role</th>
-                <th className="py-3 px-4">Date</th>
-                <th className="py-3 px-4">Status</th>
-                <th className="py-3 px-4">Clock In</th>
-                <th className="py-3 px-4">Clock Out</th>
-                <th className="py-3 px-4">Duration</th>
-                <th className="py-3 px-4 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[#E2E8F0]">
-              {loading ? (
-                <tr>
-                  <td colSpan={8} className="py-10 text-center text-[#64748B] font-medium text-xs">
-                    Loading attendance records...
-                  </td>
-                </tr>
-              ) : filteredAttendance.length === 0 ? (
-                <tr>
-                  <td colSpan={8} className="py-12 text-center">
-                    <div className="flex flex-col items-center justify-center space-y-3">
-                      <div className="w-12 h-12 rounded-full bg-[#EFF6FF] text-[#2563EB] flex items-center justify-center text-xl border border-[#2563EB]/20">
-                        <FaUserCheck />
-                      </div>
-                      <div>
-                        <p className="text-sm font-bold text-[#0F172A]">No Attendance Records Found</p>
-                        <p className="text-xs text-[#64748B] mt-0.5">
-                          {(fromDate || toDate || searchQuery) ? "No records match the selected filters." : "Attendance records will appear here once marked."}
-                        </p>
-                      </div>
-                      {(fromDate || toDate || searchQuery) && (
-                        <button
-                          type="button"
-                          onClick={handleResetFilters}
-                          className="bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold text-xs px-4 py-2 rounded-xl cursor-pointer"
-                        >
-                          Clear Filters
-                        </button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ) : (
-                filteredAttendance.map((item, idx) => {
-                  const userName = item.user_name || item.employees?.full_name || item.user_email || item.user_id || "Employee";
-                  const dateStr = item.attendance_date || item.date || (item.timestamp ? item.timestamp.split("T")[0] : "N/A");
-                  const clockIn = item.check_in_time || item.check_in || "N/A";
-                  const hasRealClockOut = (item.check_out_time && item.check_out_time !== "Not Checked Out" && item.check_out_time !== "--:--") || (item.check_out && item.check_out !== "Not Checked Out" && item.check_out !== "--:--");
-                  const clockOut = hasRealClockOut
-                    ? (item.check_out_time && item.check_out_time !== "Not Checked Out" ? item.check_out_time : item.check_out)
-                    : (clockIn !== "N/A" ? "Not Checked Out" : "—");
-                  const workHours = item.total_work_hours || (hasRealClockOut ? "Completed" : "In Progress");
-                  const roleLabel = (item.user_role === "student" || item.user_role === "course_student") ? "Student" : "Employee";
-                  const recordId = item.id || item.attendance_id;
-
-                  return (
-                    <tr key={`att-history-${recordId || idx}`} className="hover:bg-[#F8FAFC] transition-colors align-middle">
-                      <td className="py-3.5 px-4 font-semibold text-[#0F172A]">{userName}</td>
-
-                      <td className="py-3.5 px-4">
-                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded border uppercase ${
-                          roleLabel === "Student"
-                            ? "bg-[#FEF3C7] text-[#92400E] border-[#F59E0B]/20"
-                            : "bg-[#EFF6FF] text-[#2563EB] border-[#2563EB]/20"
-                        }`}>
-                          {roleLabel}
-                        </span>
-                      </td>
-
-                      <td className="py-3.5 px-4 font-mono text-[#0F172A] font-semibold">{dateStr}</td>
-
-                      <td className="py-3.5 px-4">
-                        <StatusBadge status={item.attendance_status || item.status} lightStatus={item.light_status} />
-                      </td>
-
-                      <td className="py-3.5 px-4 font-mono text-[#2563EB] font-semibold">{clockIn}</td>
-                      <td className={`py-3.5 px-4 font-mono ${clockOut === "Not Checked Out" ? "text-amber-600 font-semibold" : "text-[#64748B]"}`}>
-                        {clockOut}
-                      </td>
-                      <td className="py-3.5 px-4 font-mono font-semibold text-[#0F172A]">{workHours}</td>
-
-                      <td className="py-3.5 px-4 text-right">
-                        <div className="flex items-center justify-end gap-2">
-                          <button
-                            type="button"
-                            onClick={() => router.push(`/dashboard/attendance/edit/${recordId}`)}
-                            className="bg-[#EFF6FF] hover:bg-[#2563EB] hover:text-white text-[#2563EB] border border-[#2563EB]/20 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all flex items-center gap-1 cursor-pointer"
-                          >
-                            <FaEdit className="text-[10px]" /> Edit
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => confirmDelete(item)}
-                            className="bg-[#F8FAFC] hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200 text-[#64748B] border border-[#E2E8F0] px-2.5 py-1 rounded-lg text-xs font-semibold transition-all flex items-center gap-1 cursor-pointer"
-                          >
-                            <FaTrashAlt className="text-[10px]" /> Delete
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
+          <button
+            type="button"
+            onClick={() => setActiveTab("master_table")}
+            className={`px-4 py-2 rounded-xl font-bold text-xs transition-all cursor-pointer flex items-center gap-1.5 ${
+              activeTab === "master_table"
+                ? "bg-white text-blue-600 shadow-xs"
+                : "text-slate-600 hover:text-slate-900"
+            }`}
+          >
+            <FaFilter className="text-xs" />
+            <span>All Global Logs Table 📋</span>
+          </button>
         </div>
       </div>
 
-      {/* Confirmation Delete Modal */}
-      {deleteModal.isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-[#E2E8F0] space-y-4 animate-in fade-in zoom-in-95 duration-150">
-            <div className="flex items-center gap-3 border-b border-[#E2E8F0] pb-3">
-              <FaExclamationTriangle className="text-xl text-[#2563EB]" />
-              <h3 className="font-bold text-[#0F172A] text-base">Delete Attendance Record</h3>
+      {activeTab === "individual" ? (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          {/* LEFT SIDEBAR: USER DIRECTORY & SELECTOR */}
+          <div className="lg:col-span-4 space-y-4">
+            <div className="bg-white rounded-3xl border border-slate-200 p-5 shadow-xs space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                  <FaUsers className="text-blue-600" />
+                  <span>Select User / Student</span>
+                </h3>
+                <span className="text-[11px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200">
+                  {filteredUsers.length} Users
+                </span>
+              </div>
+
+              {/* Role Filters */}
+              <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl">
+                <button
+                  type="button"
+                  onClick={() => setUserFilterRole("all")}
+                  className={`flex-1 py-1.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+                    userFilterRole === "all" ? "bg-white text-blue-600 shadow-xs" : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  All
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setUserFilterRole("students")}
+                  className={`flex-1 py-1.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+                    userFilterRole === "students" ? "bg-white text-blue-600 shadow-xs" : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  Students
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setUserFilterRole("employees")}
+                  className={`flex-1 py-1.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+                    userFilterRole === "employees" ? "bg-white text-blue-600 shadow-xs" : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  Employees
+                </button>
+              </div>
+
+              {/* Live Search */}
+              <div className="relative">
+                <FaSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs" />
+                <input
+                  type="text"
+                  value={userSearchQuery}
+                  onChange={(e) => setUserSearchQuery(e.target.value)}
+                  placeholder="Search student or employee name..."
+                  className="w-full pl-8 pr-3 py-2 rounded-xl border border-slate-200 text-xs text-slate-900 outline-none focus:border-blue-600 bg-slate-50/50"
+                />
+              </div>
+
+              {/* User List Cards */}
+              <div className="max-h-[550px] overflow-y-auto space-y-2 pr-1">
+                {filteredUsers.length === 0 ? (
+                  <p className="text-xs text-slate-400 italic text-center py-6">No matching users found.</p>
+                ) : (
+                  filteredUsers.map((u) => {
+                    const isSelected = selectedUser?.email === u.email;
+                    return (
+                      <button
+                        key={`user-card-${u.email}`}
+                        type="button"
+                        onClick={() => selectTargetUser(u)}
+                        className={`w-full text-left p-3 rounded-2xl border transition-all cursor-pointer flex items-center gap-3 ${
+                          isSelected
+                            ? "bg-blue-50 border-blue-400 shadow-xs ring-2 ring-blue-500/20"
+                            : "bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50"
+                        }`}
+                      >
+                        <div className={`w-10 h-10 rounded-2xl flex items-center justify-center font-bold text-sm shrink-0 border ${
+                          isSelected ? "bg-blue-600 text-white border-blue-700" : "bg-slate-100 text-slate-700 border-slate-200"
+                        }`}>
+                          {u.name ? u.name.charAt(0).toUpperCase() : "U"}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-bold text-slate-900 truncate flex items-center gap-1.5">
+                            <span>{u.name}</span>
+                            {u.role.includes("Intern") ? (
+                              <span className="text-[9px] bg-purple-50 text-purple-700 px-1.5 py-0.5 rounded border border-purple-200 font-semibold">Intern</span>
+                            ) : u.type === "student" ? (
+                              <span className="text-[9px] bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded border border-blue-200 font-semibold">Student</span>
+                            ) : (
+                              <span className="text-[9px] bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded border border-emerald-200 font-semibold">Staff</span>
+                            )}
+                          </p>
+                          <p className="text-[11px] text-slate-500 truncate">{u.department}</p>
+                          <p className="text-[10px] text-slate-400 font-mono truncate">{u.email}</p>
+                        </div>
+                      </button>
+                    );
+                  })
+                )}
+              </div>
             </div>
-            <p className="text-xs text-[#64748B] leading-relaxed">
-              Are you sure you want to permanently delete this attendance entry? This action cannot be undone.
-            </p>
-            <div className="flex gap-2 pt-2">
+          </div>
+
+          {/* RIGHT MAIN PANEL: SELECTED USER FULL CALENDAR & METRICS */}
+          <div className="lg:col-span-8 space-y-6">
+            {selectedUser ? (
+              <>
+                {/* Active User Banner */}
+                <div className="bg-gradient-to-r from-blue-900 via-slate-900 to-indigo-950 rounded-3xl p-6 text-white shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="flex items-center gap-4">
+                    <div className="w-14 h-14 rounded-2xl bg-blue-600 text-white flex items-center justify-center font-bold text-xl border-2 border-white/20 shadow-inner">
+                      {selectedUser.name.charAt(0).toUpperCase()}
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h2 className="text-lg font-bold text-white">{selectedUser.name}</h2>
+                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-white/20 text-white border border-white/30">
+                          {selectedUser.category}
+                        </span>
+                      </div>
+                      <p className="text-xs text-blue-200 mt-0.5">{selectedUser.department}</p>
+                      <p className="text-[11px] text-slate-300 font-mono mt-0.5">{selectedUser.email}</p>
+                    </div>
+                  </div>
+
+                  <div className="text-right sm:border-l sm:border-white/10 sm:pl-6">
+                    <p className="text-[11px] text-blue-200 uppercase font-semibold">Working Days Attendance</p>
+                    <p className="text-3xl font-extrabold text-emerald-400 mt-0.5">{attendanceRate}%</p>
+                    <p className="text-[10px] text-slate-300">Shift: 10:00 AM - 06:00 PM</p>
+                  </div>
+                </div>
+
+                {/* Summary Metrics */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs text-center">
+                    <span className="text-[10px] font-bold uppercase text-slate-400">Total Presents</span>
+                    <p className="text-xl font-bold text-emerald-600 mt-1">{presentDays.length} Days</p>
+                  </div>
+                  <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs text-center">
+                    <span className="text-[10px] font-bold uppercase text-slate-400">Late / Deductions</span>
+                    <p className="text-xl font-bold text-amber-600 mt-1">{lateDays.length} Days</p>
+                  </div>
+                  <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs text-center">
+                    <span className="text-[10px] font-bold uppercase text-slate-400">Approved Leaves</span>
+                    <p className="text-xl font-bold text-blue-600 mt-1">{leaveDays.length} Days</p>
+                  </div>
+                  <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs text-center">
+                    <span className="text-[10px] font-bold uppercase text-slate-400">Absents</span>
+                    <p className="text-xl font-bold text-rose-600 mt-1">{absentDays.length} Days</p>
+                  </div>
+                </div>
+
+                {/* Day-By-Day Attendance History Calendar Table */}
+                <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-xs space-y-4">
+                  <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                    <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                      <FaCalendarDay className="text-blue-600" />
+                      <span>{selectedUser.name}&apos;s Attendance Calendar History</span>
+                    </h3>
+                    <span className="text-xs font-bold text-blue-700 bg-blue-50 px-2.5 py-1 rounded-full border border-blue-200">
+                      {userCalendar.length} Calendar Days Logged
+                    </span>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead>
+                        <tr className="border-b border-slate-200 text-slate-500 uppercase text-[10px]">
+                          <th className="py-2.5 px-3">Date (Day)</th>
+                          <th className="py-2.5 px-3">Check-In</th>
+                          <th className="py-2.5 px-3">Check-Out</th>
+                          <th className="py-2.5 px-3">Status</th>
+                          <th className="py-2.5 px-3 text-right">Admin Action</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {userCalendar.map((rec) => {
+                          const statusStr = (rec.attendance_status || "").toLowerCase();
+                          const isSun = statusStr.includes("sunday");
+                          const isLev = statusStr.includes("leave");
+                          const isAbs = statusStr.includes("absent");
+                          const isLate = statusStr.includes("late") || statusStr.includes("deduction");
+                          const isPresent = statusStr.includes("present") || statusStr.includes("on time") || statusStr.includes("completed");
+
+                          let badgeColor = "bg-slate-100 text-slate-600 border-slate-200";
+                          if (isSun) badgeColor = "bg-purple-50 text-purple-700 border-purple-200";
+                          else if (isLev) badgeColor = "bg-blue-50 text-blue-700 border-blue-200";
+                          else if (isAbs) badgeColor = "bg-rose-50 text-rose-700 border-rose-200 font-bold";
+                          else if (isLate) badgeColor = "bg-amber-50 text-amber-700 border-amber-200 font-bold";
+                          else if (isPresent) badgeColor = "bg-emerald-50 text-emerald-700 border-emerald-200 font-bold";
+
+                          return (
+                            <tr key={`cal-row-${rec.attendance_date || rec.date}`} className="hover:bg-slate-50 transition-colors">
+                              <td className="py-2.5 px-3 font-semibold text-slate-900">
+                                <span>{rec.attendance_date || rec.date || "Today"}</span>
+                                {rec.day_name && (
+                                  <span className="text-[11px] text-slate-400 font-normal ml-1.5">
+                                    ({rec.day_name})
+                                  </span>
+                                )}
+                              </td>
+                              <td className="py-2.5 px-3 font-mono font-medium text-emerald-700">
+                                {rec.check_in_time || "--:--"}
+                              </td>
+                              <td className="py-2.5 px-3 font-mono font-medium text-rose-700">
+                                {rec.check_out_time || "--:--"}
+                              </td>
+                              <td className="py-2.5 px-3">
+                                <span className={`px-2.5 py-1 rounded-full text-[10px] border uppercase inline-flex items-center gap-1 ${badgeColor}`}>
+                                  {rec.attendance_status || "Present"}
+                                </span>
+                              </td>
+                              <td className="py-2.5 px-3 text-right">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditModal({
+                                      isOpen: true,
+                                      record: rec,
+                                      date: rec.attendance_date || rec.date,
+                                      status: rec.attendance_status || "Present (On Time)",
+                                      checkInTime: rec.check_in_time && rec.check_in_time !== "--:--" ? rec.check_in_time : "10:00 AM",
+                                      checkOutTime: rec.check_out_time && rec.check_out_time !== "--:--" && rec.check_out_time !== "Not Checked Out" ? rec.check_out_time : "06:00 PM",
+                                    });
+                                  }}
+                                  className="px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-[11px] border border-blue-200 transition-all cursor-pointer inline-flex items-center gap-1"
+                                  title="Admin Edit Attendance"
+                                >
+                                  <FaEdit className="text-[10px]" />
+                                  <span>Edit</span>
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className="bg-white rounded-3xl border border-slate-200 p-12 text-center text-slate-500">
+                <FaUserCheck className="text-3xl text-blue-600 mx-auto mb-3" />
+                <p className="font-bold text-sm text-slate-900">Select a student or employee to inspect their attendance history.</p>
+              </div>
+            )}
+          </div>
+        </div>
+      ) : (
+        /* MASTER GLOBAL LOGS TABLE */
+        <div className="space-y-4">
+          {/* Filter Bar */}
+          <div className="bg-white rounded-3xl border border-slate-200 p-5 shadow-xs flex flex-col sm:flex-row flex-wrap items-end gap-4">
+            <div className="flex-1 min-w-[160px]">
+              <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1 flex items-center gap-1.5">
+                <FaCalendarAlt className="text-blue-600" /> From Date
+              </label>
+              <input
+                type="date"
+                value={fromDate}
+                onChange={e => setFromDate(e.target.value)}
+                className="w-full rounded-xl border border-slate-200 px-3.5 py-2 text-xs text-slate-900 outline-none focus:border-blue-600 bg-white"
+              />
+            </div>
+
+            <div className="flex-1 min-w-[160px]">
+              <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1 flex items-center gap-1.5">
+                <FaCalendarAlt className="text-blue-600" /> To Date
+              </label>
+              <input
+                type="date"
+                value={toDate}
+                onChange={e => setToDate(e.target.value)}
+                className="w-full rounded-xl border border-slate-200 px-3.5 py-2 text-xs text-slate-900 outline-none focus:border-blue-600 bg-white"
+              />
+            </div>
+
+            <div className="flex-1 min-w-[200px]">
+              <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">Search User / Status</label>
+              <div className="relative">
+                <FaSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs" />
+                <input
+                  type="text"
+                  value={globalSearch}
+                  onChange={e => setGlobalSearch(e.target.value)}
+                  placeholder="Name, email, status..."
+                  className="w-full pl-8 pr-3 py-2 rounded-xl border border-slate-200 text-xs text-slate-900 outline-none focus:border-blue-600 bg-white"
+                />
+              </div>
+            </div>
+
+            {(fromDate || toDate || globalSearch) && (
               <button
                 type="button"
-                onClick={() => setDeleteModal({ isOpen: false, record: null, loading: false })}
-                className="flex-1 py-2.5 rounded-xl bg-white hover:bg-[#F8FAFC] text-[#2563EB] border border-[#E2E8F0] font-semibold text-xs cursor-pointer"
+                onClick={() => { setFromDate(""); setToDate(""); setGlobalSearch(""); }}
+                className="bg-slate-100 hover:bg-blue-50 text-blue-600 border border-slate-200 font-semibold px-4 py-2 rounded-xl text-xs transition-colors cursor-pointer flex items-center gap-1.5"
+              >
+                <FaUndo className="text-xs" />
+                <span>Reset</span>
+              </button>
+            )}
+          </div>
+
+          {/* Master Table */}
+          <div className="bg-white rounded-3xl border border-slate-200 shadow-xs overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead className="bg-slate-50 text-slate-500 font-semibold uppercase text-[10px] tracking-wider border-b border-slate-200">
+                  <tr>
+                    <th className="py-3 px-4">User / Candidate</th>
+                    <th className="py-3 px-4">Role</th>
+                    <th className="py-3 px-4">Date</th>
+                    <th className="py-3 px-4">Status</th>
+                    <th className="py-3 px-4">Check In</th>
+                    <th className="py-3 px-4">Check Out</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filteredGlobalLogs.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="py-12 text-center text-slate-400 italic">
+                        No raw attendance logs match the current filters.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredGlobalLogs.map((item, idx) => {
+                      const userName = item.user_name || item.employee_name || item.name || item.user_email || "User";
+                      const dateStr = item.attendance_date || item.date || (item.timestamp ? item.timestamp.split("T")[0] : "N/A");
+                      const clockIn = item.check_in_time || item.check_in || "--:--";
+                      const clockOut = item.check_out_time || item.check_out || "Not Checked Out";
+                      const roleLabel = (item.user_role === "student" || item.user_role === "course_student") ? "Student" : "Staff";
+
+                      return (
+                        <tr key={`global-log-${item.id || idx}`} className="hover:bg-slate-50 transition-colors">
+                          <td className="py-3 px-4 font-semibold text-slate-900">{userName}</td>
+                          <td className="py-3 px-4">
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded border uppercase bg-blue-50 text-blue-700 border-blue-200">
+                              {roleLabel}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 font-mono font-semibold text-slate-900">{dateStr}</td>
+                          <td className="py-3 px-4">
+                            <span className="px-2.5 py-1 rounded-full text-[10px] font-bold border uppercase bg-slate-100 text-slate-700 border-slate-200">
+                              {item.attendance_status || item.status || "Present"}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 font-mono text-emerald-700 font-semibold">{clockIn}</td>
+                          <td className="py-3 px-4 font-mono text-rose-700 font-semibold">{clockOut}</td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ADMIN ATTENDANCE OVERRIDE MODAL */}
+      {editModal.isOpen && selectedUser && (
+        <Modal
+          isOpen={editModal.isOpen}
+          onClose={() => setEditModal({ ...editModal, isOpen: false })}
+          title={`✏️ Admin Attendance Override: ${editModal.date}`}
+        >
+          <div className="space-y-4 text-xs">
+            <div className="p-3 bg-blue-50 border border-blue-200 rounded-2xl text-blue-900 font-medium">
+              <span>Admin Override for <strong>{selectedUser.name}</strong> ({selectedUser.email}) on <strong>{editModal.date}</strong>.</span>
+            </div>
+
+            <div className="space-y-1">
+              <label className="block font-bold text-slate-700 uppercase text-[10px]">Attendance Status</label>
+              <select
+                value={editModal.status}
+                onChange={(e) => setEditModal({ ...editModal, status: e.target.value })}
+                className="w-full p-2.5 rounded-xl border border-slate-300 font-bold text-slate-900 outline-none focus:border-blue-600 bg-white"
+              >
+                <option value="Present (On Time)">Present (On Time) 🟢</option>
+                <option value="Late (Shift 10:00 AM - 06:00 PM)">Late (Shift 10:00 AM - 06:00 PM) 🟡</option>
+                <option value="Salary Deduction">Salary Deduction 🔴</option>
+                <option value="Absent">Absent 🔴</option>
+                <option value="On Leave (Casual)">On Leave (Casual) 🌴</option>
+                <option value="On Leave (Sick)">On Leave (Sick) 🏥</option>
+                <option value="Sunday (Weekend Holiday)">Sunday (Weekend Holiday) 🏖️</option>
+              </select>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <label className="block font-bold text-slate-700 uppercase text-[10px]">Check-In Time</label>
+                <input
+                  type="text"
+                  value={editModal.checkInTime}
+                  onChange={(e) => setEditModal({ ...editModal, checkInTime: e.target.value })}
+                  placeholder="10:00 AM"
+                  disabled={editModal.status.includes("Absent") || editModal.status.includes("Sunday") || editModal.status.includes("Leave")}
+                  className="w-full p-2.5 rounded-xl border border-slate-300 font-mono font-bold text-slate-900 outline-none focus:border-blue-600 bg-white disabled:bg-slate-100 disabled:text-slate-400"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="block font-bold text-slate-700 uppercase text-[10px]">Check-Out Time</label>
+                <input
+                  type="text"
+                  value={editModal.checkOutTime}
+                  onChange={(e) => setEditModal({ ...editModal, checkOutTime: e.target.value })}
+                  placeholder="06:00 PM"
+                  disabled={editModal.status.includes("Absent") || editModal.status.includes("Sunday") || editModal.status.includes("Leave")}
+                  className="w-full p-2.5 rounded-xl border border-slate-300 font-mono font-bold text-slate-900 outline-none focus:border-blue-600 bg-white disabled:bg-slate-100 disabled:text-slate-400"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setEditModal({ ...editModal, isOpen: false })}
+                className="px-4 py-2.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 font-bold transition-all cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 type="button"
-                onClick={executeDelete}
-                disabled={deleteModal.loading}
-                className="flex-1 py-2.5 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold text-xs cursor-pointer flex items-center justify-center"
+                onClick={handleSaveAttendanceEdit}
+                disabled={savingEdit}
+                className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold transition-all shadow-xs cursor-pointer flex items-center gap-1.5"
               >
-                {deleteModal.loading ? "Deleting..." : "Confirm & Delete 🗑️"}
+                <FaEdit />
+                <span>{savingEdit ? "Saving to Supabase..." : "Save to Database"}</span>
               </button>
             </div>
           </div>
-        </div>
+        </Modal>
       )}
     </div>
   );
