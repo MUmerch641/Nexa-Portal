@@ -35,6 +35,131 @@ import {
   submitExamAttempt
 } from "@/lib/mcqExamUtils";
 
+// Full Attendance Calendar Builder for Employees (Handles Sundays, Leaves, Presents, Shift Times & Absents)
+const buildFullEmployeeAttendanceCalendar = ({ rawLogs, leaves, joiningDate, todayRecord }) => {
+  const todayStr = getTodayDateString();
+  const now = new Date();
+  const currentMins = now.getHours() * 60 + now.getMinutes();
+
+  const sDate = new Date(joiningDate || "2026-08-01");
+  const eDate = new Date();
+  const minAllowedDate = new Date();
+  minAllowedDate.setDate(minAllowedDate.getDate() - 30);
+  const effectiveStartDate = sDate > minAllowedDate ? sDate : minAllowedDate;
+
+  const calendar = [];
+  const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+  for (let d = new Date(eDate); d >= effectiveStartDate; d.setDate(d.getDate() - 1)) {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, "0");
+    const dayNum = String(d.getDate()).padStart(2, "0");
+    const dateStr = `${year}-${month}-${dayNum}`;
+    const dayOfWeek = d.getDay(); // 0 = Sunday
+    const dayName = dayNames[dayOfWeek];
+
+    // 1. Check rawLogs for attendance on this date
+    const matchedLog = (rawLogs || []).find((l) => {
+      const lDate = l.attendance_date || l.date || (l.timestamp ? l.timestamp.split("T")[0] : "");
+      return lDate === dateStr;
+    });
+
+    // 2. Check leaves for this date
+    const matchedLeave = (leaves || []).find((l) => {
+      const lStart = l.start_date || l.applied_at || "";
+      const lEnd = l.end_date || l.start_date || "";
+      return lStart && lEnd && dateStr >= lStart && dateStr <= lEnd && (l.status === "approved" || l.status === "pending");
+    });
+
+    if (dateStr === todayStr && todayRecord && todayRecord.check_in_time) {
+      calendar.push({
+        id: todayRecord.id || `att-${dateStr}`,
+        attendance_date: dateStr,
+        date: dateStr,
+        day_name: dayName,
+        check_in_time: todayRecord.check_in_time,
+        check_out_time: todayRecord.check_out_time || "Not Checked Out",
+        attendance_status: todayRecord.attendance_status || todayRecord.status || "On Time",
+        is_today: true,
+      });
+    } else if (matchedLog && (matchedLog.check_in_time || matchedLog.type === "check_in" || (matchedLog.attendance_status && matchedLog.attendance_status !== "Absent"))) {
+      calendar.push({
+        id: matchedLog.id || `att-${dateStr}`,
+        attendance_date: dateStr,
+        date: dateStr,
+        day_name: dayName,
+        check_in_time: matchedLog.check_in_time || matchedLog.time || "--:--",
+        check_out_time:
+          matchedLog.check_out_time && matchedLog.check_out_time !== "Not Checked Out" && matchedLog.check_out_time !== "--:--"
+            ? matchedLog.check_out_time
+            : (dateStr === todayStr ? "Not Checked Out" : "06:00 PM"),
+        attendance_status: matchedLog.attendance_status || matchedLog.status || "On Time",
+      });
+    } else if (matchedLeave) {
+      calendar.push({
+        id: `leave-${dateStr}`,
+        attendance_date: dateStr,
+        date: dateStr,
+        day_name: dayName,
+        check_in_time: "--:--",
+        check_out_time: "--:--",
+        attendance_status: `On Leave (${matchedLeave.leave_type || matchedLeave.type || "Casual"}) 🌴`,
+        is_leave: true,
+      });
+    } else if (dayOfWeek === 0) {
+      calendar.push({
+        id: `sun-${dateStr}`,
+        attendance_date: dateStr,
+        date: dateStr,
+        day_name: dayName,
+        check_in_time: "--:--",
+        check_out_time: "--:--",
+        attendance_status: "Sunday (Weekend Holiday) 🏖️",
+        is_sunday: true,
+      });
+    } else if (dateStr === todayStr) {
+      if (currentMins >= 1080) { // After 6:00 PM
+        calendar.push({
+          id: `today-absent-${dateStr}`,
+          attendance_date: dateStr,
+          date: dateStr,
+          day_name: dayName,
+          check_in_time: "--:--",
+          check_out_time: "--:--",
+          attendance_status: "Absent (Shift Ended 06:00 PM) 🔴",
+          is_absent: true,
+          is_today: true,
+        });
+      } else {
+        calendar.push({
+          id: `today-pending-${dateStr}`,
+          attendance_date: dateStr,
+          date: dateStr,
+          day_name: dayName,
+          check_in_time: "--:--",
+          check_out_time: "--:--",
+          attendance_status: currentMins < 600 ? "Shift Starts 10:00 AM ⏳" : "Not Checked In (Shift 10:00 AM - 06:00 PM) 🟠",
+          is_pending: true,
+          is_today: true,
+        });
+      }
+    } else {
+      calendar.push({
+        id: `absent-${dateStr}`,
+        attendance_date: dateStr,
+        date: dateStr,
+        day_name: dayName,
+        check_in_time: "--:--",
+        check_out_time: "--:--",
+        attendance_status: "Absent 🔴",
+        is_absent: true,
+      });
+    }
+  }
+
+  return calendar;
+};
+
 export default function EmployeeDedicatedDashboardPage() {
   const [employeeEmail, setEmployeeEmail] = useState("");
   const [employeeName, setEmployeeName] = useState("");
@@ -184,10 +309,18 @@ export default function EmployeeDedicatedDashboardPage() {
 
     // 1. Fetch Today's Attendance & History Log
     try {
+      const allLeaves = await dbFetch("leaves").catch(() => []);
+      const userLeaves = (allLeaves || []).filter(
+        (l) => (l.applicant_email || l.email || "").toLowerCase().trim() === email
+      );
+      setMyLeaves(userLeaves);
+
       const allLogs = await dbFetch("attendance").catch(() => []);
       const userLogs = (allLogs || []).filter(
-        (l) => (l.user_email || l.email || "").toLowerCase().trim() === email
+        (l) => (l.user_email || l.email || l.employee_id || "").toLowerCase().trim() === email ||
+               (l.user_name || l.employee_name || "").toLowerCase().trim() === employeeName.toLowerCase().trim()
       );
+
       // 1. Fetch Today's Attendance & History Log strictly for TODAY
       const key = `today_attendance_${email}`;
       const savedToday = localStorage.getItem(key);
@@ -216,6 +349,15 @@ export default function EmployeeDedicatedDashboardPage() {
         prevAttendance = userLogs.find(l => !isRecordFromToday(l));
       }
       setYesterdayAttendance(prevAttendance || null);
+
+      // Build Comprehensive Attendance Calendar (Sundays, Leaves, Shift Times, Absents & Presents)
+      const fullCalendar = buildFullEmployeeAttendanceCalendar({
+        rawLogs: userLogs,
+        leaves: userLeaves,
+        joiningDate: "2026-08-01",
+        todayRecord: currentDayAttendance,
+      });
+      setMyAttendanceHistory(fullCalendar);
     } catch (e) {}
 
     // Verify Wi-Fi Network
@@ -256,15 +398,6 @@ export default function EmployeeDedicatedDashboardPage() {
     try {
       const allAnnouncements = await dbFetch("announcements").catch(() => []);
       setAnnouncements(allAnnouncements || []);
-    } catch (e) {}
-
-    // 4. Fetch My Leave Requests
-    try {
-      const allLeaves = await dbFetch("leaves").catch(() => []);
-      const userLeaves = (allLeaves || []).filter(
-        (l) => (l.applicant_email || l.email || "").toLowerCase().trim() === email
-      );
-      setMyLeaves(userLeaves);
     } catch (e) {}
 
     // 5. Fetch Database MCQ Exams & Attempts
@@ -1484,44 +1617,68 @@ export default function EmployeeDedicatedDashboardPage() {
             <table className="w-full text-left text-xs">
               <thead>
                 <tr className="border-b border-[#E2E8F0] text-[#64748B] uppercase text-[10px]">
-                  <th className="py-2.5 px-3">Date</th>
+                  <th className="py-2.5 px-3">Date (Day)</th>
                   <th className="py-2.5 px-3">Check-In</th>
                   <th className="py-2.5 px-3">Check-Out</th>
                   <th className="py-2.5 px-3">Status</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#E2E8F0]">
-                {myAttendanceHistory.map((rec) => (
-                  <tr key={rec.id || rec.timestamp} className="hover:bg-[#F8FAFC]">
-                    <td className="py-2.5 px-3 font-semibold text-[#0F172A]">
-                      {rec.attendance_date || rec.date || "Today"}
-                    </td>
-                    <td className="py-2.5 px-3 font-mono font-medium text-emerald-700">
-                      {rec.check_in_time || "--:--"}
-                    </td>
-                    <td className="py-2.5 px-3 font-mono font-medium text-rose-700">
-                      {rec.check_out_time && rec.check_out_time !== "Not Checked Out" && rec.check_out_time !== "--:--"
-                        ? rec.check_out_time
-                        : (rec.check_in_time ? "Not Checked Out" : "--:--")}
-                    </td>
-                    <td className="py-2.5 px-3">
-                      {(() => {
-                        const statusVal = rec.attendance_status || rec.status;
-                        const evaluated = (statusVal === "On Time" || statusVal === "Late Warning" || statusVal === "Salary Deduction")
-                          ? { status: statusVal, label: statusVal === "On Time" ? "On Time 🟢" : statusVal === "Late Warning" ? "Late Warning 🟠" : "Salary Deduction 🔴", badgeColor: statusVal === "On Time" ? "bg-emerald-50 text-emerald-700 border-emerald-200" : statusVal === "Late Warning" ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-rose-50 text-rose-700 border-rose-200" }
-                          : rec.check_in_time
-                          ? getEmployeeCheckInStatus(rec.check_in_time)
-                          : { label: "Present", badgeColor: "bg-slate-100 text-slate-600 border-slate-200" };
+                {myAttendanceHistory.map((rec) => {
+                  const statusStr = (rec.attendance_status || rec.status || "").toLowerCase();
+                  const isSun = statusStr.includes("sunday");
+                  const isLev = statusStr.includes("leave");
+                  const isAbs = statusStr.includes("absent");
+                  const isSalDed = statusStr.includes("salary deduction");
+                  const isLateWarn = statusStr.includes("late warning") || statusStr.includes("late");
+                  const isOnTime = statusStr.includes("on time") || statusStr.includes("completed") || statusStr === "present";
 
-                        return (
-                          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border uppercase inline-flex items-center gap-1 ${evaluated.badgeColor}`}>
-                            {evaluated.label}
+                  let badgeColor = "bg-slate-100 text-slate-600 border-slate-200";
+                  let badgeLabel = rec.attendance_status || rec.status || "Present";
+
+                  if (isSun) {
+                    badgeColor = "bg-purple-50 text-purple-700 border-purple-200";
+                  } else if (isLev) {
+                    badgeColor = "bg-blue-50 text-blue-700 border-blue-200";
+                  } else if (isAbs) {
+                    badgeColor = "bg-rose-50 text-rose-700 border-rose-200 font-bold";
+                  } else if (isSalDed) {
+                    badgeColor = "bg-rose-50 text-rose-700 border-rose-200 font-bold";
+                    badgeLabel = "Salary Deduction 🔴";
+                  } else if (isLateWarn) {
+                    badgeColor = "bg-amber-50 text-amber-700 border-amber-200 font-bold";
+                    badgeLabel = "Late Warning 🟠";
+                  } else if (isOnTime) {
+                    badgeColor = "bg-emerald-50 text-emerald-700 border-emerald-200 font-bold";
+                    badgeLabel = "On Time 🟢";
+                  }
+
+                  return (
+                    <tr key={rec.id || rec.attendance_date || rec.date} className="hover:bg-[#F8FAFC] transition-colors">
+                      <td className="py-2.5 px-3 font-semibold text-[#0F172A]">
+                        <span>{rec.attendance_date || rec.date || "Today"}</span>
+                        {rec.day_name && (
+                          <span className="text-[11px] text-slate-400 font-normal ml-1.5">
+                            ({rec.day_name})
                           </span>
-                        );
-                      })()}
-                    </td>
-                  </tr>
-                ))}
+                        )}
+                      </td>
+                      <td className="py-2.5 px-3 font-mono font-medium text-emerald-700">
+                        {rec.check_in_time || "--:--"}
+                      </td>
+                      <td className="py-2.5 px-3 font-mono font-medium text-rose-700">
+                        {rec.check_out_time && rec.check_out_time !== "Not Checked Out" && rec.check_out_time !== "--:--"
+                          ? rec.check_out_time
+                          : (rec.check_in_time && rec.check_in_time !== "--:--" ? "Not Checked Out" : "--:--")}
+                      </td>
+                      <td className="py-2.5 px-3">
+                        <span className={`px-2.5 py-1 rounded-full text-[10px] border uppercase inline-flex items-center gap-1 ${badgeColor}`}>
+                          {badgeLabel}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
