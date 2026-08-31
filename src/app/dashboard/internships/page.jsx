@@ -97,6 +97,16 @@ export default function InternshipsPage() {
     type: "info",
   });
 
+  // Certificate Modal State
+  const [certificateModal, setCertificateModal] = useState({
+    isOpen: false,
+    intern: null,
+  });
+
+  // Daily Progress Log Input State
+  const [dailyLogText, setDailyLogText] = useState("");
+  const [selectedInternId, setSelectedInternId] = useState(null);
+
   const startLiveScreenAccess = async (student) => {
     setActiveRemoteStudent(student);
     setIsLiveStreamModalOpen(true);
