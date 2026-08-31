@@ -51,7 +51,8 @@ import {
   FaEnvelope,
   FaTimes,
   FaStar,
-  FaEye
+  FaEye,
+  FaEdit
 } from "react-icons/fa";
 
 import {
@@ -85,6 +86,131 @@ const formatSafeDueDate = (rawDate) => {
   } catch (e) {
     return "Pending Verification";
   }
+};
+
+// Full Attendance Calendar Builder (Handles Sundays, Leaves, Presents, Shift Times & Absents)
+const buildFullStudentAttendanceCalendar = ({ rawLogs, leaves, startDate, todayRecord }) => {
+  const todayStr = getTodayDateString();
+  const now = new Date();
+  const currentMins = now.getHours() * 60 + now.getMinutes();
+
+  const sDate = new Date(startDate || "2026-08-01");
+  const eDate = new Date();
+  const minAllowedDate = new Date();
+  minAllowedDate.setDate(minAllowedDate.getDate() - 30);
+  const effectiveStartDate = sDate > minAllowedDate ? sDate : minAllowedDate;
+
+  const calendar = [];
+  const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+  for (let d = new Date(eDate); d >= effectiveStartDate; d.setDate(d.getDate() - 1)) {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, "0");
+    const dayNum = String(d.getDate()).padStart(2, "0");
+    const dateStr = `${year}-${month}-${dayNum}`;
+    const dayOfWeek = d.getDay(); // 0 = Sunday
+    const dayName = dayNames[dayOfWeek];
+
+    // 1. Check rawLogs for attendance on this date
+    const matchedLog = (rawLogs || []).find((l) => {
+      const lDate = l.attendance_date || l.date || (l.timestamp ? l.timestamp.split("T")[0] : "");
+      return lDate === dateStr;
+    });
+
+    // 2. Check leaves for this date
+    const matchedLeave = (leaves || []).find((l) => {
+      const lStart = l.start_date || l.applied_at || "";
+      const lEnd = l.end_date || l.start_date || "";
+      return lStart && lEnd && dateStr >= lStart && dateStr <= lEnd && (l.status === "approved" || l.status === "pending");
+    });
+
+    if (dateStr === todayStr && todayRecord && todayRecord.check_in_time) {
+      calendar.push({
+        id: todayRecord.id || `att-${dateStr}`,
+        attendance_date: dateStr,
+        date: dateStr,
+        day_name: dayName,
+        check_in_time: todayRecord.check_in_time,
+        check_out_time: todayRecord.check_out_time || "Not Checked Out",
+        attendance_status: todayRecord.attendance_status || "Present (On Time)",
+        is_today: true,
+      });
+    } else if (matchedLog && (matchedLog.check_in_time || matchedLog.type === "check_in" || (matchedLog.attendance_status && matchedLog.attendance_status !== "Absent"))) {
+      calendar.push({
+        id: matchedLog.id || `att-${dateStr}`,
+        attendance_date: dateStr,
+        date: dateStr,
+        day_name: dayName,
+        check_in_time: matchedLog.check_in_time || matchedLog.time || "--:--",
+        check_out_time:
+          matchedLog.check_out_time && matchedLog.check_out_time !== "Not Checked Out" && matchedLog.check_out_time !== "--:--"
+            ? matchedLog.check_out_time
+            : (dateStr === todayStr ? "Not Checked Out" : "06:00 PM"),
+        attendance_status: matchedLog.attendance_status || "Present (On Time)",
+      });
+    } else if (matchedLeave) {
+      calendar.push({
+        id: `leave-${dateStr}`,
+        attendance_date: dateStr,
+        date: dateStr,
+        day_name: dayName,
+        check_in_time: "--:--",
+        check_out_time: "--:--",
+        attendance_status: `On Leave (${matchedLeave.leave_type || matchedLeave.type || "Casual"}) 🌴`,
+        is_leave: true,
+      });
+    } else if (dayOfWeek === 0) {
+      calendar.push({
+        id: `sun-${dateStr}`,
+        attendance_date: dateStr,
+        date: dateStr,
+        day_name: dayName,
+        check_in_time: "--:--",
+        check_out_time: "--:--",
+        attendance_status: "Sunday (Weekend Holiday) 🏖️",
+        is_sunday: true,
+      });
+    } else if (dateStr === todayStr) {
+      if (currentMins >= 1080) { // After 6:00 PM
+        calendar.push({
+          id: `today-absent-${dateStr}`,
+          attendance_date: dateStr,
+          date: dateStr,
+          day_name: dayName,
+          check_in_time: "--:--",
+          check_out_time: "--:--",
+          attendance_status: "Absent (Shift Ended 06:00 PM) 🔴",
+          is_absent: true,
+          is_today: true,
+        });
+      } else {
+        calendar.push({
+          id: `today-pending-${dateStr}`,
+          attendance_date: dateStr,
+          date: dateStr,
+          day_name: dayName,
+          check_in_time: "--:--",
+          check_out_time: "--:--",
+          attendance_status: currentMins < 600 ? "Shift Starts 10:00 AM ⏳" : "Not Checked In (Shift 10:00 AM - 06:00 PM) 🟠",
+          is_pending: true,
+          is_today: true,
+        });
+      }
+    } else {
+      calendar.push({
+        id: `absent-${dateStr}`,
+        attendance_date: dateStr,
+        date: dateStr,
+        day_name: dayName,
+        check_in_time: "--:--",
+        check_out_time: "--:--",
+        attendance_status: "Absent 🔴",
+        is_absent: true,
+      });
+    }
+  }
+
+  return calendar;
 };
 
 export default function StudentDedicatedDashboardPage() {
@@ -149,6 +275,16 @@ export default function StudentDedicatedDashboardPage() {
   const [todayAttendance, setTodayAttendance] = useState(null);
   const [studentAttendanceHistory, setStudentAttendanceHistory] = useState([]);
   const [markingAttendance, setMarkingAttendance] = useState(false);
+
+  // Admin-Only Attendance Edit State
+  const [editAttendanceModal, setEditAttendanceModal] = useState({
+    isOpen: false,
+    date: "",
+    status: "Present (On Time)",
+    checkInTime: "10:00 AM",
+    checkOutTime: "06:00 PM",
+  });
+  const [savingAttendanceEdit, setSavingAttendanceEdit] = useState(false);
 
   // Leave Form & History State
   const [myStudentLeaves, setMyStudentLeaves] = useState([]);
@@ -356,52 +492,23 @@ export default function StudentDedicatedDashboardPage() {
         const topic = weekTopics[weekNum - 1] || "Production Application Engineering";
         const dynamicWeekString = `Week #${weekNum} of 12 (${topic})`;
 
-        // Calculate student's actual attendance rate & set history
-        const masterLogs = await dbFetch("attendance").catch(() => []);
-        const studentLogs = (masterLogs || []).filter(
-          (l) => (l.user_id || l.user_email || l.user_name || "").toLowerCase().trim() === savedEmail ||
-                 (l.user_name || "").toLowerCase().trim() === (matched.full_name || matched.student_name || "").toLowerCase().trim()
-        );
-        setStudentAttendanceHistory(studentLogs);
-
-        let studentAttendanceRate = matched.attendance !== undefined ? Number(matched.attendance) : 100;
-        if (studentLogs.length > 0) {
-          const presentCount = studentLogs.filter(
-            (l) => (l.attendance_status || "").toLowerCase().includes("present") || 
-                   (l.attendance_status || "").toLowerCase().includes("on time") ||
-                   (l.attendance_status || "").toLowerCase().includes("leave")
-          ).length;
-          studentAttendanceRate = Math.round((presentCount / studentLogs.length) * 100);
-        }
-
         // Fetch My Leave Requests
+        let userLeaves = [];
         try {
           const allLeaves = await dbFetch("leaves").catch(() => []);
-          const userLeaves = (allLeaves || []).filter(
+          userLeaves = (allLeaves || []).filter(
             (l) => (l.applicant_email || l.email || "").toLowerCase().trim() === savedEmail ||
                    (l.applicant_name || l.employee_name || "").toLowerCase().trim() === (matched.full_name || matched.student_name || "").toLowerCase().trim()
           );
           setMyStudentLeaves(userLeaves);
         } catch (e) {}
 
-        // Fetch Database-Assigned MCQ Exams & Attempts
-        try {
-          const examsList = await getAssignedExamsForUser(savedEmail);
-          const attemptsList = await getExamAttemptsForUser(savedEmail);
-          setAssignedExams(examsList || []);
-          setExamAttempts(attemptsList || []);
-        } catch (e) {}
-
-        // Fetch Announcements & Complaints
-        try {
-          const [annList, compList] = await Promise.all([
-            dbFetch("announcements", [], true).catch(() => []),
-            dbFetch("complaints", [], true).catch(() => [])
-          ]);
-          setAnnouncements(annList || []);
-          const myComp = (compList || []).filter(c => (c.email || c.submitted_by || "").toLowerCase().trim().includes(savedEmail) || savedEmail.includes((c.email || "").toLowerCase().trim()));
-          setMyComplaints(myComp || []);
-        } catch (e) {}
+        // Fetch Attendance Logs & Compute Today's Check-in Record
+        const masterLogs = await dbFetch("attendance").catch(() => []);
+        const studentLogs = (masterLogs || []).filter(
+          (l) => (l.user_id || l.user_email || l.user_name || "").toLowerCase().trim() === savedEmail ||
+                 (l.user_name || "").toLowerCase().trim() === (matched.full_name || matched.student_name || "").toLowerCase().trim()
+        );
 
         // Check Today's Attendance strictly for TODAY only
         const key = `today_attendance_${savedEmail}`;
@@ -424,6 +531,45 @@ export default function StudentDedicatedDashboardPage() {
         }
 
         setTodayAttendance(currentDayAttendance || null);
+
+        // Build Comprehensive Attendance Calendar (Sundays, Leaves, Shift Times, Absents & Presents)
+        const fullCalendar = buildFullStudentAttendanceCalendar({
+          rawLogs: studentLogs,
+          leaves: userLeaves,
+          startDate: startDate,
+          todayRecord: currentDayAttendance,
+        });
+        setStudentAttendanceHistory(fullCalendar);
+
+        const workingDays = fullCalendar.filter(d => !d.is_sunday);
+        const presentOrLeaveDays = workingDays.filter(d => 
+          (d.attendance_status || "").toLowerCase().includes("present") ||
+          (d.attendance_status || "").toLowerCase().includes("leave") ||
+          (d.attendance_status || "").toLowerCase().includes("on time") ||
+          (d.attendance_status || "").toLowerCase().includes("late")
+        );
+        const studentAttendanceRate = workingDays.length > 0
+          ? Math.round((presentOrLeaveDays.length / workingDays.length) * 100)
+          : (matched.attendance !== undefined ? Number(matched.attendance) : 100);
+
+        // Fetch Database-Assigned MCQ Exams & Attempts
+        try {
+          const examsList = await getAssignedExamsForUser(savedEmail);
+          const attemptsList = await getExamAttemptsForUser(savedEmail);
+          setAssignedExams(examsList || []);
+          setExamAttempts(attemptsList || []);
+        } catch (e) {}
+
+        // Fetch Announcements & Complaints
+        try {
+          const [annList, compList] = await Promise.all([
+            dbFetch("announcements", [], true).catch(() => []),
+            dbFetch("complaints", [], true).catch(() => [])
+          ]);
+          setAnnouncements(annList || []);
+          const myComp = (compList || []).filter(c => (c.email || c.submitted_by || "").toLowerCase().trim().includes(savedEmail) || savedEmail.includes((c.email || "").toLowerCase().trim()));
+          setMyComplaints(myComp || []);
+        } catch (e) {}
 
         setStudentInfo((prev) => ({
           ...prev,
@@ -683,24 +829,33 @@ export default function StudentDedicatedDashboardPage() {
     setMarkingAttendance(true);
     const now = new Date();
     const timeStr = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    const currentMins = now.getHours() * 60 + now.getMinutes();
+
+    // Shift starts at 10:00 AM (600 mins). Grace period up to 10:15 AM (615 mins).
+    const isLate = currentMins > 615;
+    const attStatus = isLate ? "Late (Shift 10:00 AM - 06:00 PM)" : "Present (On Time)";
 
     const newRecord = {
       id: `att-${Date.now()}`,
-      student_id: studentInfo.email,
+      student_id: studentInfo.enrollmentNo || studentInfo.email,
+      employee_id: studentInfo.enrollmentNo || studentInfo.email,
+      user_id: studentInfo.email,
       user_email: studentInfo.email,
       user_name: studentInfo.name,
-      user_role: "student",
+      employee_name: studentInfo.name,
+      user_role: isIntern ? "intern" : "student",
       type: "check_in",
       check_in_time: timeStr,
       check_out_time: "Not Checked Out",
-      attendance_status: "Present (On Time)",
+      attendance_status: attStatus,
       attendance_date: getTodayDateString(),
+      date: getTodayDateString(),
       timestamp: now.toISOString(),
       public_ip: "127.0.0.1",
     };
 
     setTodayAttendance(newRecord);
-    setStudentAttendanceHistory((prev) => [newRecord, ...prev.filter(r => r.id !== newRecord.id)]);
+    setStudentAttendanceHistory((prev) => [newRecord, ...prev.filter(r => r.attendance_date !== newRecord.attendance_date)]);
 
     try {
       const key = `today_attendance_${studentInfo.email}`;
@@ -709,7 +864,7 @@ export default function StudentDedicatedDashboardPage() {
     } catch (e) {}
 
     setMarkingAttendance(false);
-    showToast("Check-In Successful 🟢", `Checked in at ${timeStr}.`, "success");
+    showToast("Check-In Successful 🟢", `Checked in at ${timeStr} as ${attStatus}.`, "success");
   };
 
   const handleStudentCheckOut = async () => {
@@ -746,7 +901,46 @@ export default function StudentDedicatedDashboardPage() {
     } catch (e) {}
 
     setMarkingAttendance(false);
-    showToast("Check-Out Successful 🔴", `Checked out at ${timeStr}. Daily log completed.`, "success");
+    showToast("Check-Out Successful 🔴", `Checked out at ${timeStr}. Daily log saved to database.`, "success");
+  };
+
+  // Admin-Only Attendance Edit Function
+  const handleSaveAttendanceEdit = async () => {
+    if (!isAdminUser || !editAttendanceModal.date) return;
+    setSavingAttendanceEdit(true);
+
+    const editedRecord = {
+      id: editAttendanceModal.record?.id || `att-manual-${editAttendanceModal.date}`,
+      student_id: studentInfo.enrollmentNo || studentInfo.email,
+      employee_id: studentInfo.enrollmentNo || studentInfo.email,
+      user_id: studentInfo.email,
+      user_email: studentInfo.email,
+      user_name: studentInfo.name,
+      employee_name: studentInfo.name,
+      user_role: isIntern ? "intern" : "student",
+      attendance_date: editAttendanceModal.date,
+      date: editAttendanceModal.date,
+      check_in_time: editAttendanceModal.status.includes("Absent") || editAttendanceModal.status.includes("Sunday") || editAttendanceModal.status.includes("Leave") ? "--:--" : editAttendanceModal.checkInTime,
+      check_out_time: editAttendanceModal.status.includes("Absent") || editAttendanceModal.status.includes("Sunday") || editAttendanceModal.status.includes("Leave") ? "--:--" : editAttendanceModal.checkOutTime,
+      attendance_status: editAttendanceModal.status,
+      updated_at: new Date().toISOString(),
+      edited_by: "Admin",
+    };
+
+    try {
+      await dbSaveRecord("attendance", editedRecord);
+      setStudentAttendanceHistory((prev) =>
+        prev.map((r) => (r.attendance_date === editAttendanceModal.date ? { ...r, ...editedRecord } : r))
+      );
+      if (editAttendanceModal.date === getTodayDateString()) {
+        setTodayAttendance(editedRecord);
+      }
+      showToast("Attendance Record Updated ✏️", `Record for ${editAttendanceModal.date} updated by Admin in database.`, "success");
+      setEditAttendanceModal({ isOpen: false, record: null, date: "", status: "Present (On Time)", checkInTime: "10:00 AM", checkOutTime: "06:00 PM" });
+    } catch (e) {
+      showToast("Error 🛑", "Failed to update attendance record.", "error");
+    }
+    setSavingAttendanceEdit(false);
   };
 
   const handleStudentLeaveSubmit = async (e) => {
@@ -1453,42 +1647,75 @@ export default function StudentDedicatedDashboardPage() {
             <table className="w-full text-left text-xs">
               <thead>
                 <tr className="border-b border-slate-200 text-slate-500 uppercase text-[10px]">
-                  <th className="py-2.5 px-3">Date</th>
+                  <th className="py-2.5 px-3">Date (Day)</th>
                   <th className="py-2.5 px-3">Check-In</th>
                   <th className="py-2.5 px-3">Check-Out</th>
                   <th className="py-2.5 px-3">Status</th>
+                  {isAdminUser && <th className="py-2.5 px-3 text-right">Admin Action</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {studentAttendanceHistory.map((rec) => (
-                  <tr key={rec.id || rec.timestamp} className="hover:bg-slate-50">
-                    <td className="py-2.5 px-3 font-semibold text-slate-900">
-                      {rec.attendance_date || rec.date || "Today"}
-                    </td>
-                    <td className="py-2.5 px-3 font-mono font-medium text-emerald-700">
-                      {rec.check_in_time || "--:--"}
-                    </td>
-                    <td className="py-2.5 px-3 font-mono font-medium text-rose-700">
-                      {rec.check_out_time && rec.check_out_time !== "Not Checked Out" && rec.check_out_time !== "--:--"
-                        ? rec.check_out_time
-                        : (rec.check_in_time ? "Not Checked Out" : "--:--")}
-                    </td>
-                    <td className="py-2.5 px-3">
-                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border uppercase ${
-                        (rec.attendance_status || "").toLowerCase().includes("completed") ||
-                        (rec.check_out_time && rec.check_out_time !== "Not Checked Out" && rec.check_out_time !== "--:--")
-                          ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                          : (rec.attendance_status || "").toLowerCase().includes("late")
-                          ? "bg-amber-50 text-amber-700 border-amber-200"
-                          : "bg-slate-100 text-slate-600 border-slate-200"
-                      }`}>
-                        {rec.check_out_time && rec.check_out_time !== "Not Checked Out" && rec.check_out_time !== "--:--"
-                          ? "Completed"
-                          : rec.attendance_status || "Present"}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
+                {studentAttendanceHistory.map((rec) => {
+                  const statusStr = (rec.attendance_status || "").toLowerCase();
+                  const isSun = statusStr.includes("sunday");
+                  const isLev = statusStr.includes("leave");
+                  const isAbs = statusStr.includes("absent");
+                  const isLate = statusStr.includes("late");
+                  const isPresent = statusStr.includes("present") || statusStr.includes("on time") || statusStr.includes("completed");
+
+                  let badgeColor = "bg-slate-100 text-slate-600 border-slate-200";
+                  if (isSun) badgeColor = "bg-purple-50 text-purple-700 border-purple-200";
+                  else if (isLev) badgeColor = "bg-blue-50 text-blue-700 border-blue-200";
+                  else if (isAbs) badgeColor = "bg-rose-50 text-rose-700 border-rose-200 font-bold";
+                  else if (isLate) badgeColor = "bg-amber-50 text-amber-700 border-amber-200 font-bold";
+                  else if (isPresent) badgeColor = "bg-emerald-50 text-emerald-700 border-emerald-200 font-bold";
+
+                  return (
+                    <tr key={rec.id || rec.attendance_date || rec.date} className="hover:bg-slate-50 transition-colors">
+                      <td className="py-2.5 px-3 font-semibold text-slate-900">
+                        <span>{rec.attendance_date || rec.date || "Today"}</span>
+                        {rec.day_name && (
+                          <span className="text-[11px] text-slate-400 font-normal ml-1.5">
+                            ({rec.day_name})
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-2.5 px-3 font-mono font-medium text-emerald-700">
+                        {rec.check_in_time || "--:--"}
+                      </td>
+                      <td className="py-2.5 px-3 font-mono font-medium text-rose-700">
+                        {rec.check_out_time || "--:--"}
+                      </td>
+                      <td className="py-2.5 px-3">
+                        <span className={`px-2.5 py-1 rounded-full text-[10px] border uppercase flex items-center gap-1 w-fit ${badgeColor}`}>
+                          {rec.attendance_status || "Present"}
+                        </span>
+                      </td>
+                      {isAdminUser && (
+                        <td className="py-2.5 px-3 text-right">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditAttendanceModal({
+                                isOpen: true,
+                                record: rec,
+                                date: rec.attendance_date || rec.date,
+                                status: rec.attendance_status || "Present (On Time)",
+                                checkInTime: rec.check_in_time && rec.check_in_time !== "--:--" ? rec.check_in_time : "10:00 AM",
+                                checkOutTime: rec.check_out_time && rec.check_out_time !== "--:--" && rec.check_out_time !== "Not Checked Out" ? rec.check_out_time : "06:00 PM",
+                              });
+                            }}
+                            className="px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-[11px] border border-blue-200 transition-all cursor-pointer inline-flex items-center gap-1"
+                            title="Admin Edit Attendance"
+                          >
+                            <FaEdit className="text-[10px]" />
+                            <span>Edit</span>
+                          </button>
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -2616,6 +2843,82 @@ export default function StudentDedicatedDashboardPage() {
                 className="px-5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs transition-colors cursor-pointer"
               >
                 Close Viewer ✕
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* === ADMIN-ONLY ATTENDANCE RECORD EDIT MODAL === */}
+      {isAdminUser && editAttendanceModal.isOpen && (
+        <Modal
+          isOpen={editAttendanceModal.isOpen}
+          onClose={() => setEditAttendanceModal({ ...editAttendanceModal, isOpen: false })}
+          title={`✏️ Admin Attendance Override: ${editAttendanceModal.date}`}
+        >
+          <div className="space-y-4 text-xs">
+            <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 font-medium">
+              <span>Admin Override for <strong>{studentInfo.name}</strong> ({studentInfo.email}) on <strong>{editAttendanceModal.date}</strong>.</span>
+            </div>
+
+            <div className="space-y-1">
+              <label className="block font-bold text-slate-700 uppercase text-[10px]">Attendance Status</label>
+              <select
+                value={editAttendanceModal.status}
+                onChange={(e) => setEditAttendanceModal({ ...editAttendanceModal, status: e.target.value })}
+                className="w-full p-2.5 rounded-xl border border-slate-300 font-bold text-slate-900 outline-none focus:border-blue-600 bg-white"
+              >
+                <option value="Present (On Time)">Present (On Time) 🟢</option>
+                <option value="Late (Shift 10:00 AM - 06:00 PM)">Late (Shift 10:00 AM - 06:00 PM) 🟡</option>
+                <option value="Absent">Absent 🔴</option>
+                <option value="On Leave (Casual)">On Leave (Casual) 🌴</option>
+                <option value="On Leave (Sick)">On Leave (Sick) 🏥</option>
+                <option value="Sunday (Weekend Holiday)">Sunday (Weekend Holiday) 🏖️</option>
+              </select>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <label className="block font-bold text-slate-700 uppercase text-[10px]">Check-In Time</label>
+                <input
+                  type="text"
+                  value={editAttendanceModal.checkInTime}
+                  onChange={(e) => setEditAttendanceModal({ ...editAttendanceModal, checkInTime: e.target.value })}
+                  placeholder="10:00 AM"
+                  disabled={editAttendanceModal.status.includes("Absent") || editAttendanceModal.status.includes("Sunday") || editAttendanceModal.status.includes("Leave")}
+                  className="w-full p-2.5 rounded-xl border border-slate-300 font-mono font-bold text-slate-900 outline-none focus:border-blue-600 bg-white disabled:bg-slate-100 disabled:text-slate-400"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="block font-bold text-slate-700 uppercase text-[10px]">Check-Out Time</label>
+                <input
+                  type="text"
+                  value={editAttendanceModal.checkOutTime}
+                  onChange={(e) => setEditAttendanceModal({ ...editAttendanceModal, checkOutTime: e.target.value })}
+                  placeholder="06:00 PM"
+                  disabled={editAttendanceModal.status.includes("Absent") || editAttendanceModal.status.includes("Sunday") || editAttendanceModal.status.includes("Leave")}
+                  className="w-full p-2.5 rounded-xl border border-slate-300 font-mono font-bold text-slate-900 outline-none focus:border-blue-600 bg-white disabled:bg-slate-100 disabled:text-slate-400"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setEditAttendanceModal({ ...editAttendanceModal, isOpen: false })}
+                className="px-4 py-2.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 font-bold transition-all cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveAttendanceEdit}
+                disabled={savingAttendanceEdit}
+                className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold transition-all shadow-xs cursor-pointer flex items-center gap-1.5"
+              >
+                <FaEdit />
+                <span>{savingAttendanceEdit ? "Saving to Supabase..." : "Save to Database"}</span>
               </button>
             </div>
           </div>
