@@ -461,16 +461,6 @@ export default function InternshipsPage() {
     showToast("Ping Sent ⚡", `Instant notification alert dispatched to ${activeRemoteStudent.full_name}'s screen!`, "success");
   };
 
-  const stopLiveScreenAccess = () => {
-    if (mediaStream) {
-      mediaStream.getTracks().forEach((track) => track.stop());
-      setMediaStream(null);
-    }
-    setIsLiveStreamModalOpen(false);
-    setActiveRemoteStudent(null);
-    showToast("Screen Access Closed ⚪", "Remote supervision session ended.", "info");
-  };
-
   const showAlert = (title, message, type = "info") => {
     setModal({ isOpen: true, title, message, type });
   };
