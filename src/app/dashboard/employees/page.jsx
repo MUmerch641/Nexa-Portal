@@ -526,7 +526,10 @@ export default function EmployeesPage() {
                             View History →
                           </button>
 
-                          <div className="relative">
+                          <div
+                            className="relative kebab-menu-container"
+                            onMouseLeave={() => setActiveKebabId(null)}
+                          >
                             <button
                               type="button"
                               onClick={() => setActiveKebabId(activeKebabId === emp.id ? null : emp.id)}

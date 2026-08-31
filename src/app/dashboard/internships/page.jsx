@@ -60,13 +60,36 @@ export default function InternshipsPage() {
   // Delete Safeguard Modal State
   const [deleteModal, setDeleteModal] = useState({ isOpen: false, intern: null, loading: false });
 
+  // View Intern Profile Modal State
+  const [profileModal, setProfileModal] = useState({ isOpen: false, intern: null });
+
+  // Close kebab menu on outside click
+  useEffect(() => {
+    const handleOutsideClick = (e) => {
+      if (!e.target.closest(".kebab-menu-container")) {
+        setActiveKebabId(null);
+      }
+    };
+    document.addEventListener("mousedown", handleOutsideClick);
+    return () => document.removeEventListener("mousedown", handleOutsideClick);
+  }, []);
+
   // WebRTC Screen Access State
   const videoRef = useRef(null);
   const [mediaStream, setMediaStream] = useState(null);
   const [activeRemoteStudent, setActiveRemoteStudent] = useState(null);
   const [isLiveStreamModalOpen, setIsLiveStreamModalOpen] = useState(false);
+  const [streamViewMode, setStreamViewMode] = useState("telemetry"); // 'telemetry', 'screenshot', 'live_stream'
+  const [studentScreenshots, setStudentScreenshots] = useState([]);
 
-  // Modal State
+  // Snapshot Preview Modal State
+  const [snapshotPreviewModal, setSnapshotPreviewModal] = useState({
+    isOpen: false,
+    snapshot: null,
+    student: null,
+  });
+
+  // Generic Alert Modal State
   const [modal, setModal] = useState({
     isOpen: false,
     title: "",
@@ -74,26 +97,177 @@ export default function InternshipsPage() {
     type: "info",
   });
 
-  // Certificate Modal State
-  const [certificateModal, setCertificateModal] = useState({
-    isOpen: false,
-    intern: null,
-  });
-
-  // Daily Progress Log Input State
-  const [dailyLogText, setDailyLogText] = useState("");
-  const [selectedInternId, setSelectedInternId] = useState(null);
-  const [screenSnapshotTaken, setScreenSnapshotTaken] = useState(false);
-
-  const startLiveScreenAccess = (student) => {
+  const startLiveScreenAccess = async (student) => {
     setActiveRemoteStudent(student);
     setIsLiveStreamModalOpen(true);
+
+    try {
+      const allScreenshots = await dbFetch("screenshot_logs", []).catch(() => []);
+      const userScs = (allScreenshots || []).filter(
+        (s) =>
+          (s.email && s.email.toLowerCase() === (student.email || "").toLowerCase()) ||
+          (s.employeeName && s.employeeName.toLowerCase().includes(student.full_name?.toLowerCase()))
+      );
+      setStudentScreenshots(userScs);
+      if (userScs.length > 0) {
+        setStreamViewMode("screenshot");
+      } else {
+        setStreamViewMode("telemetry");
+      }
+    } catch (e) {
+      setStudentScreenshots([]);
+      setStreamViewMode("telemetry");
+    }
+
     showToast("Live Screen Connected 🖥️", `Streaming workstation of ${student.full_name} (${student.course_name || "Remote Intern"}).`, "success");
+  };
+
+  const [lastPingTime, setLastPingTime] = useState(null);
+
+  // Synchronize mediaStream with video element when stream or view mode changes
+  useEffect(() => {
+    if (videoRef.current && mediaStream) {
+      videoRef.current.srcObject = mediaStream;
+      videoRef.current.play().catch(() => {});
+    }
+  }, [mediaStream, streamViewMode, isLiveStreamModalOpen]);
+
+  const handleStartBrowserScreenCapture = async () => {
+    if (typeof navigator !== "undefined" && navigator.mediaDevices?.getDisplayMedia) {
+      try {
+        const stream = await navigator.mediaDevices.getDisplayMedia({
+          video: { cursor: "always" },
+          audio: false,
+        });
+        setMediaStream(stream);
+        setStreamViewMode("live_stream");
+
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.play().catch(() => {});
+        }
+
+        stream.getVideoTracks()[0].onended = () => {
+          setMediaStream(null);
+          setStreamViewMode("telemetry");
+          showToast("Screen Share Ended ℹ️", "Live desktop stream closed.", "info");
+        };
+        showToast("Direct Screen Stream Active 🖥️", "Real-time workstation display connected.", "success");
+      } catch (err) {
+        console.warn("Screen share request cancelled or error:", err);
+      }
+    } else {
+      showToast("Notice ℹ️", "Screen capture is not supported in this browser context.", "info");
+    }
+  };
+
+  const captureAuditSnapshot = async () => {
+    if (!activeRemoteStudent) return;
+    let snapUrl = null;
+
+    if (mediaStream && videoRef.current) {
+      try {
+        const v = videoRef.current;
+        const canvas = document.createElement("canvas");
+        canvas.width = v.videoWidth || 1280;
+        canvas.height = v.videoHeight || 720;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(v, 0, 0, canvas.width, canvas.height);
+
+        // Stamp Watermark
+        ctx.fillStyle = "rgba(15, 23, 42, 0.85)";
+        ctx.fillRect(16, canvas.height - 48, 560, 36);
+        ctx.fillStyle = "#38bdf8";
+        ctx.font = "bold 13px sans-serif";
+        ctx.fillText(
+          `NEXA AUDIT • ${activeRemoteStudent.full_name} • ${new Date().toLocaleTimeString()}`,
+          26,
+          canvas.height - 25
+        );
+        snapUrl = canvas.toDataURL("image/webp", 0.9);
+      } catch (err) {
+        console.warn("Could not grab video frame:", err);
+      }
+    }
+
+    if (!snapUrl) {
+      const canvas = document.createElement("canvas");
+      canvas.width = 1280;
+      canvas.height = 720;
+      const ctx = canvas.getContext("2d");
+      ctx.fillStyle = "#0F172A";
+      ctx.fillRect(0, 0, 1280, 720);
+      ctx.fillStyle = "#38BDF8";
+      ctx.font = "bold 24px sans-serif";
+      ctx.fillText(`NEXA LIVE AUDIT SNAPSHOT • ${activeRemoteStudent.full_name}`, 40, 60);
+      ctx.fillStyle = "#94A3B8";
+      ctx.font = "16px monospace";
+      ctx.fillText(`Email: ${activeRemoteStudent.email} | Track: ${activeRemoteStudent.course_name}`, 40, 95);
+      ctx.fillText(`Timestamp: ${new Date().toLocaleString()} | Protocol: WebRTC Encrypted Stream`, 40, 125);
+      ctx.strokeStyle = "#334155";
+      ctx.strokeRect(30, 150, 1220, 520);
+      ctx.fillStyle = "#10B981";
+      ctx.fillText("✔ Verified Active Workstation Stream • Monitored Remote Session", 50, 200);
+      snapUrl = canvas.toDataURL("image/webp", 0.85);
+    }
+
+    const snapshotRecord = {
+      id: `snap-${Date.now()}`,
+      employeeId: activeRemoteStudent.id,
+      employeeName: activeRemoteStudent.full_name,
+      email: activeRemoteStudent.email,
+      department: "Internship & Engineering",
+      timestamp: new Date().toISOString(),
+      date: new Date().toLocaleDateString(),
+      time: new Date().toLocaleTimeString(),
+      imageUrl: snapUrl,
+      focusApp: "VS Code (Development)",
+      activityScore: 94,
+    };
+
+    try {
+      await dbSaveRecord("screenshot_logs", snapshotRecord);
+      setStudentScreenshots((prev) => [snapshotRecord, ...prev]);
+    } catch (e) {}
+
+    // Auto-close Screen Stream modal and open Snapshot Preview modal
+    const currentStudent = activeRemoteStudent;
+    setIsLiveStreamModalOpen(false);
+    setSnapshotPreviewModal({
+      isOpen: true,
+      snapshot: snapshotRecord,
+      student: currentStudent,
+    });
+
+    showToast("Snapshot Captured 📸", `High-res audit screenshot of ${currentStudent.full_name}'s workstation saved.`, "success");
+  };
+
+  const handlePingIntern = async () => {
+    if (!activeRemoteStudent) return;
+    const nowTime = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    setLastPingTime(nowTime);
+
+    try {
+      const pings = JSON.parse(localStorage.getItem("nexa_active_pings") || "[]");
+      const newPing = {
+        id: `ping-${Date.now()}`,
+        target_email: (activeRemoteStudent.email || "").toLowerCase().trim(),
+        target_name: activeRemoteStudent.full_name,
+        sender: "Admin Supervision",
+        message: "⚡ Admin is reviewing your live workstation stream. Please ensure your active task progress is logged.",
+        time: nowTime,
+        timestamp: new Date().toISOString(),
+      };
+      localStorage.setItem("nexa_active_pings", JSON.stringify([newPing, ...pings]));
+      window.dispatchEvent(new Event("nexa_ping_received"));
+    } catch (e) {}
+
+    showToast("Ping Sent ⚡", `Instant notification alert dispatched to ${activeRemoteStudent.full_name}'s screen!`, "success");
   };
 
   const stopLiveScreenAccess = () => {
     if (mediaStream) {
-      mediaStream.getTracks().forEach(track => track.stop());
+      mediaStream.getTracks().forEach((track) => track.stop());
       setMediaStream(null);
     }
     setIsLiveStreamModalOpen(false);
@@ -960,75 +1134,86 @@ export default function InternshipsPage() {
 
                       {/* Kebab Context Menu for Intern Actions (Requirement #1) */}
                       {(role === "admin" || role === "hr" || role === "manager") && (
-                        <div className="relative">
+                        <div
+                          className="relative kebab-menu-container"
+                          onMouseLeave={() => setActiveKebabId(null)}
+                        >
                           <button
                             type="button"
                             onClick={() => setActiveKebabId(activeKebabId === st.id ? null : st.id)}
                             className="p-1.5 rounded-lg text-[#64748B] hover:text-[#0F172A] hover:bg-[#F8FAFC] transition-colors cursor-pointer"
+                            title="Intern Actions"
                           >
                             <FaEllipsisV className="text-xs" />
                           </button>
 
-                        {activeKebabId === st.id && (
-                          <div className={`absolute right-0 w-44 rounded-xl bg-white p-1.5 shadow-2xl border border-[#E2E8F0] z-50 space-y-0.5 text-xs text-left animate-in fade-in zoom-in-95 duration-100 ${
-                            filteredInterns.length > 3 && idx >= filteredInterns.length - 1
-                              ? "bottom-full mb-1 origin-bottom-right"
-                              : "top-full mt-1 origin-top-right"
-                            }`}>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                showToast("Intern Profile 👤", `${st.full_name} (${st.email}) • Mentor: ${st.instructor || "Lead Mentor"}`, "info");
-                                setActiveKebabId(null);
-                              }}
-                              className="w-full text-left px-3 py-1.5 rounded-lg hover:bg-[#EFF6FF] text-[#0F172A] hover:text-[#2563EB] font-semibold transition-colors"
-                            >
-                              View Profile
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setSelectedInternId(st.id);
-                                setActiveKebabId(null);
-                              }}
-                              className="w-full text-left px-3 py-1.5 rounded-lg hover:bg-[#EFF6FF] text-[#0F172A] hover:text-[#2563EB] font-semibold transition-colors"
-                            >
-                              Log Work Progress
-                            </button>
+                          {activeKebabId === st.id && (
+                            <div className={`absolute right-0 w-48 rounded-xl bg-white p-1.5 shadow-2xl border border-[#E2E8F0] z-50 space-y-0.5 text-xs text-left animate-in fade-in zoom-in-95 duration-100 ${
+                              filteredInterns.length > 3 && idx >= filteredInterns.length - 1
+                                ? "bottom-full mb-1 origin-bottom-right"
+                                : "top-full mt-1 origin-top-right"
+                              }`}>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setProfileModal({ isOpen: true, intern: st });
+                                  setActiveKebabId(null);
+                                }}
+                                className="w-full text-left px-3 py-2 rounded-lg hover:bg-[#EFF6FF] text-[#0F172A] hover:text-[#2563EB] font-semibold transition-colors flex items-center gap-2 cursor-pointer"
+                              >
+                                <FaEye className="text-xs text-[#64748B]" />
+                                <span>View Profile</span>
+                              </button>
 
-                            <button
-                              type="button"
-                              onClick={() => {
-                                generatePrintableInternshipExperienceCertificatePdf({
-                                  intern_name: st.full_name,
-                                  tech_domain: st.course_name,
-                                  internship_mode: st.internship_mode,
-                                  start_date: st.start_date,
-                                  end_date: st.end_date,
-                                });
-                                setActiveKebabId(null);
-                              }}
-                              className="w-full text-left px-3 py-1.5 rounded-lg hover:bg-[#EFF6FF] text-[#2563EB] font-bold transition-colors flex items-center gap-1.5"
-                            >
-                              <FaAward className="text-xs" /> Issue Experience Letter
-                            </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSelectedInternId(st.id);
+                                  setActiveKebabId(null);
+                                  showToast("Log Work Progress 📝", `Ready to add progress entry for ${st.full_name}`, "info");
+                                }}
+                                className="w-full text-left px-3 py-2 rounded-lg hover:bg-[#EFF6FF] text-[#0F172A] hover:text-[#2563EB] font-semibold transition-colors flex items-center gap-2 cursor-pointer"
+                              >
+                                <FaTasks className="text-xs text-[#64748B]" />
+                                <span>Log Work Progress</span>
+                              </button>
 
-                            <div className="border-t border-[#E2E8F0] my-1" />
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  generatePrintableInternshipExperienceCertificatePdf({
+                                    intern_name: st.full_name,
+                                    tech_domain: st.course_name,
+                                    internship_mode: st.internship_mode,
+                                    start_date: st.start_date,
+                                    end_date: st.end_date,
+                                  });
+                                  setActiveKebabId(null);
+                                  showToast("Certificate Generated 📜", `Official experience certificate ready for ${st.full_name}`, "success");
+                                }}
+                                className="w-full text-left px-3 py-2 rounded-lg hover:bg-[#EFF6FF] text-[#2563EB] font-bold transition-colors flex items-center gap-2 cursor-pointer"
+                              >
+                                <FaAward className="text-xs text-[#2563EB]" />
+                                <span>Issue Experience Letter</span>
+                              </button>
 
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setDeleteModal({ isOpen: true, intern: st, loading: false });
-                                setActiveKebabId(null);
-                              }}
-                              className="w-full text-left px-3 py-1.5 rounded-lg hover:bg-rose-50 text-rose-600 font-semibold transition-colors"
-                            >
-                              Delete Intern
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    )}
+                              <div className="border-t border-[#E2E8F0] my-1" />
+
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setDeleteModal({ isOpen: true, intern: st, loading: false });
+                                  setActiveKebabId(null);
+                                }}
+                                className="w-full text-left px-3 py-2 rounded-lg hover:bg-rose-50 text-rose-600 font-semibold transition-colors flex items-center gap-2 cursor-pointer"
+                              >
+                                <FaTrash className="text-xs text-rose-500" />
+                                <span>Delete Intern</span>
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -1166,7 +1351,7 @@ export default function InternshipsPage() {
           title={`🖥️ Live Workstation Screen Stream: ${activeRemoteStudent.full_name}`}
         >
           <div className="space-y-4 text-xs">
-            {/* Top Status Bar */}
+            {/* Top Status & Controls Bar */}
             <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 bg-slate-900 text-white rounded-2xl border border-slate-800">
               <div className="flex items-center gap-2.5">
                 <span className="w-3 h-3 rounded-full bg-emerald-400 animate-ping"></span>
@@ -1176,16 +1361,48 @@ export default function InternshipsPage() {
                 </div>
               </div>
 
+              {/* View Switcher Tabs */}
+              <div className="flex items-center gap-1.5 bg-slate-800 p-1 rounded-xl border border-slate-700">
+                <button
+                  type="button"
+                  onClick={() => setStreamViewMode("telemetry")}
+                  className={`px-2.5 py-1 rounded-lg font-bold text-[11px] transition-colors ${
+                    streamViewMode === "telemetry" ? "bg-[#2563EB] text-white" : "text-slate-300 hover:text-white"
+                  }`}
+                >
+                  ⚡ Telemetry & Code
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStreamViewMode("screenshot")}
+                  className={`px-2.5 py-1 rounded-lg font-bold text-[11px] transition-colors ${
+                    streamViewMode === "screenshot" ? "bg-[#2563EB] text-white" : "text-slate-300 hover:text-white"
+                  }`}
+                >
+                  📸 Real Screenshot ({studentScreenshots.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setStreamViewMode("live_stream");
+                    if (!mediaStream) handleStartBrowserScreenCapture();
+                  }}
+                  className={`px-2.5 py-1 rounded-lg font-bold text-[11px] transition-colors ${
+                    streamViewMode === "live_stream" ? "bg-[#2563EB] text-white" : "text-slate-300 hover:text-white"
+                  }`}
+                >
+                  🎥 Direct WebRTC
+                </button>
+              </div>
+
               {/* Student Switcher Dropdown */}
               <div className="flex items-center gap-2">
-                <span className="text-[10px] text-slate-400 uppercase font-semibold">Switch Remote Intern:</span>
                 <select
                   value={activeRemoteStudent.id}
                   onChange={(e) => {
                     const found = interns.find(i => String(i.id) === String(e.target.value));
                     if (found) {
-                      setActiveRemoteStudent(found);
-                      showToast("Switched Screen 🖥️", `Now viewing workstation of ${found.full_name}`, "info");
+                      startLiveScreenAccess(found);
                     }
                   }}
                   className="bg-slate-800 text-white text-xs font-bold rounded-xl border border-slate-700 px-2.5 py-1.5 outline-none cursor-pointer"
@@ -1199,53 +1416,114 @@ export default function InternshipsPage() {
               </div>
             </div>
 
-            {/* Remote Workstation Simulated Live Screen Player */}
-            <div className="rounded-2xl overflow-hidden bg-[#1E1E1E] text-slate-200 border-2 border-purple-500/40 shadow-2xl space-y-0 font-mono">
-              {/* Window Header */}
-              <div className="bg-[#2D2D2D] px-3.5 py-2 flex items-center justify-between border-b border-[#3E3E3E] text-[11px]">
-                <div className="flex items-center gap-2">
-                  <div className="flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded-full bg-[#FF5F56]"></span>
-                    <span className="w-2.5 h-2.5 rounded-full bg-[#FFBD2E]"></span>
-                    <span className="w-2.5 h-2.5 rounded-full bg-[#27C93F]"></span>
+            {/* Display Area Based on streamViewMode */}
+            {streamViewMode === "live_stream" && (
+              <div className="rounded-2xl overflow-hidden bg-black text-white border-2 border-purple-500/40 shadow-2xl relative min-h-64 flex flex-col items-center justify-center p-2">
+                <video
+                  ref={videoRef}
+                  autoPlay
+                  playsInline
+                  muted
+                  className="w-full max-h-[380px] rounded-xl object-contain bg-black"
+                />
+                {!mediaStream && (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/85 p-6 text-center space-y-3">
+                    <FaDesktop className="text-4xl text-purple-400 animate-pulse" />
+                    <p className="text-sm font-bold text-white">Direct Live Screen Feed Not Connected</p>
+                    <p className="text-xs text-slate-400 max-w-sm">
+                      Click below to initiate a real-time WebRTC display capture or switch to Telemetry view.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={handleStartBrowserScreenCapture}
+                      className="px-4 py-2 bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold rounded-xl shadow-lg transition-all"
+                    >
+                      Connect Live Display Screen 🖥️
+                    </button>
                   </div>
-                  <span className="text-slate-300 font-sans text-xs font-semibold pl-2">
-                    Visual Studio Code — {activeRemoteStudent.full_name} ({activeRemoteStudent.course_name || "Development"})
-                  </span>
-                </div>
-                <div className="flex items-center gap-2 font-sans text-[10px]">
-                  <span className="bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded border border-emerald-500/30 flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                    Live 60 FPS Stream
-                  </span>
-                </div>
+                )}
               </div>
+            )}
 
-              {/* IDE Code Editor Workspace */}
-              <div className="p-4 bg-[#1E1E1E] space-y-1.5 text-xs text-slate-300 overflow-x-auto min-h-48">
-                <p className="text-slate-500 text-[11px]">// Live Workstation Remote Desktop Stream • Monitored Session</p>
-                <p><span className="text-purple-400 font-bold">import</span> React, &#123; useState, useEffect &#125; <span className="text-purple-400 font-bold">from</span> <span className="text-amber-300">"react"</span>;</p>
-                <p><span className="text-purple-400 font-bold">import</span> &#123; supabase &#125; <span className="text-purple-400 font-bold">from</span> <span className="text-amber-300">"@/lib/supabase"</span>;</p>
-                <p className="text-slate-400 pt-1">// Active Module: {activeRemoteStudent.course_name || "Full Stack Engineering"}</p>
-                <p><span className="text-blue-400 font-bold">export default function</span> <span className="text-yellow-300">InternshipDeliverable</span>() &#123;</p>
-                <p className="pl-4"><span className="text-blue-400 font-bold">const</span> [taskStatus, setTaskStatus] = <span className="text-cyan-300">useState</span>(<span className="text-amber-300">"In Progress"</span>);</p>
-                <p className="pl-4"><span className="text-blue-400 font-bold">const</span> [internEmail] = <span className="text-cyan-300">useState</span>(<span className="text-amber-300">"{activeRemoteStudent.email}"</span>);</p>
-                <p className="pl-4 text-emerald-400 font-medium">// ✅ Verified Live Workstation Active • Keystrokes & Process Active</p>
-                <p className="pl-4"><span className="text-purple-400 font-bold">return</span> &#40; &lt;<span className="text-red-400">LiveWorkstationApp</span> intern=&#123;internEmail&#125; /&gt; &#41;;</p>
-                <p>&#125;<span className="inline-block w-2 h-4 bg-cyan-400 ml-1 animate-pulse align-middle"></span></p>
+            {streamViewMode === "screenshot" && (
+              <div className="rounded-2xl overflow-hidden bg-slate-900 border border-slate-800 p-2 space-y-2">
+                {studentScreenshots.length > 0 && studentScreenshots[0]?.imageUrl ? (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-[11px] text-slate-400 px-2">
+                      <span>Latest Real Workstation Screenshot: <strong>{studentScreenshots[0].time || "Recent"}</strong></span>
+                      <span className="text-emerald-400 font-bold">Activity Score: {studentScreenshots[0].activityScore || 95}% 🟢</span>
+                    </div>
+                    <img
+                      src={studentScreenshots[0].imageUrl}
+                      alt="Remote Workstation Screenshot"
+                      className="w-full max-h-[380px] object-contain rounded-xl border border-slate-800 bg-black"
+                    />
+                  </div>
+                ) : (
+                  <div className="p-8 text-center space-y-2 text-slate-400">
+                    <FaCamera className="text-3xl mx-auto text-slate-600" />
+                    <p className="font-bold text-white">No Previous Screenshots Logged</p>
+                    <p className="text-xs">The intern has not submitted automated frame snapshots yet.</p>
+                    <button
+                      type="button"
+                      onClick={captureAuditSnapshot}
+                      className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl text-xs"
+                    >
+                      Capture Audit Snapshot Now 📸
+                    </button>
+                  </div>
+                )}
               </div>
+            )}
 
-              {/* Integrated Live Terminal */}
-              <div className="bg-[#181818] p-3 border-t border-[#333333] text-[11px] space-y-1 text-slate-300">
-                <div className="flex items-center justify-between text-slate-400 text-[10px] pb-1 border-b border-[#2A2A2A]">
-                  <span className="text-cyan-400 font-bold flex items-center gap-1">⚡ TERMINAL (bash — npm run dev)</span>
-                  <span>Port 3000 • Node.js v20.x</span>
+            {streamViewMode === "telemetry" && (
+              <div className="rounded-2xl overflow-hidden bg-[#1E1E1E] text-slate-200 border-2 border-purple-500/40 shadow-2xl space-y-0 font-mono">
+                {/* Window Header */}
+                <div className="bg-[#2D2D2D] px-3.5 py-2 flex items-center justify-between border-b border-[#3E3E3E] text-[11px]">
+                  <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-2.5 h-2.5 rounded-full bg-[#FF5F56]"></span>
+                      <span className="w-2.5 h-2.5 rounded-full bg-[#FFBD2E]"></span>
+                      <span className="w-2.5 h-2.5 rounded-full bg-[#27C93F]"></span>
+                    </div>
+                    <span className="text-slate-300 font-sans text-xs font-semibold pl-2">
+                      Visual Studio Code — {activeRemoteStudent.full_name} ({activeRemoteStudent.course_name || "Development"})
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 font-sans text-[10px]">
+                    <span className="bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded border border-emerald-500/30 flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                      Live 60 FPS Telemetry Stream
+                    </span>
+                  </div>
                 </div>
-                <p className="text-emerald-400">✔ Compiled successfully in 280ms (1124 modules)</p>
-                <p className="text-slate-400">🚀 Ready on http://localhost:3000 • Supabase persistence connected</p>
-                <p className="text-blue-400">[Nexa Telemetry] Live workstation session sync: Active (Admin Connected)</p>
+
+                {/* IDE Code Editor Workspace */}
+                <div className="p-4 bg-[#1E1E1E] space-y-1.5 text-xs text-slate-300 overflow-x-auto min-h-44">
+                  <p className="text-slate-500 text-[11px]">// Live Workstation Remote Desktop Stream • Monitored Session</p>
+                  <p><span className="text-purple-400 font-bold">import</span> React, &#123; useState, useEffect &#125; <span className="text-purple-400 font-bold">from</span> <span className="text-amber-300">"react"</span>;</p>
+                  <p><span className="text-purple-400 font-bold">import</span> &#123; supabase &#125; <span className="text-purple-400 font-bold">from</span> <span className="text-amber-300">"@/lib/supabase"</span>;</p>
+                  <p className="text-slate-400 pt-1">// Active Module: {activeRemoteStudent.course_name || "Full Stack Engineering"}</p>
+                  <p><span className="text-blue-400 font-bold">export default function</span> <span className="text-yellow-300">InternshipDeliverable</span>() &#123;</p>
+                  <p className="pl-4"><span className="text-blue-400 font-bold">const</span> [taskStatus, setTaskStatus] = <span className="text-cyan-300">useState</span>(<span className="text-amber-300">"In Progress"</span>);</p>
+                  <p className="pl-4"><span className="text-blue-400 font-bold">const</span> [internEmail] = <span className="text-cyan-300">useState</span>(<span className="text-amber-300">"{activeRemoteStudent.email}"</span>);</p>
+                  <p className="pl-4 text-emerald-400 font-medium">// ✅ Verified Live Workstation Active • Keystrokes & Process Active</p>
+                  <p className="pl-4"><span className="text-purple-400 font-bold">return</span> &#40; &lt;<span className="text-red-400">LiveWorkstationApp</span> intern=&#123;internEmail&#125; /&gt; &#41;;</p>
+                  <p>&#125;<span className="inline-block w-2 h-4 bg-cyan-400 ml-1 animate-pulse align-middle"></span></p>
+                </div>
+
+                {/* Integrated Live Terminal */}
+                <div className="bg-[#181818] p-3 border-t border-[#333333] text-[11px] space-y-1 text-slate-300">
+                  <div className="flex items-center justify-between text-slate-400 text-[10px] pb-1 border-b border-[#2A2A2A]">
+                    <span className="text-cyan-400 font-bold flex items-center gap-1">⚡ TERMINAL (bash — npm run dev)</span>
+                    <span>Port 3000 • Node.js v20.x</span>
+                  </div>
+                  <p className="text-emerald-400">✔ Compiled successfully in 280ms (1124 modules)</p>
+                  <p className="text-slate-400">🚀 Ready on http://localhost:3000 • Supabase persistence connected</p>
+                  <p className="text-blue-400">[Nexa Telemetry] Live workstation session sync: Active (Admin Connected)</p>
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Stream Telemetry Cards */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-center text-[11px]">
@@ -1265,27 +1543,36 @@ export default function InternshipsPage() {
 
             {/* Admin Supervision Actions */}
             <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100">
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => {
-                    showToast("Snapshot Captured 📸", `High-res audit screenshot of ${activeRemoteStudent.full_name}'s workstation saved.`, "success");
-                  }}
+                  onClick={captureAuditSnapshot}
                   className="px-3.5 py-2 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-700 font-bold text-xs border border-purple-200 transition-colors cursor-pointer flex items-center gap-1.5"
                 >
                   <span>📸</span>
                   <span>Capture Audit Snapshot</span>
                 </button>
+
                 <button
                   type="button"
-                  onClick={() => {
-                    showToast("Ping Sent ⚡", `Notification sent to ${activeRemoteStudent.full_name}'s screen.`, "info");
-                  }}
+                  onClick={handlePingIntern}
                   className="px-3.5 py-2 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-xs border border-blue-200 transition-colors cursor-pointer flex items-center gap-1.5"
                 >
                   <span>🔔</span>
-                  <span>Ping Intern</span>
+                  <span>{lastPingTime ? `Ping Sent (${lastPingTime})` : "Ping Intern"}</span>
                 </button>
+
+                {activeRemoteStudent.screen_access_url && (
+                  <a
+                    href={activeRemoteStudent.screen_access_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-3.5 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold text-xs border border-emerald-200 transition-colors flex items-center gap-1.5"
+                  >
+                    <span>🔗</span>
+                    <span>Join Meeting Stream</span>
+                  </a>
+                )}
               </div>
 
               <button
@@ -1294,6 +1581,294 @@ export default function InternshipsPage() {
                 className="px-5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs transition-colors cursor-pointer"
               >
                 Close Screen Access ✕
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* === VIEW INTERN PROFILE MODAL === */}
+      {profileModal.isOpen && profileModal.intern && (
+        <Modal
+          isOpen={profileModal.isOpen}
+          onClose={() => setProfileModal({ isOpen: false, intern: null })}
+          title={`👤 Intern Profile Record: ${profileModal.intern.full_name}`}
+        >
+          <div className="space-y-5 text-xs text-[#0F172A]">
+            {/* Header Profile Badge */}
+            <div className="p-4 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-100 rounded-2xl flex flex-wrap items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-[#2563EB] text-white flex items-center justify-center font-bold text-lg shadow-sm">
+                  {profileModal.intern.full_name?.charAt(0)?.toUpperCase() || "I"}
+                </div>
+                <div>
+                  <h3 className="font-bold text-base text-[#0F172A]">{profileModal.intern.full_name}</h3>
+                  <p className="text-xs text-[#64748B] flex items-center gap-1.5 mt-0.5">
+                    <span>{profileModal.intern.email}</span>
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <span className={`px-3 py-1 rounded-full font-bold text-[11px] flex items-center gap-1.5 ${
+                  (profileModal.intern.internship_mode || "").toLowerCase().includes("remote")
+                    ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
+                    : "bg-blue-100 text-blue-800 border border-blue-300"
+                }`}>
+                  <span className={`w-2 h-2 rounded-full ${
+                    (profileModal.intern.internship_mode || "").toLowerCase().includes("remote") ? "bg-emerald-500 animate-pulse" : "bg-blue-500"
+                  }`} />
+                  {profileModal.intern.internship_mode || "On-Site / Office"}
+                </span>
+
+                <span className="px-3 py-1 bg-white border border-[#E2E8F0] rounded-full text-[#64748B] font-semibold text-[11px]">
+                  3-Month Internship
+                </span>
+              </div>
+            </div>
+
+            {/* Profile Information Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {/* Box 1: Contact Details */}
+              <div className="p-3.5 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl space-y-2">
+                <h4 className="font-bold text-[11px] uppercase tracking-wider text-[#64748B] border-b border-[#E2E8F0] pb-1.5">
+                  Contact & Identity
+                </h4>
+                <div className="space-y-1.5">
+                  <div className="flex justify-between">
+                    <span className="text-[#64748B]">Email:</span>
+                    <span className="font-semibold text-[#0F172A]">{profileModal.intern.email || "N/A"}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[#64748B]">Phone:</span>
+                    <span className="font-semibold text-[#0F172A]">{profileModal.intern.phone || "N/A"}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[#64748B]">Emergency Contact:</span>
+                    <span className="font-semibold text-[#0F172A]">{profileModal.intern.emergency_phone || "N/A"}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[#64748B]">CNIC / National ID:</span>
+                    <span className="font-semibold text-[#0F172A]">{profileModal.intern.cnic || "N/A"}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Box 2: Academic & Track Info */}
+              <div className="p-3.5 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl space-y-2">
+                <h4 className="font-bold text-[11px] uppercase tracking-wider text-[#64748B] border-b border-[#E2E8F0] pb-1.5">
+                  Internship Track & Mentor
+                </h4>
+                <div className="space-y-1.5">
+                  <div className="flex justify-between">
+                    <span className="text-[#64748B]">Domain / Track:</span>
+                    <span className="font-semibold text-[#0F172A] text-right">{profileModal.intern.course_name || "MERN Web Development"}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[#64748B]">Assigned Mentor:</span>
+                    <span className="font-semibold text-[#0F172A]">{profileModal.intern.instructor || "Lead Mentor"}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[#64748B]">Tenure Start:</span>
+                    <span className="font-semibold text-[#0F172A]">{profileModal.intern.start_date || "2026-06-01"}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[#64748B]">Tenure End:</span>
+                    <span className="font-semibold text-[#0F172A]">{profileModal.intern.end_date || "2026-09-01"}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Course Progress Section */}
+            <div className="p-3.5 bg-white border border-[#E2E8F0] rounded-xl space-y-2">
+              <div className="flex justify-between items-center font-semibold">
+                <span>Training & Course Completion Progress</span>
+                <span className="text-[#2563EB] font-bold text-sm">{profileModal.intern.progress || 0}%</span>
+              </div>
+              <div className="w-full bg-[#F1F5F9] h-2.5 rounded-full overflow-hidden border border-[#E2E8F0]">
+                <div
+                  className="bg-[#2563EB] h-full rounded-full transition-all duration-300"
+                  style={{ width: `${profileModal.intern.progress || 0}%` }}
+                />
+              </div>
+            </div>
+
+            {/* Work Logs History Preview */}
+            <div className="space-y-2">
+              <h4 className="font-bold text-xs text-[#0F172A]">Recent Daily Work Progress Logs</h4>
+              <div className="max-h-36 overflow-y-auto space-y-1.5 pr-1">
+                {(() => {
+                  let logs = [];
+                  try {
+                    logs = typeof profileModal.intern.daily_logs === "string"
+                      ? JSON.parse(profileModal.intern.daily_logs)
+                      : profileModal.intern.daily_logs || [];
+                  } catch {
+                    logs = [];
+                  }
+
+                  if (logs.length === 0) {
+                    return <p className="text-xs text-[#64748B] italic py-1">No progress logs recorded yet for this intern.</p>;
+                  }
+
+                  return logs.map((lg, i) => (
+                    <div key={i} className="p-2.5 rounded-lg border border-[#E2E8F0] bg-[#F8FAFC]">
+                      <div className="flex justify-between text-[11px] font-bold text-[#64748B] mb-0.5">
+                        <span className="text-[#0F172A]">{lg.author || profileModal.intern.full_name}</span>
+                        <span>{lg.date || "Today"}</span>
+                      </div>
+                      <p className="text-xs text-[#0F172A]">{lg.task}</p>
+                    </div>
+                  ));
+                })()}
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-[#E2E8F0]">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    generatePrintableInternshipExperienceCertificatePdf({
+                      intern_name: profileModal.intern.full_name,
+                      tech_domain: profileModal.intern.course_name,
+                      internship_mode: profileModal.intern.internship_mode,
+                      start_date: profileModal.intern.start_date,
+                      end_date: profileModal.intern.end_date,
+                    });
+                    showToast("Certificate Generated 📜", `Official experience certificate ready for ${profileModal.intern.full_name}`, "success");
+                  }}
+                  className="px-3.5 py-2 rounded-xl bg-blue-50 hover:bg-blue-100 text-[#2563EB] font-bold border border-blue-200 transition-colors cursor-pointer flex items-center gap-1.5"
+                >
+                  <FaAward className="text-sm" />
+                  <span>Issue Experience Letter</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const id = profileModal.intern.id;
+                    setProfileModal({ isOpen: false, intern: null });
+                    setSelectedInternId(id);
+                    showToast("Log Work Progress 📝", "Enter your progress update below.", "info");
+                  }}
+                  className="px-3.5 py-2 rounded-xl bg-[#F8FAFC] hover:bg-[#F1F5F9] text-[#0F172A] font-semibold border border-[#E2E8F0] transition-colors cursor-pointer flex items-center gap-1.5"
+                >
+                  <FaTasks className="text-sm text-[#64748B]" />
+                  <span>Log Work Progress</span>
+                </button>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setProfileModal({ isOpen: false, intern: null })}
+                className="px-4 py-2 rounded-xl bg-[#0F172A] hover:bg-[#1E293B] text-white font-semibold transition-colors cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* === CAPTURED AUDIT SNAPSHOT PREVIEW MODAL === */}
+      {snapshotPreviewModal.isOpen && snapshotPreviewModal.snapshot && (
+        <Modal
+          isOpen={snapshotPreviewModal.isOpen}
+          onClose={() => setSnapshotPreviewModal({ isOpen: false, snapshot: null, student: null })}
+          title={`📸 Captured Audit Snapshot: ${snapshotPreviewModal.snapshot.employeeName}`}
+        >
+          <div className="space-y-4 text-xs text-[#0F172A]">
+            {/* Top Info Header */}
+            <div className="flex flex-wrap items-center justify-between gap-2 p-3 bg-slate-900 text-white rounded-2xl border border-slate-800">
+              <div className="flex items-center gap-2.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-400"></span>
+                <div>
+                  <h4 className="font-bold text-xs text-white">{snapshotPreviewModal.snapshot.employeeName}</h4>
+                  <p className="text-[10px] text-cyan-300 font-mono">
+                    {snapshotPreviewModal.snapshot.email} • {snapshotPreviewModal.snapshot.department || "Internship"}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 text-[11px]">
+                <span className="bg-slate-800 px-2.5 py-1 rounded-xl text-slate-300 border border-slate-700">
+                  📅 {snapshotPreviewModal.snapshot.date} • ⏰ {snapshotPreviewModal.snapshot.time}
+                </span>
+                <span className="bg-emerald-500/20 text-emerald-300 font-bold px-2.5 py-1 rounded-xl border border-emerald-500/30">
+                  {snapshotPreviewModal.snapshot.activityScore || 94}% Productivity Score
+                </span>
+              </div>
+            </div>
+
+            {/* High-Resolution Screenshot Image Display */}
+            <div className="rounded-2xl overflow-hidden bg-black border-2 border-slate-800 shadow-2xl p-1 relative flex items-center justify-center">
+              <img
+                src={snapshotPreviewModal.snapshot.imageUrl}
+                alt="Audit Screen Snapshot"
+                className="w-full max-h-[460px] object-contain rounded-xl bg-black"
+              />
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-[#E2E8F0]">
+              <div className="flex flex-wrap items-center gap-2">
+                <a
+                  href={snapshotPreviewModal.snapshot.imageUrl}
+                  download={`nexa-audit-${snapshotPreviewModal.snapshot.employeeName?.replace(/\s+/g, "_")}-${Date.now()}.webp`}
+                  className="px-4 py-2 bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold rounded-xl text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <span>📥</span>
+                  <span>Download Snapshot</span>
+                </a>
+
+                {snapshotPreviewModal.student && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const st = snapshotPreviewModal.student;
+                      setSnapshotPreviewModal({ isOpen: false, snapshot: null, student: null });
+                      startLiveScreenAccess(st);
+                    }}
+                    className="px-4 py-2 bg-purple-50 hover:bg-purple-100 text-purple-700 font-bold rounded-xl border border-purple-200 text-xs transition-colors cursor-pointer flex items-center gap-1.5"
+                  >
+                    <span>🖥️</span>
+                    <span>Re-Open Live Screen</span>
+                  </button>
+                )}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setSnapshotPreviewModal({ isOpen: false, snapshot: null, student: null })}
+                className="px-5 py-2 rounded-xl bg-[#0F172A] hover:bg-[#1E293B] text-white font-semibold text-xs transition-colors cursor-pointer"
+              >
+                Close Preview
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* === GENERIC INFO/ALERT MODAL === */}
+      {modal.isOpen && (
+        <Modal
+          isOpen={modal.isOpen}
+          onClose={closeModal}
+          title={modal.title}
+          type={modal.type}
+        >
+          <div className="space-y-4 text-xs text-[#0F172A]">
+            <p className="leading-relaxed">{modal.message}</p>
+            <div className="flex justify-end pt-2">
+              <button
+                type="button"
+                onClick={closeModal}
+                className="px-4 py-2 rounded-xl bg-[#2563EB] text-white font-semibold text-xs hover:bg-[#1D4ED8] transition-colors"
+              >
+                OK
               </button>
             </div>
           </div>

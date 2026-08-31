@@ -71,20 +71,20 @@ export function generatePrintableInternshipExperienceCertificatePdf(certData) {
           </div>
 
           <div class="codes-section">
-            {/* 1. Scannable QR Code */}
+            <!-- 1. Scannable QR Code -->
             <div class="qr-box">
               <img src="${qrCodeUrl}" alt="Verification QR Code" />
               <div class="code-label">SCANNABLE QR VERIFICATION</div>
               <div style="font-size:9px; font-family:monospace; font-weight:bold; color:#1e3a8a; margin-top:2px;">${certId}</div>
             </div>
 
-            {/* 2. 1D Barcode */}
+            <!-- 2. 1D Barcode -->
             <div class="barcode-box">
               <img src="${barCodeUrl}" alt="Official 1D Barcode" />
               <div class="code-label">OFFICIAL 1D BARCODE SERIAL</div>
             </div>
 
-            {/* 3. Official Signature Seal */}
+            <!-- 3. Official Signature Seal -->
             <div class="sig-box">
               <div class="sig-line"></div>
               <strong>Director of Engineering</strong>

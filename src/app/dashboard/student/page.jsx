@@ -279,6 +279,24 @@ export default function StudentDedicatedDashboardPage() {
     setIsAdminUser(isAdmin);
     setRole(savedRole);
 
+    const checkAdminPings = () => {
+      try {
+        const pings = JSON.parse(localStorage.getItem("nexa_active_pings") || "[]");
+        if (pings.length > 0) {
+          const myEmail = (savedEmail || "").toLowerCase().trim();
+          const latestPing = pings[0];
+          if (
+            latestPing &&
+            (!latestPing.target_email || latestPing.target_email === myEmail || myEmail.includes(latestPing.target_email))
+          ) {
+            showToast("⚡ Admin Ping Received", latestPing.message, "info");
+          }
+        }
+      } catch (e) {}
+    };
+
+    window.addEventListener("nexa_ping_received", checkAdminPings);
+
     async function fetchStudentData() {
       const allStudents = await dbFetch("students").catch(() => []);
       const allInterns = await dbFetch("interns").catch(() => []);

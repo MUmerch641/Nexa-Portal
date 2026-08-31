@@ -1099,7 +1099,10 @@ export default function CoursesPage() {
                             </button>
 
                             {/* Contextual 3-Dots Menu (⋮) */}
-                            <div className="relative">
+                            <div
+                              className="relative kebab-menu-container"
+                              onMouseLeave={() => setActiveKebabId(null)}
+                            >
                               <button
                                 type="button"
                                 onClick={() => setActiveKebabId(activeKebabId === st.id ? null : st.id)}
