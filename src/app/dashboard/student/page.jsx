@@ -492,13 +492,20 @@ export default function StudentDedicatedDashboardPage() {
         const topic = weekTopics[weekNum - 1] || "Production Application Engineering";
         const dynamicWeekString = `Week #${weekNum} of 12 (${topic})`;
 
+        const targetStudentEmail = (matched?.email || activeTargetEmail || savedEmail || "").toLowerCase().trim();
+        const targetStudentName = (matched?.full_name || matched?.student_name || savedName || "").toLowerCase().trim();
+
         // Fetch My Leave Requests
         let userLeaves = [];
         try {
           const allLeaves = await dbFetch("leaves").catch(() => []);
           userLeaves = (allLeaves || []).filter(
-            (l) => (l.applicant_email || l.email || "").toLowerCase().trim() === savedEmail ||
-                   (l.applicant_name || l.employee_name || "").toLowerCase().trim() === (matched.full_name || matched.student_name || "").toLowerCase().trim()
+            (l) => {
+              const lEmail = (l.applicant_email || l.email || "").toLowerCase().trim();
+              const lName = (l.applicant_name || l.employee_name || "").toLowerCase().trim();
+              return (targetStudentEmail && (lEmail === targetStudentEmail || lEmail.includes(targetStudentEmail))) ||
+                     (targetStudentName && lName.includes(targetStudentName));
+            }
           );
           setMyStudentLeaves(userLeaves);
         } catch (e) {}
@@ -506,13 +513,17 @@ export default function StudentDedicatedDashboardPage() {
         // Fetch Attendance Logs & Compute Today's Check-in Record
         const masterLogs = await dbFetch("attendance").catch(() => []);
         const studentLogs = (masterLogs || []).filter(
-          (l) => (l.user_id || l.user_email || l.user_name || "").toLowerCase().trim() === savedEmail ||
-                 (l.user_name || "").toLowerCase().trim() === (matched.full_name || matched.student_name || "").toLowerCase().trim()
+          (l) => {
+            const lUser = (l.user_id || l.user_email || l.student_id || l.employee_id || "").toLowerCase().trim();
+            const lName = (l.user_name || l.employee_name || "").toLowerCase().trim();
+            return (targetStudentEmail && (lUser === targetStudentEmail || lUser.includes(targetStudentEmail) || targetStudentEmail.includes(lUser))) ||
+                   (targetStudentName && (lName.includes(targetStudentName) || targetStudentName.includes(lName)));
+          }
         );
 
         // Check Today's Attendance strictly for TODAY only
-        const key = `today_attendance_${savedEmail}`;
-        const savedToday = localStorage.getItem(key);
+        const key = `today_attendance_${targetStudentEmail}`;
+        const savedToday = localStorage.getItem(key) || (savedEmail ? localStorage.getItem(`today_attendance_${savedEmail}`) : null);
         let currentDayAttendance = null;
 
         if (savedToday) {
@@ -554,8 +565,8 @@ export default function StudentDedicatedDashboardPage() {
 
         // Fetch Database-Assigned MCQ Exams & Attempts
         try {
-          const examsList = await getAssignedExamsForUser(savedEmail);
-          const attemptsList = await getExamAttemptsForUser(savedEmail);
+          const examsList = await getAssignedExamsForUser(targetStudentEmail);
+          const attemptsList = await getExamAttemptsForUser(targetStudentEmail);
           setAssignedExams(examsList || []);
           setExamAttempts(attemptsList || []);
         } catch (e) {}
@@ -567,9 +578,11 @@ export default function StudentDedicatedDashboardPage() {
             dbFetch("complaints", [], true).catch(() => [])
           ]);
           setAnnouncements(annList || []);
-          const myComp = (compList || []).filter(c => (c.email || c.submitted_by || "").toLowerCase().trim().includes(savedEmail) || savedEmail.includes((c.email || "").toLowerCase().trim()));
+          const myComp = (compList || []).filter(c => (c.email || c.submitted_by || "").toLowerCase().trim().includes(targetStudentEmail) || targetStudentEmail.includes((c.email || "").toLowerCase().trim()));
           setMyComplaints(myComp || []);
         } catch (e) {}
+
+        loadStudentTasks(targetStudentEmail);
 
         setStudentInfo((prev) => ({
           ...prev,
