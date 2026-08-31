@@ -647,7 +647,7 @@ export default function AdminAttendanceHistoryHub() {
                 <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-xs space-y-4">
                   <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                     <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                      <FaCalendarDay className="text-blue-600" />
+                      <FaCalendarCheck className="text-blue-600" />
                       <span>{selectedUser.name}&apos;s Attendance Calendar History</span>
                     </h3>
                     <span className="text-xs font-bold text-blue-700 bg-blue-50 px-2.5 py-1 rounded-full border border-blue-200">
