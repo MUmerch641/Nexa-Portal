@@ -219,193 +219,73 @@ export default function InternshipsPage() {
     if (!activeRemoteStudent) return;
     let snapUrl = null;
 
-    if (mediaStream && videoRef.current) {
+    // 1. Grab exact video frame if live stream is playing in video element
+    if (mediaStream && videoRef.current && videoRef.current.videoWidth > 0) {
       try {
         const v = videoRef.current;
         const canvas = document.createElement("canvas");
-        canvas.width = v.videoWidth || 1280;
-        canvas.height = v.videoHeight || 720;
+        canvas.width = v.videoWidth || 1920;
+        canvas.height = v.videoHeight || 1080;
         const ctx = canvas.getContext("2d");
         ctx.drawImage(v, 0, 0, canvas.width, canvas.height);
 
-        // Stamp Watermark
+        // Stamp Official Security Watermark
         ctx.fillStyle = "rgba(15, 23, 42, 0.85)";
         ctx.fillRect(16, canvas.height - 48, 560, 36);
         ctx.fillStyle = "#38bdf8";
         ctx.font = "bold 13px sans-serif";
         ctx.fillText(
-          `NEXA AUDIT • ${activeRemoteStudent.full_name} • ${new Date().toLocaleTimeString()}`,
+          `NEXA REAL AUDIT • ${activeRemoteStudent.full_name} • ${new Date().toLocaleTimeString()}`,
           26,
           canvas.height - 25
         );
-        snapUrl = canvas.toDataURL("image/webp", 0.9);
+        snapUrl = canvas.toDataURL("image/webp", 0.92);
       } catch (err) {
         console.warn("Could not grab video frame:", err);
       }
     }
 
+    // 2. If live stream is not yet active in this modal, prompt for real screen capture directly
     if (!snapUrl) {
-      const canvas = document.createElement("canvas");
-      canvas.width = 1280;
-      canvas.height = 720;
-      const ctx = canvas.getContext("2d");
+      if (typeof navigator !== "undefined" && navigator.mediaDevices?.getDisplayMedia) {
+        try {
+          const directStream = await navigator.mediaDevices.getDisplayMedia({
+            video: { cursor: "always" },
+            audio: false,
+          });
+          const video = document.createElement("video");
+          video.srcObject = directStream;
+          video.muted = true;
+          await video.play();
 
-      // 1. Desktop Background
-      ctx.fillStyle = "#0B0F19";
-      ctx.fillRect(0, 0, 1280, 720);
+          const canvas = document.createElement("canvas");
+          canvas.width = video.videoWidth || 1920;
+          canvas.height = video.videoHeight || 1080;
+          const ctx = canvas.getContext("2d");
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-      // 2. Top Window Title Bar (Browser & Portal Shell)
-      ctx.fillStyle = "#1E293B";
-      ctx.fillRect(0, 0, 1280, 42);
+          // Stamp Official Security Watermark
+          ctx.fillStyle = "rgba(15, 23, 42, 0.85)";
+          ctx.fillRect(16, canvas.height - 48, 560, 36);
+          ctx.fillStyle = "#38bdf8";
+          ctx.font = "bold 13px sans-serif";
+          ctx.fillText(
+            `NEXA REAL AUDIT • ${activeRemoteStudent.full_name} • ${new Date().toLocaleTimeString()}`,
+            26,
+            canvas.height - 25
+          );
 
-      // Window Control Dots
-      ctx.fillStyle = "#EF4444"; ctx.beginPath(); ctx.arc(20, 21, 6, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = "#F59E0B"; ctx.beginPath(); ctx.arc(38, 21, 6, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = "#10B981"; ctx.beginPath(); ctx.arc(56, 21, 6, 0, Math.PI * 2); ctx.fill();
+          snapUrl = canvas.toDataURL("image/webp", 0.92);
+          directStream.getTracks().forEach((track) => track.stop());
+        } catch (e) {
+          console.warn("Live screen grab cancelled:", e);
+        }
+      }
+    }
 
-      // Browser Tab
-      ctx.fillStyle = "#0F172A";
-      ctx.fillRect(80, 8, 320, 34);
-      ctx.fillStyle = "#38BDF8";
-      ctx.font = "bold 12px sans-serif";
-      ctx.fillText(`⚡ Nexa Portal — ${activeRemoteStudent.full_name}`, 100, 28);
-
-      // URL Bar
-      ctx.fillStyle = "#334155";
-      ctx.fillRect(420, 8, 480, 26);
-      ctx.fillStyle = "#94A3B8";
-      ctx.font = "11px monospace";
-      ctx.fillText("https://portal.nexa.local/dashboard/student • Monitored Session", 435, 25);
-
-      // 3. User Dashboard Header Banner
-      ctx.fillStyle = "#1E3A8A";
-      ctx.fillRect(20, 60, 1240, 75);
-      
-      // Avatar
-      ctx.fillStyle = "#2563EB";
-      ctx.fillRect(35, 72, 50, 50);
-      ctx.fillStyle = "#FFFFFF";
-      ctx.font = "bold 24px sans-serif";
-      ctx.fillText(activeRemoteStudent.full_name?.charAt(0) || "U", 50, 107);
-
-      // User Details
-      ctx.fillStyle = "#FFFFFF";
-      ctx.font = "bold 16px sans-serif";
-      ctx.fillText(`👤 ${activeRemoteStudent.full_name} (${activeRemoteStudent.email})`, 100, 92);
-      ctx.fillStyle = "#93C5FD";
-      ctx.font = "12px sans-serif";
-      ctx.fillText(`Track: ${activeRemoteStudent.course_name || "MERN Web Development"} • Mentor: ${activeRemoteStudent.instructor || "Lead Mentor"} • Status: Live Remote Workstation 🟢`, 100, 115);
-
-      // 4. KPI Cards Row
-      const kpis = [
-        { label: "Course Progress", val: `${activeRemoteStudent.progress || 85}%`, color: "#3B82F6" },
-        { label: "Daily Productivity", val: "94% Highly Active", color: "#10B981" },
-        { label: "Workstation Process", val: "VS Code (Dev)", color: "#8B5CF6" },
-        { label: "Active Module", val: "Week 8: Full Stack API", color: "#F59E0B" }
-      ];
-
-      kpis.forEach((k, idx) => {
-        const x = 20 + idx * 315;
-        ctx.fillStyle = "#1E293B";
-        ctx.fillRect(x, 145, 300, 65);
-        ctx.strokeStyle = "#334155";
-        ctx.lineWidth = 1;
-        ctx.strokeRect(x, 145, 300, 65);
-
-        ctx.fillStyle = "#94A3B8";
-        ctx.font = "11px sans-serif";
-        ctx.fillText(k.label.toUpperCase(), x + 15, 168);
-
-        ctx.fillStyle = k.color;
-        ctx.font = "bold 16px sans-serif";
-        ctx.fillText(k.val, x + 15, 195);
-      });
-
-      // 5. Main Split Screen Workspace: VS Code (Left 60%) + Terminal & Live App (Right 40%)
-      // VS Code Box
-      ctx.fillStyle = "#1E1E1E";
-      ctx.fillRect(20, 220, 740, 440);
-      ctx.strokeStyle = "#334155";
-      ctx.strokeRect(20, 220, 740, 440);
-
-      // VS Code Header
-      ctx.fillStyle = "#2D2D2D";
-      ctx.fillRect(20, 220, 740, 32);
-      ctx.fillStyle = "#E2E8F0";
-      ctx.font = "11px monospace";
-      ctx.fillText(`📄 src/app/modules/${(activeRemoteStudent.course_name || "app").toLowerCase().replace(/[^a-z0-9]/g, "_")}/page.jsx`, 35, 241);
-
-      // Code Lines
-      ctx.font = "12px monospace";
-      ctx.fillStyle = "#6A9955"; ctx.fillText("// Active Production Task — Logged In User Workspace", 40, 275);
-      ctx.fillStyle = "#C586C0"; ctx.fillText("import", 40, 295);
-      ctx.fillStyle = "#9CDCFE"; ctx.fillText(" React, { useState, useEffect }", 95, 295);
-      ctx.fillStyle = "#C586C0"; ctx.fillText("from", 360, 295);
-      ctx.fillStyle = "#CE9178"; ctx.fillText("'react';", 400, 295);
-
-      ctx.fillStyle = "#4EC9B0"; ctx.fillText("export default function", 40, 325);
-      ctx.fillStyle = "#DCDCAA"; ctx.fillText(" InternshipWorkstationApp() {", 220, 325);
-
-      ctx.fillStyle = "#9CDCFE"; ctx.fillText("  const [userStatus, setUserStatus] = useState('Active Production');", 40, 350);
-      ctx.fillStyle = "#9CDCFE"; ctx.fillText(`  const [candidateEmail] = useState('${activeRemoteStudent.email}');`, 40, 375);
-      ctx.fillStyle = "#6A9955"; ctx.fillText("  // Live Telemetry Sync: Connected & Verified", 40, 400);
-      ctx.fillStyle = "#C586C0"; ctx.fillText("  return (", 40, 425);
-      ctx.fillStyle = "#9CDCFE"; ctx.fillText("    <WorkstationModule candidate={candidateEmail} active={true} />", 60, 450);
-      ctx.fillStyle = "#C586C0"; ctx.fillText("  );", 40, 475);
-      ctx.fillStyle = "#DCDCAA"; ctx.fillText("}", 40, 500);
-
-      // Right Split: Terminal + Live Preview
-      ctx.fillStyle = "#181818";
-      ctx.fillRect(775, 220, 485, 440);
-      ctx.strokeStyle = "#334155";
-      ctx.strokeRect(775, 220, 485, 440);
-
-      // Terminal Header
-      ctx.fillStyle = "#252526";
-      ctx.fillRect(775, 220, 485, 32);
-      ctx.fillStyle = "#38BDF8";
-      ctx.font = "bold 11px sans-serif";
-      ctx.fillText("⚡ TERMINAL — npm run dev (Node.js v20.x)", 790, 241);
-
-      // Terminal Output
-      ctx.font = "11px monospace";
-      ctx.fillStyle = "#10B981"; ctx.fillText("✔ Next.js App Compiled successfully in 210ms", 790, 275);
-      ctx.fillStyle = "#94A3B8"; ctx.fillText("🚀 Ready on http://localhost:3000", 790, 295);
-      ctx.fillStyle = "#38BDF8"; ctx.fillText("[Supabase Cloud] Realtime sync: Active", 790, 315);
-      ctx.fillStyle = "#A855F7"; ctx.fillText("[Nexa Telemetry] Live keystrokes stream active", 790, 335);
-
-      // Live App Preview Box inside Terminal
-      ctx.fillStyle = "#0F172A";
-      ctx.fillRect(790, 360, 455, 280);
-      ctx.strokeStyle = "#334155";
-      ctx.strokeRect(790, 360, 455, 280);
-
-      ctx.fillStyle = "#2563EB";
-      ctx.fillRect(790, 360, 455, 30);
-      ctx.fillStyle = "#FFFFFF";
-      ctx.font = "bold 11px sans-serif";
-      ctx.fillText("🌐 Live Output Preview: Student Dashboard", 805, 380);
-
-      ctx.fillStyle = "#E2E8F0";
-      ctx.font = "12px sans-serif";
-      ctx.fillText(`Candidate: ${activeRemoteStudent.full_name}`, 805, 415);
-      ctx.fillStyle = "#10B981";
-      ctx.fillText(`Status: Online • Session Active`, 805, 440);
-      ctx.fillStyle = "#94A3B8";
-      ctx.fillText(`Assigned Domain: ${activeRemoteStudent.course_name}`, 805, 465);
-
-      // 6. Bottom Security Watermark & Audit Stamp
-      ctx.fillStyle = "rgba(15, 23, 42, 0.95)";
-      ctx.fillRect(0, 670, 1280, 50);
-      ctx.fillStyle = "#38BDF8";
-      ctx.font = "bold 12px sans-serif";
-      ctx.fillText(`📸 NEXA OFFICIAL LIVE AUDIT SNAPSHOT • ${activeRemoteStudent.full_name} (${activeRemoteStudent.email})`, 25, 700);
-
-      ctx.fillStyle = "#94A3B8";
-      ctx.font = "11px monospace";
-      ctx.fillText(`Time: ${new Date().toLocaleString()} | Protocol: WebRTC Encrypted Stream | Score: 94% 🟢`, 680, 700);
-
-      snapUrl = canvas.toDataURL("image/webp", 0.92);
+    if (!snapUrl) {
+      showToast("Notice ℹ️", "Please select your screen to capture a real high-res audit snapshot.", "info");
+      return;
     }
 
     const snapshotRecord = {
