@@ -1664,7 +1664,6 @@ export default function StudentDedicatedDashboardPage() {
                   <th className="py-2.5 px-3">Check-In</th>
                   <th className="py-2.5 px-3">Check-Out</th>
                   <th className="py-2.5 px-3">Status</th>
-                  {isAdminUser && <th className="py-2.5 px-3 text-right">Admin Action</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -1704,28 +1703,6 @@ export default function StudentDedicatedDashboardPage() {
                           {rec.attendance_status || "Present"}
                         </span>
                       </td>
-                      {isAdminUser && (
-                        <td className="py-2.5 px-3 text-right">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setEditAttendanceModal({
-                                isOpen: true,
-                                record: rec,
-                                date: rec.attendance_date || rec.date,
-                                status: rec.attendance_status || "Present (On Time)",
-                                checkInTime: rec.check_in_time && rec.check_in_time !== "--:--" ? rec.check_in_time : "10:00 AM",
-                                checkOutTime: rec.check_out_time && rec.check_out_time !== "--:--" && rec.check_out_time !== "Not Checked Out" ? rec.check_out_time : "06:00 PM",
-                              });
-                            }}
-                            className="px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-[11px] border border-blue-200 transition-all cursor-pointer inline-flex items-center gap-1"
-                            title="Admin Edit Attendance"
-                          >
-                            <FaEdit className="text-[10px]" />
-                            <span>Edit</span>
-                          </button>
-                        </td>
-                      )}
                     </tr>
                   );
                 })}
@@ -2856,82 +2833,6 @@ export default function StudentDedicatedDashboardPage() {
                 className="px-5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs transition-colors cursor-pointer"
               >
                 Close Viewer ✕
-              </button>
-            </div>
-          </div>
-        </Modal>
-      )}
-
-      {/* === ADMIN-ONLY ATTENDANCE RECORD EDIT MODAL === */}
-      {isAdminUser && editAttendanceModal.isOpen && (
-        <Modal
-          isOpen={editAttendanceModal.isOpen}
-          onClose={() => setEditAttendanceModal({ ...editAttendanceModal, isOpen: false })}
-          title={`✏️ Admin Attendance Override: ${editAttendanceModal.date}`}
-        >
-          <div className="space-y-4 text-xs">
-            <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 font-medium">
-              <span>Admin Override for <strong>{studentInfo.name}</strong> ({studentInfo.email}) on <strong>{editAttendanceModal.date}</strong>.</span>
-            </div>
-
-            <div className="space-y-1">
-              <label className="block font-bold text-slate-700 uppercase text-[10px]">Attendance Status</label>
-              <select
-                value={editAttendanceModal.status}
-                onChange={(e) => setEditAttendanceModal({ ...editAttendanceModal, status: e.target.value })}
-                className="w-full p-2.5 rounded-xl border border-slate-300 font-bold text-slate-900 outline-none focus:border-blue-600 bg-white"
-              >
-                <option value="Present (On Time)">Present (On Time) 🟢</option>
-                <option value="Late (Shift 10:00 AM - 06:00 PM)">Late (Shift 10:00 AM - 06:00 PM) 🟡</option>
-                <option value="Absent">Absent 🔴</option>
-                <option value="On Leave (Casual)">On Leave (Casual) 🌴</option>
-                <option value="On Leave (Sick)">On Leave (Sick) 🏥</option>
-                <option value="Sunday (Weekend Holiday)">Sunday (Weekend Holiday) 🏖️</option>
-              </select>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <label className="block font-bold text-slate-700 uppercase text-[10px]">Check-In Time</label>
-                <input
-                  type="text"
-                  value={editAttendanceModal.checkInTime}
-                  onChange={(e) => setEditAttendanceModal({ ...editAttendanceModal, checkInTime: e.target.value })}
-                  placeholder="10:00 AM"
-                  disabled={editAttendanceModal.status.includes("Absent") || editAttendanceModal.status.includes("Sunday") || editAttendanceModal.status.includes("Leave")}
-                  className="w-full p-2.5 rounded-xl border border-slate-300 font-mono font-bold text-slate-900 outline-none focus:border-blue-600 bg-white disabled:bg-slate-100 disabled:text-slate-400"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="block font-bold text-slate-700 uppercase text-[10px]">Check-Out Time</label>
-                <input
-                  type="text"
-                  value={editAttendanceModal.checkOutTime}
-                  onChange={(e) => setEditAttendanceModal({ ...editAttendanceModal, checkOutTime: e.target.value })}
-                  placeholder="06:00 PM"
-                  disabled={editAttendanceModal.status.includes("Absent") || editAttendanceModal.status.includes("Sunday") || editAttendanceModal.status.includes("Leave")}
-                  className="w-full p-2.5 rounded-xl border border-slate-300 font-mono font-bold text-slate-900 outline-none focus:border-blue-600 bg-white disabled:bg-slate-100 disabled:text-slate-400"
-                />
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
-              <button
-                type="button"
-                onClick={() => setEditAttendanceModal({ ...editAttendanceModal, isOpen: false })}
-                className="px-4 py-2.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 font-bold transition-all cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleSaveAttendanceEdit}
-                disabled={savingAttendanceEdit}
-                className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold transition-all shadow-xs cursor-pointer flex items-center gap-1.5"
-              >
-                <FaEdit />
-                <span>{savingAttendanceEdit ? "Saving to Supabase..." : "Save to Database"}</span>
               </button>
             </div>
           </div>
