@@ -10,6 +10,7 @@ import { generatePrintableInternshipExperienceCertificatePdf } from "@/lib/gener
 import { dbFetch, dbSaveRecord } from "@/lib/dbPersistence";
 import { calculate30DayFeeCycles } from "@/lib/studentEnrollmentUtils";
 import { isRecordFromToday, getTodayDateString } from "@/lib/attendanceUtils";
+import { startScreenBroadcast, stopScreenBroadcast } from "@/lib/webrtcScreenService";
 import {
   FaGraduationCap,
   FaCalendarAlt,
@@ -185,58 +186,40 @@ export default function StudentDedicatedDashboardPage() {
 
   const handleStartScreenShare = async () => {
     try {
-      if (typeof window !== "undefined" && navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia) {
-        const stream = await navigator.mediaDevices.getDisplayMedia({
-          video: { cursor: "always" },
-          audio: false
-        });
-        setScreenMediaStream(stream);
-        setRemoteSessionActive(true);
-        if (screenVideoRef.current) {
-          screenVideoRef.current.srcObject = stream;
-        }
-        showToast("Live Screen Broadcast Started 🖥️", "Your screen is now streaming live for Admin supervision.", "success");
-        
-        // Save session state to Supabase
-        const sEmail = (studentInfo?.email || localStorage.getItem("current_user_email") || "").toLowerCase().trim();
-        try {
-          await fetch("/api/persistence", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              table: "remote_sessions",
-              record: {
-                id: `sess-${Date.now()}`,
-                email: sEmail,
-                student_name: studentInfo.name,
-                focus_app: remoteFocusApp,
-                is_active: true,
-                started_at: new Date().toISOString(),
-                status: "Live Streaming"
-              },
-              action: "save"
-            })
-          });
-        } catch(e) {}
+      const sEmail = (studentInfo?.email || localStorage.getItem("current_user_email") || "").toLowerCase().trim();
+      const sName = studentInfo?.name || localStorage.getItem("current_user_name") || "Student";
+      const sCourse = studentInfo?.course || "Engineering Track";
 
-        stream.getVideoTracks()[0].onended = () => {
+      const res = await startScreenBroadcast({
+        userId: sEmail || `stud-${Date.now()}`,
+        userName: sName,
+        userEmail: sEmail,
+        department: sCourse,
+        role: isIntern ? "Remote Intern" : "Remote Student",
+        onStreamEnded: () => {
           setScreenMediaStream(null);
           setRemoteSessionActive(false);
           showToast("Screen Sharing Stopped ⚪", "Live screen session ended.", "info");
-        };
-      } else {
-        showToast("Browser Support Notice ℹ️", "Screen capture not supported in this browser mode.", "info");
+        },
+      });
+
+      setScreenMediaStream(res.stream);
+      setRemoteSessionActive(true);
+
+      if (screenVideoRef.current) {
+        screenVideoRef.current.srcObject = res.stream;
       }
-    } catch(err) {
+
+      showToast("Live Screen Broadcast Started 🖥️", "Your entire screen is now streaming live for Admin supervision.", "success");
+    } catch (err) {
       console.warn("Screen share error:", err);
+      showToast("Notice ℹ️", "Screen capture permission was not granted or was cancelled.", "info");
     }
   };
 
-  const handleStopScreenShare = () => {
-    if (screenMediaStream) {
-      screenMediaStream.getTracks().forEach(track => track.stop());
-      setScreenMediaStream(null);
-    }
+  const handleStopScreenShare = async () => {
+    await stopScreenBroadcast();
+    setScreenMediaStream(null);
     setRemoteSessionActive(false);
     showToast("Work Session Ended ⚪", "Screen sharing & session ended.", "info");
   };

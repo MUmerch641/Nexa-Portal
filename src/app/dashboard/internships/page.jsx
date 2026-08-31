@@ -9,6 +9,7 @@ import ScrollableTabs from "@/components/ScrollableTabs";
 import Link from "next/link";
 import { registerInternWithCredentials } from "@/lib/studentEnrollmentUtils";
 import { generatePrintableInternshipExperienceCertificatePdf } from "@/lib/generateInternshipExperienceCertificatePdf";
+import { WebRTCViewerClient } from "@/lib/webrtcScreenService";
 import {
   FaLaptopCode,
   FaUserPlus,
@@ -107,9 +108,36 @@ export default function InternshipsPage() {
   const [dailyLogText, setDailyLogText] = useState("");
   const [selectedInternId, setSelectedInternId] = useState(null);
 
+  const viewerClientRef = useRef(null);
+
   const startLiveScreenAccess = async (student) => {
     setActiveRemoteStudent(student);
     setIsLiveStreamModalOpen(true);
+
+    if (viewerClientRef.current) {
+      viewerClientRef.current.disconnect();
+    }
+
+    // Connect WebRTC client to the intern's stream channel
+    const targetKey = student.email || student.id || student.full_name;
+    const client = new WebRTCViewerClient({
+      userKey: targetKey,
+      onRemoteStream: (stream) => {
+        setMediaStream(stream);
+        setStreamViewMode("live_stream");
+      },
+      onConnectionStateChange: (state) => {
+        if (state === "connected") {
+          setStreamViewMode("live_stream");
+        }
+      },
+      onStatusMessage: (msg) => {
+        console.log("[Internships WebRTC]", msg);
+      },
+    });
+
+    viewerClientRef.current = client;
+    client.connect();
 
     try {
       const allScreenshots = await dbFetch("screenshot_logs", []).catch(() => []);
@@ -130,6 +158,21 @@ export default function InternshipsPage() {
     }
 
     showToast("Live Screen Connected 🖥️", `Streaming workstation of ${student.full_name} (${student.course_name || "Remote Intern"}).`, "success");
+  };
+
+  const stopLiveScreenAccess = () => {
+    if (viewerClientRef.current) {
+      viewerClientRef.current.disconnect();
+      viewerClientRef.current = null;
+    }
+    if (mediaStream) {
+      mediaStream.getTracks().forEach((track) => track.stop());
+      setMediaStream(null);
+    }
+    setIsLiveStreamModalOpen(false);
+    setActiveRemoteStudent(null);
+    setStreamViewMode("telemetry");
+    showToast("Screen Access Closed ⚪", "Remote supervision session ended.", "info");
   };
 
   const [lastPingTime, setLastPingTime] = useState(null);

@@ -20,6 +20,7 @@ export const TABLE_STORAGE_KEYS = {
   interns: "persistent_interns",
   utility_bills: "software_house_utility_bills",
   client_projects: "software_house_client_projects",
+  monitoring_sessions: "monitoring_sessions",
   remote_work_sessions: "remote_work_sessions",
   activity_logs: "remote_activity_logs",
   screenshot_logs: "remote_screenshot_logs",
