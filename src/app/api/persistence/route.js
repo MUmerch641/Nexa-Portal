@@ -481,6 +481,46 @@ export async function POST(request) {
         return NextResponse.json({ success: !taskErr, data: insertedData, error: taskErr ? taskErr.message : null });
       }
 
+      // 2.6 Announcements Table Explicit Handler
+      if (table === "announcements") {
+        const recordsToProcess = Array.isArray(body.list) ? body.list : (record ? [record] : []);
+        let lastError = null;
+
+        for (const item of recordsToProcess) {
+          if (!item) continue;
+          const annPayload = {
+            title: item.title || "Announcement Notice",
+            category: item.category || "General Notice",
+            priority: item.priority || "Normal",
+            target_audience: item.target_audience || item.target_type || "All Users",
+            target_type: item.target_type || "all",
+            target_key: item.target_key || null,
+            content: item.content || item.description || item.title || "",
+            start_date: item.start_date || new Date().toISOString().split("T")[0],
+            expiry_date: item.expiry_date || null,
+            due_date: item.due_date || null,
+            is_fee_notice: Boolean(item.is_fee_notice),
+            broadcast_notification: item.broadcast_notification !== false,
+          };
+
+          const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+          if (item.id && typeof item.id === "string" && uuidRegex.test(item.id)) {
+            annPayload.id = item.id;
+          }
+
+          const { data: existing } = await supabase.from("announcements").select("id").eq("title", annPayload.title).limit(1).catch(() => ({ data: [] }));
+
+          if (existing && existing.length > 0) {
+            const { error } = await supabase.from("announcements").update(annPayload).eq("id", existing[0].id);
+            lastError = error;
+          } else {
+            const { error } = await supabase.from("announcements").insert([annPayload]);
+            lastError = error;
+          }
+        }
+        return NextResponse.json({ success: !lastError, error: lastError ? (lastError.message || JSON.stringify(lastError)) : null });
+      }
+
       // 2.7 Projects Table Explicit Handler
       if (table === "projects") {
         const payload = {

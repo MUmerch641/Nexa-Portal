@@ -49,3 +49,10 @@ CREATE POLICY "Allow public delete on announcements"
 ON announcements FOR DELETE
 TO public
 USING (true);
+
+-- 4. Seed Initial Announcements into Supabase Table
+INSERT INTO announcements (title, category, priority, target_audience, content, start_date, expiry_date)
+VALUES 
+('System Maintenance & Portal Updates 🚀', 'General Notice', 'Normal', 'All Users', 'Nexa Portal features have been updated with automated attendance tracking and live remote screen monitoring station.', CURRENT_DATE, CURRENT_DATE + INTERVAL '14 days'),
+('Academy & Office Sunday Holiday 🏖️', 'Holiday', 'Urgent', 'All Users', 'All remote interns, students, and employees are reminded that Sundays are official off-days with no shift attendance required.', CURRENT_DATE, CURRENT_DATE + INTERVAL '30 days');
+
