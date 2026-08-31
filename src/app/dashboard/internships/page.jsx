@@ -41,6 +41,7 @@ import {
   FaPause,
   FaClock,
   FaCalendarAlt,
+  FaCamera,
 } from "react-icons/fa";
 
 export default function InternshipsPage() {
