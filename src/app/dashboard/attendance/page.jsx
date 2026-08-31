@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import { dbFetch, dbSaveRecord, dbDeleteRecord } from "@/lib/dbPersistence";
 import Modal from "@/components/Modal";
@@ -33,7 +34,8 @@ import {
   FaInfoCircle,
   FaCheck,
   FaChevronRight,
-  FaEdit
+  FaEdit,
+  FaUsers
 } from "react-icons/fa";
 
 /* ─────────────────────────────────────────────────────────────────────────
@@ -896,7 +898,13 @@ export default function AttendancePage() {
                 </p>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <Link
+                  href="/dashboard/attendance/history"
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-4 py-2 rounded-xl text-xs transition-colors cursor-pointer flex items-center gap-1.5 shadow-xs whitespace-nowrap"
+                >
+                  <FaUsers className="text-xs" /> Student & Employee History Inspector →
+                </Link>
                 <button
                   type="button"
                   onClick={handleExportCsv}
@@ -912,6 +920,31 @@ export default function AttendancePage() {
                   <FaWifi className="text-xs text-blue-600" /> Office Wi-Fi IP
                 </button>
               </div>
+            </div>
+
+            {/* Direct Inspector Banner */}
+            <div className="bg-gradient-to-r from-blue-900 via-indigo-950 to-slate-900 rounded-2xl p-4 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs border border-blue-800/40">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-blue-500/20 border border-blue-400/30 flex items-center justify-center text-lg shrink-0">
+                  👥
+                </div>
+                <div>
+                  <h3 className="font-bold text-xs sm:text-sm text-white flex items-center gap-2">
+                    <span>Individual Candidate Attendance Calendar & History Inspector</span>
+                    <span className="px-2 py-0.5 rounded-full text-[9px] bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">Active</span>
+                  </h3>
+                  <p className="text-[11px] text-blue-200">
+                    Click any student (e.g. Rahim Bugti) or employee to inspect their full day-by-day calendar history, Sunday holidays, leaves, and shifts.
+                  </p>
+                </div>
+              </div>
+              <Link
+                href="/dashboard/attendance/history"
+                className="bg-white hover:bg-blue-50 text-blue-900 font-bold px-4 py-2 rounded-xl text-xs transition-all shrink-0 shadow-xs flex items-center justify-center gap-1.5"
+              >
+                <span>Open User Inspector</span>
+                <span>→</span>
+              </Link>
             </div>
 
             {/* Organization Attendance Metrics Grid */}
