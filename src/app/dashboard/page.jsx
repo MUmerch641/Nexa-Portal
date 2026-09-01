@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabase";
 import { dbFetch, dbSaveRecord } from "@/lib/dbPersistence";
 import { showToast } from "@/components/Toast";
 import { fetchRecentActivities, formatTimeAgo, clearActivityLogs } from "@/lib/activityUtils";
+import { enrollStudentWithCredentials, registerEmployeeWithCredentials } from "@/lib/studentEnrollmentUtils";
 import FinancialChart from "@/components/FinancialChart";
 import {
   FaUsers,
@@ -35,7 +36,9 @@ import {
   FaChartLine,
   FaFilter,
   FaSearch,
-  FaTimes
+  FaTimes,
+  FaVideo,
+  FaDesktop
 } from "react-icons/fa";
 
 export default function DashboardPage() {
@@ -66,20 +69,6 @@ export default function DashboardPage() {
   // Modals & Popup State
   const [selectedUserModal, setSelectedUserModal] = useState(null);
   const [activeKebabId, setActiveKebabId] = useState(null);
-  const [activeQuickActionModal, setActiveQuickActionModal] = useState(null);
-
-  // Form State
-  const [quickForm, setQuickForm] = useState({
-    fullName: "",
-    email: "",
-    department: "Engineering",
-    designation: "Developer",
-    courseName: "MERN Stack Development",
-    title: "",
-    clientName: "Client Deal",
-    amount: "",
-    category: "General Expense",
-  });
 
   // Destructive Confirmation Modal
   const [confirmDeleteModal, setConfirmDeleteModal] = useState({ isOpen: false, type: "", targetId: "", title: "", loading: false });
@@ -87,7 +76,7 @@ export default function DashboardPage() {
   const overallProgressPercentage = useMemo(() => {
     if (!projectsProgressList || projectsProgressList.length === 0) return 0;
     const total = projectsProgressList.reduce((acc, p) => {
-      const prog = p.progress !== undefined ? Number(p.progress) : (p.status === "Completed" ? 100 : p.status === "In Progress" ? 50 : 20);
+      const prog = p.progress !== undefined ? Number(p.progress) : (p.status === "Completed" ? 100 : p.status === "In Progress" ? 25 : 0);
       return acc + prog;
     }, 0);
     return Math.round(total / projectsProgressList.length);
@@ -109,35 +98,20 @@ export default function DashboardPage() {
     try {
       const currentYearMonth = new Date().toISOString().slice(0, 7);
 
-      const [allEmps, fullProjList, incList, leaveList, expList, liveTasks, studentList, invoiceList] = await Promise.all([
-        dbFetch("employees").catch(() => []),
-        dbFetch("projects").catch(() => []),
-        dbFetch("incomes").catch(() => []),
-        dbFetch("leaves").catch(() => []),
-        dbFetch("expenses").catch(() => []),
-        dbFetch("daily_tasks").catch(() => []),
-        dbFetch("students").catch(() => []),
-        dbFetch("invoices").catch(() => [])
+      const [allEmps, fullProjList, incList, leaveList, expList, liveTasks, studentList, invoiceList, internList] = await Promise.all([
+        dbFetch("employees", [], true).catch(() => []),
+        dbFetch("projects", [], true).catch(() => []),
+        dbFetch("incomes", [], true).catch(() => []),
+        dbFetch("leaves", [], true).catch(() => []),
+        dbFetch("expenses", [], true).catch(() => []),
+        dbFetch("daily_tasks", [], true).catch(() => []),
+        dbFetch("students", [], true).catch(() => []),
+        dbFetch("invoices", [], true).catch(() => []),
+        dbFetch("interns", [], true).catch(() => [])
       ]);
 
       const employeeCount = (allEmps || []).filter(e => (e.status || "").toLowerCase() !== "inactive" && (e.status || "").toLowerCase() !== "terminated").length;
-
-      let combinedProjects = Array.isArray(fullProjList) && fullProjList.length > 0 ? [...fullProjList] : [];
-      try {
-        const p1 = localStorage.getItem("software_house_full_projects");
-        const p2 = localStorage.getItem("software_house_projects");
-        const p3 = localStorage.getItem("software_house_client_projects");
-        if (p1) combinedProjects = [...combinedProjects, ...JSON.parse(p1)];
-        if (p2) combinedProjects = [...combinedProjects, ...JSON.parse(p2)];
-        if (p3) combinedProjects = [...combinedProjects, ...JSON.parse(p3)];
-      } catch (e) { }
-
-      const uniqueProjMap = new Map();
-      combinedProjects.forEach(p => {
-        const key = p.id || p.title || p.name;
-        if (key) uniqueProjMap.set(key, p);
-      });
-      let finalProjectsList = Array.from(uniqueProjMap.values());
+      let finalProjectsList = Array.isArray(fullProjList) ? fullProjList : [];
 
       const incomesSum = (incList || [])
         .filter(item => !item.status || item.status.toLowerCase() === "paid" || item.status.toLowerCase() === "cleared")
@@ -171,6 +145,40 @@ export default function DashboardPage() {
         if (atLocal) rawTasks = [...rawTasks, ...JSON.parse(atLocal)];
       } catch (e) { }
 
+      const allRoster = [...(allEmps || []), ...(studentList || []), ...(internList || [])];
+
+      const resolveAssigneeName = (item) => {
+        const raw = item.assignedToName || item.assignedTo || item.assigned_to || item.assignedToEmail || item.assigned_to_email || item.client_name || "";
+        const rawStr = String(raw).trim();
+        if (rawStr && rawStr.toLowerCase() !== "non" && rawStr.toLowerCase() !== "unassigned member" && rawStr.toLowerCase() !== "undefined" && rawStr.toLowerCase() !== "null") {
+          return rawStr;
+        }
+        const searchKey = (item.assignedToEmail || item.assigned_to_email || item.assigned_to || item.assignedTo || "").toLowerCase().trim();
+        if (searchKey) {
+          const match = allRoster.find(m => 
+            (m.email && m.email.toLowerCase().trim() === searchKey) || 
+            (m.id && String(m.id).toLowerCase().trim() === searchKey)
+          );
+          if (match) return match.full_name || match.name || match.email;
+        }
+        return "Assigned Engineer";
+      };
+
+      const calculateTaskProgress = (item) => {
+        if (item.status === "Completed") return 100;
+        if (item.progress !== undefined && item.progress !== null && !isNaN(Number(item.progress))) {
+          return Math.min(100, Math.max(0, Number(item.progress)));
+        }
+        const curSecs = Number(item.timerSeconds || item.total_working_seconds || 0);
+        if (curSecs > 0) {
+          const targetSecs = (Number(item.target_days) || 1) * 3600;
+          return Math.min(95, Math.max(1, Math.round((curSecs / targetSecs) * 100)));
+        }
+        if (item.status === "In Progress") return 10;
+        // Strictly 0% when newly assigned or Pending
+        return 0;
+      };
+
       let combinedDeliverables = [];
 
       rawTasks.forEach(t => {
@@ -178,9 +186,9 @@ export default function DashboardPage() {
         combinedDeliverables.push({
           id: t.id || `t-${Math.random()}`,
           title: t.task || t.title || t.task_name || "Untitled Project Task",
-          client_name: t.assignedToName || t.assignedTo || t.assigned_to || t.assignedToEmail || "Unassigned Member",
-          progress: t.progress !== undefined ? Number(t.progress) : (t.status === "Completed" ? 100 : t.status === "In Progress" ? 50 : 20),
-          status: t.status || "In Progress"
+          client_name: resolveAssigneeName(t),
+          progress: calculateTaskProgress(t),
+          status: t.status || (Number(t.timerSeconds || 0) > 0 ? "In Progress" : "Pending")
         });
       });
 
@@ -189,8 +197,8 @@ export default function DashboardPage() {
         combinedDeliverables.push({
           id: p.id || `p-${Math.random()}`,
           title: p.title || p.name || "Untitled Project",
-          client_name: p.client_name || p.client || "Client Deal",
-          progress: p.progress !== undefined ? Number(p.progress) : (p.completion ? Number(p.completion) : (p.status === "Completed" ? 100 : 75)),
+          client_name: p.client_name || p.client || resolveAssigneeName(p),
+          progress: p.progress !== undefined ? Number(p.progress) : (p.completion ? Number(p.completion) : (p.status === "Completed" ? 100 : p.status === "In Progress" ? 25 : 0)),
           status: p.status || "Active"
         });
       });
@@ -211,8 +219,8 @@ export default function DashboardPage() {
         return !st.includes("completed") && !st.includes("archived") && !st.includes("cancelled");
       }).length || finalDeliverablesList.length;
 
-      const stus = JSON.parse(localStorage.getItem("persistent_courses") || "[]");
-      const ints = JSON.parse(localStorage.getItem("persistent_interns") || localStorage.getItem("persistent_internships") || "[]");
+      const stus = studentList || [];
+      const ints = internList || [];
 
       setStats({
         employees: employeeCount,
@@ -231,11 +239,23 @@ export default function DashboardPage() {
     }
   }, []);
 
-  const loadAllMembers = useCallback(() => {
+  const loadAllMembers = useCallback(async () => {
     try {
-      const persistentEmps = JSON.parse(localStorage.getItem("persistent_employees") || "[]");
-      const persistentStudents = JSON.parse(localStorage.getItem("persistent_courses") || "[]");
-      const persistentInterns = JSON.parse(localStorage.getItem("persistent_interns") || localStorage.getItem("persistent_internships") || "[]");
+      const [cloudEmps, cloudStudents, cloudInterns] = await Promise.all([
+        dbFetch("employees", [], true).catch(() => []),
+        dbFetch("students", [], true).catch(() => []),
+        dbFetch("interns", [], true).catch(() => [])
+      ]);
+
+      if (typeof window !== "undefined") {
+        if (Array.isArray(cloudEmps)) localStorage.setItem("persistent_employees", JSON.stringify(cloudEmps));
+        if (Array.isArray(cloudStudents)) localStorage.setItem("persistent_courses", JSON.stringify(cloudStudents));
+        if (Array.isArray(cloudInterns)) localStorage.setItem("persistent_interns", JSON.stringify(cloudInterns));
+      }
+
+      const persistentEmps = cloudEmps || [];
+      const persistentStudents = cloudStudents || [];
+      const persistentInterns = cloudInterns || [];
 
       const masterLogs = JSON.parse(localStorage.getItem("software_house_master_attendance_logs") || "[]");
       const savedEmpAtt = JSON.parse(localStorage.getItem("today_attendance_employee") || "[]");
@@ -323,9 +343,9 @@ export default function DashboardPage() {
           id: i.id || `int-${Date.now()}`,
           fullName: i.full_name || i.name || "Unknown Intern",
           email: i.email,
-          category: i.domain?.includes("Remote") ? "Remote 3-Month Intern" : "On-Site 3-Month Intern",
+          category: i.internship_mode?.includes("Remote") ? "Remote 3-Month Intern" : "On-Site 3-Month Intern",
           role: "intern",
-          department: i.domain || "Software Engineering Intern",
+          department: i.course_name || i.domain || "Software Engineering Intern",
           attendance: getTodayAttendanceText(i.email),
           progress: `${i.progress !== undefined ? i.progress : 0}% Internship Milestone Completed`,
           dailyTask: i.task_logs?.[0]?.details || "Working on assigned project module.",
@@ -392,67 +412,6 @@ export default function DashboardPage() {
     return list;
   }, [allRegisteredUsersList, segmentedFilter, tableSearch, sortColumn, sortDirection]);
 
-  // Quick Action Submissions
-  const handleQuickActionSubmit = async (e) => {
-    e.preventDefault();
-    if (!activeQuickActionModal) return;
-
-    if (activeQuickActionModal === "employee") {
-      const newEmp = {
-        id: `emp-${Date.now()}`,
-        full_name: quickForm.fullName || "New Employee",
-        email: quickForm.email.toLowerCase().trim(),
-        department: quickForm.department,
-        designation: quickForm.designation,
-        employment_type: "On-Site Staff",
-        status: "Active"
-      };
-      const existing = JSON.parse(localStorage.getItem("persistent_employees") || "[]");
-      localStorage.setItem("persistent_employees", JSON.stringify([...existing, newEmp]));
-      showToast("Employee Added 👤", `'${newEmp.full_name}' registered successfully.`, "success");
-    } else if (activeQuickActionModal === "student") {
-      const newStu = {
-        id: `stu-${Date.now()}`,
-        full_name: quickForm.fullName || "New Student",
-        email: quickForm.email.toLowerCase().trim(),
-        course_name: quickForm.courseName,
-        fee_status: "Paid",
-        progress: 10
-      };
-      const existing = JSON.parse(localStorage.getItem("persistent_courses") || "[]");
-      localStorage.setItem("persistent_courses", JSON.stringify([...existing, newStu]));
-      showToast("Student Enrolled 🎓", `'${newStu.full_name}' enrolled in ${newStu.course_name}.`, "success");
-    } else if (activeQuickActionModal === "project") {
-      const newProj = {
-        id: `proj-${Date.now()}`,
-        title: quickForm.title || "Untitled Project",
-        client_name: quickForm.clientName || "Client Deal",
-        progress: 25,
-        status: "In Progress"
-      };
-      const existing = JSON.parse(localStorage.getItem("software_house_projects") || "[]");
-      localStorage.setItem("software_house_projects", JSON.stringify([...existing, newProj]));
-      showToast("Project Created 📁", `'${newProj.title}' added to active workstreams.`, "success");
-    } else if (activeQuickActionModal === "expense") {
-      const newExp = {
-        id: `exp-${Date.now()}`,
-        title: quickForm.title || "General Expense",
-        amount: Number(quickForm.amount) || 5000,
-        category: quickForm.category || "General Expense",
-        date: new Date().toISOString().split("T")[0]
-      };
-      const existing = JSON.parse(localStorage.getItem("software_house_expenses") || "[]");
-      localStorage.setItem("software_house_expenses", JSON.stringify([...existing, newExp]));
-      showToast("Expense Recorded 💸", `Rs. ${newExp.amount} logged under ${newExp.category}.`, "success");
-    }
-
-    if (typeof window !== "undefined") {
-      window.dispatchEvent(new Event("dataChanged"));
-    }
-    setActiveQuickActionModal(null);
-    setQuickForm({ fullName: "", email: "", department: "Engineering", designation: "Developer", courseName: "MERN Stack Development", title: "", clientName: "Client Deal", amount: "", category: "General Expense" });
-  };
-
   const executeConfirmedDelete = async () => {
     setConfirmDeleteModal(prev => ({ ...prev, loading: true }));
 
@@ -494,93 +453,16 @@ export default function DashboardPage() {
   return (
     <div className="space-y-6">
 
-      {/* 1. QUICK ACTION CARDS (Blue & White Design System) */}
-      <div className="bg-white rounded-2xl p-6 border border-[#E2E8F0] shadow-sm space-y-4">
-        <div className="flex items-center justify-between border-b border-[#E2E8F0] pb-3">
-          <div>
-            <h2 className="text-sm font-bold text-[#0F172A] flex items-center gap-2">
-              <FaPlusCircle className="text-[#2563EB]" />
-              <span>Quick Actions</span>
-            </h2>
-            <p className="text-xs text-[#64748B]">High-frequency operational shortcuts.</p>
-          </div>
-
-          <span className="text-[10px] font-semibold uppercase bg-[#EFF6FF] text-[#2563EB] px-2.5 py-1 rounded-full border border-[#2563EB]/20">
-            System Shortcuts
-          </span>
-        </div>
-
-        {/* Quick Action Buttons (White Cards, #E2E8F0 border, #2563EB Icon & Text, hover #EFF6FF) */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3 pt-1">
-          <button
-            type="button"
-            onClick={() => setActiveQuickActionModal("employee")}
-            className="flex items-center justify-center gap-2 p-3 rounded-xl bg-white hover:bg-[#EFF6FF] text-[#2563EB] border border-[#E2E8F0] text-xs font-semibold transition-colors cursor-pointer group"
-          >
-            <FaUserPlus className="text-sm text-[#2563EB]" />
-            <span>Add Staff</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveQuickActionModal("student")}
-            className="flex items-center justify-center gap-2 p-3 rounded-xl bg-white hover:bg-[#EFF6FF] text-[#2563EB] border border-[#E2E8F0] text-xs font-semibold transition-colors cursor-pointer group"
-          >
-            <FaGraduationCap className="text-sm text-[#2563EB]" />
-            <span>Add Student</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveQuickActionModal("project")}
-            className="flex items-center justify-center gap-2 p-3 rounded-xl bg-white hover:bg-[#EFF6FF] text-[#2563EB] border border-[#E2E8F0] text-xs font-semibold transition-colors cursor-pointer group"
-          >
-            <FaProjectDiagram className="text-sm text-[#2563EB]" />
-            <span>New Project</span>
-          </button>
-
-          <Link
-            href="/dashboard/projects"
-            className="flex items-center justify-center gap-2 p-3 rounded-xl bg-white hover:bg-[#EFF6FF] text-[#2563EB] border border-[#E2E8F0] text-xs font-semibold transition-colors cursor-pointer group"
-          >
-            <FaTasks className="text-sm text-[#2563EB]" />
-            <span>Assign Task</span>
-          </Link>
-
-          <button
-            type="button"
-            onClick={() => setActiveQuickActionModal("expense")}
-            className="flex items-center justify-center gap-2 p-3 rounded-xl bg-white hover:bg-[#EFF6FF] text-[#2563EB] border border-[#E2E8F0] text-xs font-semibold transition-colors cursor-pointer group"
-          >
-            <FaReceipt className="text-sm text-[#2563EB]" />
-            <span>Log Expense</span>
-          </button>
-
-          <Link
-            href="/dashboard/finance"
-            className="flex items-center justify-center gap-2 p-3 rounded-xl bg-white hover:bg-[#EFF6FF] text-[#2563EB] border border-[#E2E8F0] text-xs font-semibold transition-colors cursor-pointer group"
-          >
-            <FaFileInvoiceDollar className="text-sm text-[#2563EB]" />
-            <span>Invoice</span>
-          </Link>
-
-          <Link
-            href="/dashboard/attendance"
-            className="flex items-center justify-center gap-2 p-3 rounded-xl bg-white hover:bg-[#EFF6FF] text-[#2563EB] border border-[#E2E8F0] text-xs font-semibold transition-colors cursor-pointer group col-span-2 sm:col-span-1"
-          >
-            <FaCalendarCheck className="text-sm text-[#2563EB]" />
-            <span>Attendance</span>
-          </Link>
-        </div>
-      </div>
-
-      {/* 2. STATISTIC CARDS GRID (Bg #FFFFFF, Border #E2E8F0, Radius 16px, Padding 24px, Light Shadow) */}
+      {/* 1. STATISTIC CARDS GRID (Bg #FFFFFF, Border #E2E8F0, Radius 16px, Padding 24px, Light Shadow) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Stat 1: Total Staff */}
-        <div className="bg-white rounded-2xl p-6 border border-[#E2E8F0] shadow-sm space-y-2 group">
+        <Link
+          href="/dashboard/employees"
+          className="bg-white rounded-2xl p-6 border border-[#E2E8F0] shadow-sm space-y-2 hover:border-blue-400 hover:shadow-md transition-all cursor-pointer group block"
+        >
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-[#64748B] uppercase tracking-wider">Total Staff</span>
-            <div className="p-2.5 rounded-xl bg-[#EFF6FF] text-[#2563EB]">
+            <div className="p-2.5 rounded-xl bg-[#EFF6FF] text-[#2563EB] group-hover:scale-110 transition-transform">
               <FaUsers className="text-base" />
             </div>
           </div>
@@ -590,14 +472,22 @@ export default function DashboardPage() {
               Active Roster
             </span>
           </div>
-          <p className="text-xs text-[#64748B]">Paid Staff & Engineers</p>
-        </div>
+          <div className="flex items-center justify-between text-xs text-[#64748B] pt-1 border-t border-slate-100">
+            <span>Paid Staff & Engineers</span>
+            <span className="text-[10px] font-bold text-blue-600 group-hover:translate-x-0.5 transition-transform">
+              View Staff ↗
+            </span>
+          </div>
+        </Link>
 
         {/* Stat 2: Active Projects */}
-        <div className="bg-white rounded-2xl p-6 border border-[#E2E8F0] shadow-sm space-y-2 group">
+        <Link
+          href="/dashboard/projects"
+          className="bg-white rounded-2xl p-6 border border-[#E2E8F0] shadow-sm space-y-2 hover:border-blue-400 hover:shadow-md transition-all cursor-pointer group block"
+        >
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-[#64748B] uppercase tracking-wider">Active Projects</span>
-            <div className="p-2.5 rounded-xl bg-[#EFF6FF] text-[#2563EB]">
+            <div className="p-2.5 rounded-xl bg-[#EFF6FF] text-[#2563EB] group-hover:scale-110 transition-transform">
               <FaProjectDiagram className="text-base" />
             </div>
           </div>
@@ -607,39 +497,63 @@ export default function DashboardPage() {
               {overallProgressPercentage}% Milestones
             </span>
           </div>
-          <p className="text-xs text-[#64748B]">Ongoing Client Projects</p>
-        </div>
+          <div className="flex items-center justify-between text-xs text-[#64748B] pt-1 border-t border-slate-100">
+            <span>Ongoing Client Projects</span>
+            <span className="text-[10px] font-bold text-blue-600 group-hover:translate-x-0.5 transition-transform">
+              Projects Hub ↗
+            </span>
+          </div>
+        </Link>
 
         {/* Stat 3: Monthly Revenue */}
-        <div className="bg-white rounded-2xl p-6 border border-[#E2E8F0] shadow-sm space-y-2 group">
+        <Link
+          href="/dashboard/finance"
+          className="bg-white rounded-2xl p-6 border border-[#E2E8F0] shadow-sm space-y-2 hover:border-emerald-400 hover:shadow-md transition-all cursor-pointer group block"
+        >
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-[#64748B] uppercase tracking-wider">Monthly Revenue</span>
-            <div className="p-2.5 rounded-xl bg-[#EFF6FF] text-[#2563EB]">
+            <div className="p-2.5 rounded-xl bg-emerald-50 text-emerald-600 group-hover:scale-110 transition-transform">
               <FaMoneyBillWave className="text-base" />
             </div>
           </div>
           <div className="flex items-baseline justify-between pt-1">
             <h3 className="text-2xl font-bold text-[#0F172A]">Rs. {(stats.monthlyRevenue || 0).toLocaleString()}</h3>
-            <span className="text-[10px] font-semibold text-[#2563EB] bg-[#EFF6FF] px-2 py-0.5 rounded-md border border-[#2563EB]/20">
+            <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
               Current Month
             </span>
           </div>
-          <p className="text-xs text-[#64748B]">Invoices Cleared This Month</p>
-        </div>
+          <div className="flex items-center justify-between text-xs text-[#64748B] pt-1 border-t border-slate-100">
+            <span>Invoices Cleared</span>
+            <span className="text-[10px] font-bold text-emerald-600 group-hover:translate-x-0.5 transition-transform">
+              Finance Hub ↗
+            </span>
+          </div>
+        </Link>
 
         {/* Stat 4: Operating Expenses */}
-        <div className="bg-white rounded-2xl p-6 border border-[#E2E8F0] shadow-sm space-y-2 group">
+        <Link
+          href="/dashboard/expenses"
+          className="bg-white rounded-2xl p-6 border border-[#E2E8F0] shadow-sm space-y-2 hover:border-rose-400 hover:shadow-md transition-all cursor-pointer group block"
+        >
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-[#64748B] uppercase tracking-wider">Operating Expenses</span>
-            <div className="p-2.5 rounded-xl bg-[#EFF6FF] text-[#2563EB]">
+            <div className="p-2.5 rounded-xl bg-rose-50 text-rose-600 group-hover:scale-110 transition-transform">
               <FaLandmark className="text-base" />
             </div>
           </div>
           <div className="flex items-baseline justify-between pt-1">
             <h3 className="text-2xl font-bold text-[#0F172A]">Rs. {(stats.monthlyExpenses || 0).toLocaleString()}</h3>
+            <span className="text-[10px] font-semibold text-rose-700 bg-rose-50 px-2 py-0.5 rounded-md border border-rose-200">
+              Expenses
+            </span>
           </div>
-          <p className="text-xs text-[#64748B]">Salaries & Overhead Costs</p>
-        </div>
+          <div className="flex items-center justify-between text-xs text-[#64748B] pt-1 border-t border-slate-100">
+            <span>Salaries & Overhead Costs</span>
+            <span className="text-[10px] font-bold text-rose-600 group-hover:translate-x-0.5 transition-transform">
+              View Expenses ↗
+            </span>
+          </div>
+        </Link>
       </div>
 
       {/* 3. MULTI-SERIES FINANCIAL CHART */}
@@ -677,8 +591,8 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Sticky Segmented Filter Bar */}
-        <div className="sticky top-16 z-20 bg-[#F8FAFC] p-1.5 rounded-xl border border-[#E2E8F0] flex flex-wrap items-center gap-1 text-xs font-medium">
+        {/* Segmented Filter Bar */}
+        <div className="bg-[#F8FAFC] p-1.5 rounded-xl border border-[#E2E8F0] flex flex-wrap items-center gap-1 text-xs font-medium">
           {[
             { id: "all", label: "All Members" },
             { id: "employees", label: "Paid Staff" },
@@ -765,13 +679,25 @@ export default function DashboardPage() {
 
                     {/* Action Link / Kebab Menu */}
                     <td className="py-3.5 px-4 text-right">
-                      <button
-                        type="button"
-                        onClick={() => setSelectedUserModal(m)}
-                        className="text-[#2563EB] hover:text-[#1D4ED8] font-semibold hover:bg-[#EFF6FF] px-2.5 py-1 rounded-lg transition-colors cursor-pointer"
-                      >
-                        Inspect →
-                      </button>
+                      <div className="flex items-center justify-end gap-1.5">
+                        {Boolean((m.category || "").toLowerCase().includes("remote") || (m.department || "").toLowerCase().includes("remote") || (m.mode || "").toLowerCase().includes("remote")) && (
+                          <Link
+                            href="/dashboard/internships"
+                            className="text-purple-600 hover:text-purple-800 font-bold hover:bg-purple-50 px-2 py-1 rounded-lg border border-purple-200 transition-colors text-[11px] flex items-center gap-1"
+                            title="Access Remote Screen on Monitoring Desk"
+                          >
+                            <FaDesktop className="text-[10px]" />
+                            <span>Screen 🖥️</span>
+                          </Link>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setSelectedUserModal(m)}
+                          className="text-[#2563EB] hover:text-[#1D4ED8] font-semibold hover:bg-[#EFF6FF] px-2.5 py-1 rounded-lg transition-colors cursor-pointer"
+                        >
+                          Inspect →
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -908,129 +834,6 @@ export default function DashboardPage() {
                 Close
               </button>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* QUICK ACTION MODALS */}
-      {activeQuickActionModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-[#E2E8F0] space-y-4 animate-in fade-in zoom-in-95 duration-150">
-            <div className="flex items-center justify-between border-b border-[#E2E8F0] pb-3">
-              <h3 className="text-base font-bold text-[#0F172A] flex items-center gap-2">
-                <FaPlusCircle className="text-[#2563EB]" />
-                <span>
-                  {activeQuickActionModal === "employee" && "Add New Paid Staff Member"}
-                  {activeQuickActionModal === "student" && "Enroll Course Student"}
-                  {activeQuickActionModal === "project" && "Create Active Workstream Project"}
-                  {activeQuickActionModal === "expense" && "Record Operating Expense"}
-                </span>
-              </h3>
-              <button
-                onClick={() => setActiveQuickActionModal(null)}
-                className="text-[#64748B] hover:text-[#0F172A] font-bold cursor-pointer"
-              >
-                ✕
-              </button>
-            </div>
-
-            <form onSubmit={handleQuickActionSubmit} className="space-y-3 text-xs">
-              {(activeQuickActionModal === "employee" || activeQuickActionModal === "student") && (
-                <>
-                  <div className="space-y-1">
-                    <label className="font-semibold text-[#64748B]">Full Name</label>
-                    <input
-                      type="text"
-                      required
-                      value={quickForm.fullName}
-                      onChange={(e) => setQuickForm({ ...quickForm, fullName: e.target.value })}
-                      placeholder="e.g. Ali Hassan"
-                      className="w-full p-2.5 rounded-xl border border-[#E2E8F0] outline-none font-semibold text-[#0F172A] focus:border-[#2563EB] transition-colors"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="font-semibold text-[#64748B]">Email Address</label>
-                    <input
-                      type="email"
-                      required
-                      value={quickForm.email}
-                      onChange={(e) => setQuickForm({ ...quickForm, email: e.target.value })}
-                      placeholder="e.g. ali@gmail.com"
-                      className="w-full p-2.5 rounded-xl border border-[#E2E8F0] outline-none font-semibold text-[#0F172A] focus:border-[#2563EB] transition-colors"
-                    />
-                  </div>
-                </>
-              )}
-
-              {activeQuickActionModal === "project" && (
-                <>
-                  <div className="space-y-1">
-                    <label className="font-semibold text-[#64748B]">Project Title</label>
-                    <input
-                      type="text"
-                      required
-                      value={quickForm.title}
-                      onChange={(e) => setQuickForm({ ...quickForm, title: e.target.value })}
-                      placeholder="e.g. E-Commerce App API Integration"
-                      className="w-full p-2.5 rounded-xl border border-[#E2E8F0] outline-none font-semibold text-[#0F172A] focus:border-[#2563EB] transition-colors"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="font-semibold text-[#64748B]">Client Name</label>
-                    <input
-                      type="text"
-                      value={quickForm.clientName}
-                      onChange={(e) => setQuickForm({ ...quickForm, clientName: e.target.value })}
-                      placeholder="e.g. TechCorp USA"
-                      className="w-full p-2.5 rounded-xl border border-[#E2E8F0] outline-none font-semibold text-[#0F172A] focus:border-[#2563EB] transition-colors"
-                    />
-                  </div>
-                </>
-              )}
-
-              {activeQuickActionModal === "expense" && (
-                <>
-                  <div className="space-y-1">
-                    <label className="font-semibold text-[#64748B]">Expense Title</label>
-                    <input
-                      type="text"
-                      required
-                      value={quickForm.title}
-                      onChange={(e) => setQuickForm({ ...quickForm, title: e.target.value })}
-                      placeholder="e.g. Office Fiber WiFi Bill"
-                      className="w-full p-2.5 rounded-xl border border-[#E2E8F0] outline-none font-semibold text-[#0F172A] focus:border-[#2563EB] transition-colors"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="font-semibold text-[#64748B]">Amount (Rs.)</label>
-                    <input
-                      type="number"
-                      required
-                      value={quickForm.amount}
-                      onChange={(e) => setQuickForm({ ...quickForm, amount: e.target.value })}
-                      placeholder="e.g. 8500"
-                      className="w-full p-2.5 rounded-xl border border-[#E2E8F0] outline-none font-semibold text-[#0F172A] focus:border-[#2563EB] transition-colors"
-                    />
-                  </div>
-                </>
-              )}
-
-              <div className="pt-3 flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => setActiveQuickActionModal(null)}
-                  className="flex-1 py-2.5 rounded-xl bg-white hover:bg-[#F8FAFC] border border-[#E2E8F0] font-semibold text-[#2563EB] cursor-pointer transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="flex-1 py-2.5 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold transition-colors cursor-pointer"
-                >
-                  Save Record
-                </button>
-              </div>
-            </form>
           </div>
         </div>
       )}

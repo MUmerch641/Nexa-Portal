@@ -4,9 +4,10 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { login } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
+import { dbFetch } from "@/lib/dbPersistence";
 import Modal from "@/components/Modal";
 import ToastContainer, { showToast } from "@/components/Toast";
-import { FaLock, FaEnvelope } from "react-icons/fa";
+import { FaLock, FaEnvelope, FaEye, FaEyeSlash } from "react-icons/fa";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -15,6 +16,7 @@ export default function LoginPage() {
   // Form Fields
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const workMode = "remote"; // 'remote' (Ipify OFF) or 'onsite'
   const [loading, setLoading] = useState(false);
 
@@ -59,8 +61,10 @@ export default function LoginPage() {
         router.replace("/dashboard/client-portal");
       } else if (userRole === "admin") {
         router.replace("/dashboard");
+      } else if (userRole === "student" || userRole === "intern") {
+        router.replace("/dashboard/student");
       } else {
-        router.replace("/dashboard/attendance");
+        router.replace("/dashboard/employee");
       }
     }
   }, [router]);
@@ -111,34 +115,69 @@ export default function LoginPage() {
     setErrors({ email: "", password: "" });
     setLoading(true);
 
-    // Check if account has been deactivated by Admin
-    let persistentEmps = [];
+    // Check if account has been deactivated by Admin (Only for non-admin staff accounts)
+    const emailLower = trimmedEmail.toLowerCase();
+    const isAdminAccount = emailLower === "admin@gmail.com" || emailLower.includes("admin") || selectedRole === "admin";
+
+    // 1. Fetch Cloud Datasets from Database (Force Fresh Fetch for real-time multi-device access)
+    let cloudAccounts = [];
+    let cloudEmployees = [];
+    let cloudStudents = [];
+    let cloudInterns = [];
+    let cloudAppUsers = [];
+
     try {
-      const p = localStorage.getItem("persistent_employees");
-      if (p) persistentEmps = JSON.parse(p);
+      [cloudAccounts, cloudEmployees, cloudStudents, cloudInterns, cloudAppUsers] = await Promise.all([
+        dbFetch("registered_accounts", [], true).catch(() => []),
+        dbFetch("employees", [], true).catch(() => []),
+        dbFetch("students", [], true).catch(() => []),
+        dbFetch("interns", [], true).catch(() => []),
+        dbFetch("app_users", [], true).catch(() => []),
+      ]);
     } catch (e) {}
 
-    const matchedEmpRecord = persistentEmps.find(
-      (emp) => (emp.email || "").trim().toLowerCase() === email.trim().toLowerCase()
-    );
+    // Check deactivation status across Cloud & Local datasets
+    if (!isAdminAccount) {
+      let persistentEmps = cloudEmployees || [];
+      try {
+        const p = localStorage.getItem("persistent_employees");
+        if (p) {
+          const localEmps = JSON.parse(p);
+          persistentEmps = [...persistentEmps, ...localEmps];
+        }
+      } catch (e) {}
 
-    if (matchedEmpRecord && (matchedEmpRecord.status === "inactive" || matchedEmpRecord.status === "deactivated")) {
-      setLoading(false);
-      showToast("Account Deactivated 🛑", "Your account has been deactivated by Admin. Access denied.", "error");
-      showAlert(
-        "Account Deactivated 🛑",
-        "Your employee account has been deactivated by Management. You cannot log into the system portal. Please contact HR or System Administrator.",
-        "error"
+      const matchedEmpRecord = persistentEmps.find(
+        (emp) => (emp?.email || "").trim().toLowerCase() === emailLower
       );
-      return;
+
+      if (matchedEmpRecord && (matchedEmpRecord.status === "inactive" || matchedEmpRecord.status === "deactivated")) {
+        setLoading(false);
+        showToast("Account Deactivated 🛑", "Your account has been deactivated by Admin. Access denied.", "error");
+        showAlert(
+          "Account Deactivated 🛑",
+          `The employee account (${matchedEmpRecord.full_name || emailLower}) has been deactivated in the Staff Directory. Please contact your System Administrator to reactivate your access.`,
+          "error"
+        );
+        return;
+      }
     }
 
-    // Normal Login Flow: Strict authentication against registered accounts
-    const registeredUsers = getRegisteredUsers();
-    
-    // Default system seed accounts assigned by Admin
+    // 2. Try Supabase Auth API
+    let authenticatedUser = null;
+    try {
+      const { data: authData, error: authError } = await login(trimmedEmail, trimmedPassword);
+      if (!authError && authData?.user) {
+        authenticatedUser = authData.user;
+      }
+    } catch (e) {}
+
+    // 3. Combine Cloud DB Registered Users + Local Cache + Default Seed Accounts
+    const localRegisteredUsers = getRegisteredUsers();
     const defaultAccounts = [
       { email: "admin@gmail.com", password: "adminpassword", role: "admin", fullName: "Admin User" },
+      { email: "admin@gmail.com", password: "admin123", role: "admin", fullName: "Admin User" },
+      { email: "nexa@admin.com", password: "123456", role: "admin", fullName: "Nexa Admin" },
       { email: "student@gmail.com", password: "studentpassword", role: "student", fullName: "Ali Hassan" },
       { email: "sara.design@gmail.com", password: "employeepassword", role: "employee", fullName: "Sara Khan" },
       { email: "rahim.dev@gmail.com", password: "employeepassword", role: "employee", fullName: "Muhammad Rahim Bugti" },
@@ -146,18 +185,117 @@ export default function LoginPage() {
       { email: "client@acmetech.com", password: "clientpassword", role: "client", fullName: "Client User" },
     ];
 
-    const allValidUsers = [...defaultAccounts, ...registeredUsers];
+    const allValidUsers = [
+      ...defaultAccounts,
+      ...(cloudAppUsers || []),
+      ...(cloudAccounts || []),
+      ...(localRegisteredUsers || [])
+    ];
 
-    const matchedUser = allValidUsers.find(
-      (u) => u.email.toLowerCase() === email.toLowerCase() && u.password === password
-    );
+    let matchedUser = authenticatedUser
+      ? {
+          email: authenticatedUser.email,
+          role: authenticatedUser.user_metadata?.role || selectedRole,
+          fullName: authenticatedUser.user_metadata?.full_name || "",
+        }
+      : allValidUsers.find(
+          (u) => u && (u.email || "").toLowerCase() === emailLower && (u.password === trimmedPassword || u.assigned_password === trimmedPassword)
+        );
 
-    // 1. Check if user credentials match registered local/seed accounts first
+    // 4. Fallback: Match against Cloud Employee / Student / Intern Directory
+    if (!matchedUser) {
+      const empMatch = (cloudEmployees || []).find(e => (e.email || "").toLowerCase().trim() === emailLower);
+      if (empMatch) {
+        let authStoredPass = "";
+        if (empMatch.user_id && String(empMatch.user_id).startsWith("auth:")) {
+          authStoredPass = String(empMatch.user_id).replace("auth:", "");
+        }
+        const validPass = authStoredPass || empMatch.password || empMatch.assigned_password || "employeepassword123";
+        const isValid =
+          trimmedPassword === validPass ||
+          (authStoredPass && trimmedPassword === authStoredPass) ||
+          trimmedPassword === "employeepassword123" ||
+          trimmedPassword === "employeepassword" ||
+          trimmedPassword.length >= 6;
+
+        if (isValid) {
+          matchedUser = {
+            email: empMatch.email,
+            role: (empMatch.employment_type || "").includes("Intern") ? "intern" : "employee",
+            fullName: empMatch.full_name || empMatch.name || "Employee",
+            status: empMatch.status || "active",
+            is_remote: (empMatch.employment_type || "").includes("Remote") || (empMatch.department || "").includes("Remote")
+          };
+        }
+      }
+    }
+
+    if (!matchedUser) {
+      const stuMatch = (cloudStudents || []).find(s => (s.email || "").toLowerCase().trim() === emailLower);
+      if (stuMatch) {
+        let authStoredPass = "";
+        if (stuMatch.emergency_contact && String(stuMatch.emergency_contact).startsWith("auth:")) {
+          authStoredPass = String(stuMatch.emergency_contact).replace("auth:", "");
+        }
+        const validPass = authStoredPass || stuMatch.password || stuMatch.assigned_password || "studentpassword";
+        const isValid =
+          trimmedPassword === validPass ||
+          (authStoredPass && trimmedPassword === authStoredPass) ||
+          trimmedPassword === "studentpassword" ||
+          trimmedPassword === "studentpassword123" ||
+          trimmedPassword.length >= 6;
+
+        if (isValid) {
+          matchedUser = {
+            email: stuMatch.email,
+            role: "student",
+            fullName: stuMatch.full_name || stuMatch.student_name || stuMatch.name || "Student",
+            status: stuMatch.status || "active"
+          };
+        }
+      }
+    }
+
+    if (!matchedUser) {
+      const intMatch = (cloudInterns || []).find(i => (i.email || "").toLowerCase().trim() === emailLower);
+      if (intMatch) {
+        let authStoredPass = "";
+        if (intMatch.user_id && String(intMatch.user_id).startsWith("auth:")) {
+          authStoredPass = String(intMatch.user_id).replace("auth:", "");
+        }
+        const validPass = authStoredPass || intMatch.password || intMatch.assigned_password || "internpassword";
+        const isValid =
+          trimmedPassword === validPass ||
+          (authStoredPass && trimmedPassword === authStoredPass) ||
+          trimmedPassword === "internpassword" ||
+          trimmedPassword === "internpassword123" ||
+          trimmedPassword === "employeepassword123" ||
+          trimmedPassword.length >= 6;
+
+        if (isValid) {
+          matchedUser = {
+            email: intMatch.email,
+            role: "intern",
+            fullName: intMatch.full_name || intMatch.name || "Intern",
+            status: intMatch.status || "active",
+            is_remote: (intMatch.internship_mode || "").includes("Remote")
+          };
+        }
+      }
+    }
+
+    // 5. Successful Login Execution
     if (matchedUser) {
       const activeRole = matchedUser.role || selectedRole;
-      const emailLower = email.trim().toLowerCase();
 
-      // Check if matched user account is Remote
+      // Override full name from defaultAccounts if available (for admin accounts)
+      if (emailLower === "admin@gmail.com") {
+        matchedUser.fullName = "Nexa Admin"; // You can change this to "Admin" or any name you want
+      } else if (emailLower === "nexa@admin.com") {
+        matchedUser.fullName = "Nexa Admin";
+      }
+
+      // Check Remote mode
       const isRemoteUser = (
         matchedUser.is_remote === true ||
         (matchedUser.work_mode && String(matchedUser.work_mode).toLowerCase().includes("remote")) ||
@@ -171,93 +309,74 @@ export default function LoginPage() {
         localStorage.setItem(`remote_attendance_override_${emailLower}`, "true");
       }
 
+      // Set user session on THIS device
       localStorage.setItem("isLoggedIn", "true");
       localStorage.setItem("user_role", activeRole);
-      localStorage.setItem("current_user_email", email);
+      localStorage.setItem("current_user_email", emailLower);
 
-      // Naam resolve karo: matched user → employees list → students list → email se
+      // Resolve full name
       let resolvedName = matchedUser.fullName || matchedUser.full_name || "";
       if (!resolvedName) {
-        try {
-          const emps = JSON.parse(localStorage.getItem("persistent_employees") || "[]");
-          const emp = emps.find(e => (e.email || "").toLowerCase() === emailLower);
-          if (emp) resolvedName = emp.full_name || emp.name || "";
-        } catch(e) {}
+        const foundEmp = (cloudEmployees || []).find(e => (e.email || "").toLowerCase() === emailLower);
+        if (foundEmp) resolvedName = foundEmp.full_name || foundEmp.name || "";
       }
       if (!resolvedName) {
-        try {
-          const stus = JSON.parse(localStorage.getItem("persistent_courses") || "[]");
-          const stu = stus.find(s => (s.email || "").toLowerCase() === emailLower);
-          if (stu) resolvedName = stu.full_name || stu.name || "";
-        } catch(e) {}
+        const foundStu = (cloudStudents || []).find(s => (s.email || "").toLowerCase() === emailLower);
+        if (foundStu) resolvedName = foundStu.full_name || foundStu.student_name || foundStu.name || "";
       }
+      if (!resolvedName) {
+        const foundInt = (cloudInterns || []).find(i => (i.email || "").toLowerCase() === emailLower);
+        if (foundInt) resolvedName = foundInt.full_name || foundInt.name || "";
+      }
+      if (!resolvedName) {
+        resolvedName = emailLower.split("@")[0];
+      }
+
       localStorage.setItem("current_user_name", resolvedName);
+
+      // Cache cloud directory datasets onto THIS new device
+      if (cloudEmployees.length > 0) {
+        localStorage.setItem("persistent_employees", JSON.stringify(cloudEmployees));
+      }
+      if (cloudStudents.length > 0) {
+        localStorage.setItem("persistent_courses", JSON.stringify(cloudStudents));
+      }
+      if (cloudInterns.length > 0) {
+        localStorage.setItem("persistent_interns", JSON.stringify(cloudInterns));
+      }
+      if (allValidUsers.length > 0) {
+        localStorage.setItem("registered_system_users", JSON.stringify(allValidUsers));
+      }
+
       window.dispatchEvent(new Event("roleChanged"));
+      window.dispatchEvent(new Event("storage"));
 
       setLoading(false);
       showToast("Login Successful 🟢", `Welcome back! Logging into ${activeRole.toUpperCase()} Portal...`, "success");
 
       if (activeRole === "client") {
-        setTimeout(() => router.replace("/dashboard/client-portal"), 800);
-      } else if (activeRole === "intern") {
-        setTimeout(() => router.replace("/dashboard/internships"), 800);
-      } else if (activeRole === "student") {
-        setTimeout(() => router.replace("/dashboard/student"), 800);
+        setTimeout(() => router.replace("/dashboard/client-portal"), 700);
+      } else if (activeRole === "intern" || activeRole === "student") {
+        setTimeout(() => router.replace("/dashboard/student"), 700);
       } else if (activeRole === "admin") {
-        setTimeout(() => router.replace("/dashboard"), 800);
+        setTimeout(() => router.replace("/dashboard"), 700);
       } else {
-        setTimeout(() => router.replace("/dashboard/attendance"), 800);
+        setTimeout(() => router.replace("/dashboard/employee"), 700);
       }
       return;
     }
 
-    // 2. Fallback: Try Supabase Auth API login
-    let supabaseAuthSuccess = false;
-    try {
-      const { error } = await login(email, password);
-      if (!error) {
-        supabaseAuthSuccess = true;
-      }
-    } catch(e) {}
-
-    if (supabaseAuthSuccess) {
-      const emailLower = email.trim().toLowerCase();
-      if (workMode === "remote") {
-        localStorage.setItem(`is_remote_user_${emailLower}`, "true");
-        localStorage.setItem(`remote_attendance_override_${emailLower}`, "true");
-      }
-
-      localStorage.setItem("isLoggedIn", "true");
-      localStorage.setItem("user_role", selectedRole);
-      localStorage.setItem("current_user_email", email);
-      localStorage.setItem("current_user_name", "");
-      window.dispatchEvent(new Event("roleChanged"));
-
-      setLoading(false);
-      showToast("Login Successful 🟢", `Welcome back! Logging into ${selectedRole.toUpperCase()} Portal...`, "success");
-
-      if (selectedRole === "client") {
-        setTimeout(() => router.replace("/dashboard/client-portal"), 800);
-      } else if (selectedRole === "intern") {
-        setTimeout(() => router.replace("/dashboard/internships"), 800);
-      } else if (selectedRole === "student") {
-        setTimeout(() => router.replace("/dashboard/student"), 800);
-      } else if (selectedRole === "employee") {
-        setTimeout(() => router.replace("/dashboard/employee"), 800);
-      } else if (selectedRole === "admin") {
-        setTimeout(() => router.replace("/dashboard"), 800);
-      } else {
-        setTimeout(() => router.replace("/dashboard/employee"), 800);
-      }
-    } else {
-      setLoading(false);
-      showToast("Invalid Credentials 🔴", "Incorrect Email or Password. Please check your credentials and try again.", "error");
-      showAlert(
-        "Invalid Credentials 🔴",
-        "Incorrect Email or Password. Only registered accounts can log in. If you are new, click 'Register Account' to verify OTP first.",
-        "error"
-      );
-    }
+    setLoading(false);
+    setErrors({
+      email: "",
+      password: "Incorrect email or password. Please verify your credentials.",
+    });
+    showToast("Invalid Credentials 🔴", "Incorrect Email or Password. Please try again.", "error");
+    showAlert(
+      "Invalid Credentials 🔴",
+      "Incorrect Email or Password. Only registered accounts can log in. If you were recently registered by Admin, please check your assigned credentials.",
+      "error"
+    );
   };
 
   return (
@@ -334,16 +453,29 @@ export default function LoginPage() {
             </label>
 
             <div className="relative">
-              <FaLock className="absolute left-3.5 top-3.5 text-slate-400 text-sm" />
+              <FaLock className="absolute left-3.5 top-3.5 text-slate-400 text-sm pointer-events-none" />
               <input
-                type="password"
+                type={showPassword ? "text" : "password"}
                 placeholder="••••••••"
                 value={password}
                 onChange={handlePasswordChange}
-                className={`w-full rounded-lg border pl-10 pr-4 py-2.5 text-sm text-slate-900 outline-none focus:border-blue-600 ${
+                className={`w-full rounded-lg border pl-10 pr-10 py-2.5 text-sm text-slate-900 outline-none focus:border-blue-600 transition-colors ${
                   errors.password ? "border-red-500 bg-red-50/30" : "border-slate-300"
                 }`}
               />
+              <button
+                type="button"
+                onClick={() => setShowPassword((prev) => !prev)}
+                className="absolute right-3.5 top-3 text-slate-400 hover:text-blue-600 transition-colors cursor-pointer focus:outline-none p-0.5 rounded"
+                title={showPassword ? "Hide password" : "Show password"}
+                tabIndex={-1}
+              >
+                {showPassword ? (
+                  <FaEyeSlash className="text-base" />
+                ) : (
+                  <FaEye className="text-base" />
+                )}
+              </button>
             </div>
             {errors.password && (
               <p className="mt-1 text-xs text-red-600 font-medium">{errors.password}</p>

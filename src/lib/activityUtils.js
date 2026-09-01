@@ -1,39 +1,6 @@
 import { supabase } from "@/lib/supabase";
 
-export const INITIAL_ACTIVITIES = [
-  {
-    id: "act-101",
-    user_name: "Admin / HR Lead",
-    action_type: "Leave Approved",
-    description: "Approved 3-day sick leave request for Senior Lead Developer",
-    timestamp: new Date(Date.now() - 15 * 60 * 1000).toISOString(),
-    icon: "leave"
-  },
-  {
-    id: "act-102",
-    user_name: "Accounts Manager",
-    action_type: "Expense Added",
-    description: "Logged office K-Electric bill payment of Rs. 35,000",
-    timestamp: new Date(Date.now() - 45 * 60 * 1000).toISOString(),
-    icon: "expense"
-  },
-  {
-    id: "act-103",
-    user_name: "Admin / HR",
-    action_type: "Employee Added",
-    description: "Created new employee profile and credentials for Sara Khan",
-    timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-    icon: "employee"
-  },
-  {
-    id: "act-104",
-    user_name: "Project Lead",
-    action_type: "Project Updated",
-    description: "Updated Software House Management ERP project progress to 85%",
-    timestamp: new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString(),
-    icon: "project"
-  }
-];
+export const INITIAL_ACTIVITIES = [];
 
 export async function logActivity(user_name, action_type, description, icon = "general") {
   const newActivity = {

@@ -72,7 +72,24 @@ export const SAMPLE_MCQ_EXAM = {
 export async function getDailyTasks(assignedEmail = "") {
   const allTasks = await dbFetch("daily_tasks", INITIAL_STUDENT_TASKS);
   if (!assignedEmail) return allTasks;
-  return allTasks.filter((t) => !t.assigned_to_email || t.assigned_to_email.toLowerCase() === assignedEmail.toLowerCase());
+  const cleanEmail = assignedEmail.toLowerCase().trim();
+  const namePart = cleanEmail.split("@")[0];
+
+  return allTasks.filter((t) => {
+    const tEmail = (t.assigned_to_email || t.assignedToEmail || t.email || "").toLowerCase().trim();
+    const tName = (t.assigned_to_name || t.assignedTo || "").toLowerCase().trim();
+    const targetAud = (t.targetAudience || "").toLowerCase();
+
+    return (
+      (cleanEmail && tEmail === cleanEmail) ||
+      (cleanEmail && tEmail.includes(cleanEmail)) ||
+      (namePart && tName.includes(namePart)) ||
+      targetAud.includes("all enrolled students") ||
+      targetAud.includes("all students") ||
+      targetAud.includes("all remote & onsite interns") ||
+      targetAud.includes("all interns")
+    );
+  });
 }
 
 /**
@@ -96,7 +113,7 @@ export async function saveTaskRecord(taskRecord) {
  * Get Certificates
  */
 export async function getCertificates() {
-  return await dbFetch("certificates", INITIAL_CERTIFICATES);
+  return await dbFetch("certificates", [], true);
 }
 
 /**

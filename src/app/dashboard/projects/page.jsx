@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
 import Modal from "@/components/Modal";
 import { showToast } from "@/components/Toast";
-import { dbFetch, dbSaveList, dbSaveRecord } from "@/lib/dbPersistence";
+import { dbFetch, dbSaveList, dbSaveRecord, dbDeleteRecord } from "@/lib/dbPersistence";
 import ScrollableTabs from "@/components/ScrollableTabs";
 import {
   FaProjectDiagram,
@@ -31,8 +31,11 @@ import {
   FaLayerGroup,
   FaCheckDouble,
   FaHourglassHalf,
-  FaChartPie
+  FaChartPie,
+  FaArrowRight
 } from "react-icons/fa";
+
+const INITIAL_PROJECTS = [];
 
 export default function ProjectsPage() {
   const [role, setRole] = useState("admin");
@@ -50,16 +53,31 @@ export default function ProjectsPage() {
   // Selected Project Inspection Modal State
   const [selectedProjectModal, setSelectedProjectModal] = useState(null);
 
+  // New Project Modal State
+  const [createProjectModalOpen, setCreateProjectModalOpen] = useState(false);
+  const [newProjectForm, setNewProjectForm] = useState({
+    title: "",
+    client: "",
+    department: "Web Development",
+    deadline: new Date().toISOString().split("T")[0],
+    budget: "Rs. 250,000",
+    status: "In Progress",
+    description: "",
+    progress: 25,
+    assignedTeam: "Development Team"
+  });
+
   // New Daily Task Modal State
   const [createTaskModalOpen, setCreateTaskModalOpen] = useState(false);
   const [newTaskForm, setNewTaskForm] = useState({
     task: "",
     category: "Development",
-    targetType: "individual_student",
-    assignedToName: "Ali Hassan (Student)",
-    assignedToEmail: "student@gmail.com",
+    targetType: "individual", // "individual" | "all_employees" | "all_students" | "all_interns"
+    assignedToName: "",
+    assignedToEmail: "",
     priority: "High",
-    dueDate: new Date().toISOString().split("T")[0]
+    targetDays: 1,
+    dueDate: new Date(Date.now() + 1 * 86400000).toISOString().split("T")[0]
   });
 
   // Kebab Menu & Confirm Modal State
@@ -67,19 +85,8 @@ export default function ProjectsPage() {
   const [isHeaderKebabOpen, setIsHeaderKebabOpen] = useState(false);
   const [confirmModal, setConfirmModal] = useState({ isOpen: false, type: "", taskId: "", title: "", loading: false });
 
-  // Directories
-  const [studentDirectory, setStudentDirectory] = useState([
-    { name: "Ali Hassan", email: "student@gmail.com", batch: "Batch #14 (MERN Tech)" },
-    { name: "Muhammad Rahim Bugti", email: "rahim.student@gmail.com", batch: "Batch #14 (MERN Tech)" },
-    { name: "Hamza Ahmed", email: "hamza.student@gmail.com", batch: "Batch #15 (Python Tech)" },
-    { name: "Usman Tariq", email: "usman.student@gmail.com", batch: "Batch #15 (Python Tech)" },
-  ]);
-
-  const [employeeDirectory, setEmployeeDirectory] = useState([
-    { name: "Sara Khan", email: "sara.design@gmail.com", dept: "UI/UX Design" },
-    { name: "Muhammad Ali", email: "ali.staff@gmail.com", dept: "Web Development" },
-    { name: "Muhammad Rahim Bugti", email: "rahim.staff@gmail.com", dept: "Senior Full-Stack Developer" },
-  ]);
+  // Dynamic Multi-Role Assignee Directory
+  const [assigneeDirectory, setAssigneeDirectory] = useState([]);
 
   const [modal, setModal] = useState({ isOpen: false, title: "", message: "", type: "info" });
 
@@ -90,12 +97,143 @@ export default function ProjectsPage() {
     setUserEmail(savedEmail);
 
     dbFetch("daily_tasks", []).then(tasks => setDailyTasks(tasks || []));
-    dbFetch("projects").then(projs => setProjects(projs || []));
+    dbFetch("projects", []).then(projs => {
+      setProjects(projs || []);
+    });
+
+    // Load full organization directory (Employees, Remote Students, Interns)
+    const loadDirectories = async () => {
+      try {
+        const [dbEmployees, dbStudents, dbInterns] = await Promise.all([
+          dbFetch("employees").catch(() => []),
+          dbFetch("students").catch(() => []),
+          dbFetch("interns").catch(() => [])
+        ]);
+
+        const employeesFormatted = (dbEmployees || []).map(e => ({
+          id: e.id || e.email,
+          name: e.full_name || e.name,
+          email: (e.email || "").toLowerCase().trim(),
+          roleGroup: "Staff / Employees",
+          badge: "👨‍💼 Employee",
+          detail: e.department || e.designation || "Staff"
+        }));
+
+        const studentsFormatted = (dbStudents || []).map(s => {
+          const isRemote = (s.track_type || "").includes("Remote") || (s.course_name || "").includes("Remote");
+          return {
+            id: s.id || s.email,
+            name: s.full_name || s.student_name,
+            email: (s.email || "").toLowerCase().trim(),
+            roleGroup: isRemote ? "Remote Students" : "On-Site Students",
+            badge: isRemote ? "🌐 Remote Student" : "🏫 On-Site Student",
+            detail: s.course_name || s.tech_domain || "Course Student"
+          };
+        });
+
+        const internsFormatted = (dbInterns || []).map(i => {
+          const isRemote = (i.internship_mode || "").includes("Remote");
+          return {
+            id: i.id || i.email,
+            name: i.full_name,
+            email: (i.email || "").toLowerCase().trim(),
+            roleGroup: isRemote ? "Remote Internships" : "On-Site Internships",
+            badge: isRemote ? "💼 Remote Intern" : "🏢 On-Site Intern",
+            detail: i.course_name || i.tech_domain || "Internship"
+          };
+        });
+
+        const rawCombined = [...employeesFormatted, ...studentsFormatted, ...internsFormatted].filter(u => u.name && u.email);
+        const seenKeys = new Set();
+        const combined = [];
+        for (const item of rawCombined) {
+          const key = `${item.email}_${item.roleGroup}`;
+          if (!seenKeys.has(key)) {
+            seenKeys.add(key);
+            combined.push(item);
+          }
+        }
+        setAssigneeDirectory(combined);
+
+        if (combined.length > 0) {
+          setNewTaskForm(prev => ({
+            ...prev,
+            assignedToEmail: prev.assignedToEmail || combined[0].email,
+            assignedToName: prev.assignedToName || combined[0].name
+          }));
+        }
+      } catch (e) {
+        console.error("Error loading directories for task assign:", e);
+      }
+    };
+
+    loadDirectories();
   }, []);
 
   const saveTasksState = (newList) => {
     setDailyTasks(newList);
     dbSaveList("daily_tasks", newList);
+  };
+
+  const handleCreateProject = async (e) => {
+    e.preventDefault();
+    if (!newProjectForm.title.trim() || !newProjectForm.client.trim()) {
+      showToast("Input Required ⚠️", "Project Title and Client Name are required.", "warning");
+      return;
+    }
+    const newProjObj = {
+      id: `proj-${Date.now()}`,
+      ...newProjectForm
+    };
+    const updatedProjects = [newProjObj, ...projects];
+    setProjects(updatedProjects);
+    dbSaveList("projects", updatedProjects);
+    dbSaveRecord("projects", newProjObj).catch(() => {});
+
+    try {
+      await fetch("/api/persistence", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ table: "projects", record: newProjObj, action: "save" })
+      });
+    } catch (err) {}
+
+    setCreateProjectModalOpen(false);
+    setNewProjectForm({
+      title: "",
+      client: "",
+      department: "Web Development",
+      deadline: new Date().toISOString().split("T")[0],
+      budget: "Rs. 250,000",
+      status: "In Progress",
+      description: "",
+      progress: 25,
+      assignedTeam: "Development Team"
+    });
+    showToast("New Project Created 🎉", `Client project "${newProjObj.title}" registered successfully!`, "success");
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event("dataChanged"));
+    }
+  };
+
+  const handleDeleteProject = async (projId) => {
+    const updated = projects.filter(p => p.id !== projId);
+    setProjects(updated);
+    dbSaveList("projects", updated);
+    dbDeleteRecord("projects", projId).catch(() => {});
+
+    try {
+      await fetch("/api/persistence", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ table: "projects", action: "delete", record: { id: projId } })
+      });
+    } catch (err) {}
+
+    showToast("Project Removed 🗑️", "Project record removed from directory.", "info");
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event("dataChanged"));
+    }
   };
 
   // Live Timer Interval
@@ -173,13 +311,35 @@ export default function ProjectsPage() {
         localStorage.setItem("software_house_daily_tasks", JSON.stringify([]));
         localStorage.setItem("software_house_assigned_tasks", JSON.stringify([]));
         localStorage.setItem("student_daily_tasks", JSON.stringify([]));
+        await fetch("/api/persistence", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ table: "daily_tasks", action: "clear_all" })
+        });
       } catch(e) {}
-      showToast("All Tasks Cleared 🗑️", "All task entries wiped clean permanently.", "info");
+      showToast("All Tasks Cleared 🗑️", "All task entries wiped clean from portal & database permanently.", "info");
     } else if (confirmModal.type === "single_task") {
       const targetId = confirmModal.taskId;
+      const taskToDelete = dailyTasks.find(t => String(t.id) === String(targetId));
       const updated = dailyTasks.filter(t => String(t.id) !== String(targetId));
       saveTasksState(updated);
-      showToast("Task Deleted 🗑️", "Task permanently removed.", "info");
+      try {
+        dbDeleteRecord("daily_tasks", targetId).catch(() => {});
+        await fetch("/api/persistence", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            table: "daily_tasks",
+            action: "delete",
+            record: {
+              id: targetId,
+              task_title: taskToDelete?.task_title || taskToDelete?.task,
+              email: taskToDelete?.assigned_to_email || taskToDelete?.email
+            }
+          })
+        });
+      } catch(e) {}
+      showToast("Task Deleted 🗑️", "Task permanently removed from database.", "info");
     }
 
     if (typeof window !== "undefined") {
@@ -190,60 +350,113 @@ export default function ProjectsPage() {
 
   const handleCreateDailyTask = async (e) => {
     e.preventDefault();
-    if (!newTaskForm.task.trim()) return;
+    if (!newTaskForm.task.trim()) {
+      showToast("Validation Error ⚠️", "Please enter task description.", "error");
+      return;
+    }
+
+    let targetEmail = (newTaskForm.assignedToEmail || "").toLowerCase().trim();
+    let selectedUser = assigneeDirectory.find(a => a.email.toLowerCase() === targetEmail);
+    if (!selectedUser && assigneeDirectory.length > 0) {
+      selectedUser = assigneeDirectory[0];
+      targetEmail = selectedUser.email.toLowerCase().trim();
+    }
+    const userName = selectedUser ? selectedUser.name : (newTaskForm.assignedToName || "Assigned User");
 
     let newTasksToInsert = [];
 
-    if (newTaskForm.targetType === "all_students") {
-      newTasksToInsert = studentDirectory.map((st) => ({
+    const tDays = Number(newTaskForm.targetDays) || 1;
+    const computedDueDate = newTaskForm.dueDate || new Date(Date.now() + tDays * 86400000).toISOString().split("T")[0];
+
+    if (newTaskForm.targetType === "all_employees") {
+      const emps = assigneeDirectory.filter(a => a.roleGroup === "Staff / Employees");
+      newTasksToInsert = emps.map((emp) => ({
         id: "dt-" + Date.now() + "-" + Math.random().toString(36).substring(2, 6),
-        task: newTaskForm.task,
-        assignedTo: `${st.name} (${st.batch})`,
-        email: st.email.toLowerCase().trim(),
-        targetAudience: "All Enrolled Students",
+        task_title: newTaskForm.task,
+        description: newTaskForm.task,
+        assigned_to_name: emp.name,
+        assigned_to_email: emp.email.toLowerCase().trim(),
         status: "Pending",
-        timerSeconds: 0,
-        isTimerRunning: false,
+        total_working_seconds: 0,
         category: newTaskForm.category,
         priority: newTaskForm.priority,
-        dueDate: newTaskForm.dueDate
+        target_days: tDays,
+        due_date: computedDueDate,
+        created_at: new Date().toISOString()
       }));
-    } else if (newTaskForm.targetType === "all_employees") {
-      newTasksToInsert = employeeDirectory.map((emp) => ({
+    } else if (newTaskForm.targetType === "all_students") {
+      const stList = assigneeDirectory.filter(a => a.roleGroup.includes("Student"));
+      newTasksToInsert = stList.map((st) => ({
         id: "dt-" + Date.now() + "-" + Math.random().toString(36).substring(2, 6),
-        task: newTaskForm.task,
-        assignedTo: `${emp.name} (${emp.dept})`,
-        email: emp.email.toLowerCase().trim(),
-        targetAudience: "All Paid Staff Employees",
+        task_title: newTaskForm.task,
+        description: newTaskForm.task,
+        assigned_to_name: st.name,
+        assigned_to_email: st.email.toLowerCase().trim(),
         status: "Pending",
-        timerSeconds: 0,
-        isTimerRunning: false,
+        total_working_seconds: 0,
         category: newTaskForm.category,
         priority: newTaskForm.priority,
-        dueDate: newTaskForm.dueDate
+        target_days: tDays,
+        due_date: computedDueDate,
+        created_at: new Date().toISOString()
+      }));
+    } else if (newTaskForm.targetType === "all_interns") {
+      const inList = assigneeDirectory.filter(a => a.roleGroup.includes("Intern"));
+      newTasksToInsert = inList.map((inItem) => ({
+        id: "dt-" + Date.now() + "-" + Math.random().toString(36).substring(2, 6),
+        task_title: newTaskForm.task,
+        description: newTaskForm.task,
+        assigned_to_name: inItem.name,
+        assigned_to_email: inItem.email.toLowerCase().trim(),
+        status: "Pending",
+        total_working_seconds: 0,
+        category: newTaskForm.category,
+        priority: newTaskForm.priority,
+        target_days: tDays,
+        due_date: computedDueDate,
+        created_at: new Date().toISOString()
       }));
     } else {
       newTasksToInsert = [
         {
-          id: "dt-" + Date.now(),
-          task: newTaskForm.task,
-          assignedTo: newTaskForm.assignedToName,
-          email: newTaskForm.assignedToEmail.toLowerCase().trim(),
-          targetAudience: newTaskForm.targetType === "individual_student" ? "Individual Student" : "Individual Staff",
+          id: "dt-" + Date.now() + "-" + Math.random().toString(36).substring(2, 6),
+          task_title: newTaskForm.task,
+          description: newTaskForm.task,
+          assigned_to_name: userName,
+          assigned_to_email: targetEmail || "bugtirahim450@gmail.com",
           status: "Pending",
-          timerSeconds: 0,
-          isTimerRunning: false,
+          total_working_seconds: 0,
           category: newTaskForm.category,
           priority: newTaskForm.priority,
-          dueDate: newTaskForm.dueDate
-        },
+          target_days: tDays,
+          due_date: computedDueDate,
+          created_at: new Date().toISOString()
+        }
       ];
     }
 
-    const updated = [...newTasksToInsert, ...dailyTasks];
-    saveTasksState(updated);
+    // Persist to Supabase exactly once per task
+    for (let i = 0; i < newTasksToInsert.length; i++) {
+      const t = newTasksToInsert[i];
+      try {
+        const res = await fetch("/api/persistence", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ table: "daily_tasks", record: t, action: "save" })
+        });
+        const json = await res.json();
+        if (json.data && json.data[0] && json.data[0].id) {
+          newTasksToInsert[i].id = json.data[0].id;
+        }
+      } catch (err) {}
+    }
 
+    const updated = [...newTasksToInsert, ...dailyTasks];
+    setDailyTasks(updated);
     if (typeof window !== "undefined") {
+      try {
+        localStorage.setItem("software_house_daily_tasks", JSON.stringify(updated));
+      } catch(e) {}
       window.dispatchEvent(new Event("dataChanged"));
     }
 
@@ -251,13 +464,14 @@ export default function ProjectsPage() {
     setNewTaskForm({
       task: "",
       category: "Development",
-      targetType: "individual_student",
-      assignedToName: "Ali Hassan (Student)",
-      assignedToEmail: "student@gmail.com",
+      targetType: "individual",
+      assignedToName: "",
+      assignedToEmail: assigneeDirectory[0]?.email || "",
       priority: "High",
       dueDate: new Date().toISOString().split("T")[0]
     });
-    showToast("Task Assigned 📋", `Assigned '${newTaskForm.task}' to ${newTasksToInsert.length} user(s).`, "success");
+
+    showToast("Task Assigned 🎉", `Task assigned successfully!`, "success");
   };
 
   const formatTimer = (totalSec = 0) => {
@@ -293,12 +507,26 @@ export default function ProjectsPage() {
   // Analytics Metrics
   const taskAnalytics = useMemo(() => {
     const total = userFilteredTasks.length;
-    const pending = userFilteredTasks.filter(t => t.status === "Pending").length;
-    const inProgress = userFilteredTasks.filter(t => t.status === "In Progress" || t.status === "Paused").length;
+    const pending = userFilteredTasks.filter(t => t.status === "Pending" && !t.timerSeconds).length;
+    const inProgress = userFilteredTasks.filter(t => t.status === "In Progress" || t.status === "Paused" || (t.status === "Pending" && t.timerSeconds > 0)).length;
     const completed = userFilteredTasks.filter(t => t.status === "Completed").length;
     const totalSecs = userFilteredTasks.reduce((sum, t) => sum + (t.timerSeconds || 0), 0);
 
-    const completionRatePct = total > 0 ? Math.round((completed / total) * 100) : 0;
+    // Dynamic real-time progress: Starts at 0%, increases with time worked, reaches 100% on complete
+    let completionRatePct = 0;
+    if (total > 0) {
+      const taskProgressSum = userFilteredTasks.reduce((acc, t) => {
+        if (t.status === "Completed") return acc + 100;
+        const curSecs = Number(t.timerSeconds || t.total_working_seconds || 0);
+        if (t.status === "In Progress" || t.status === "Paused" || curSecs > 0) {
+          const targetSeconds = (Number(t.target_days) || 1) * 3600;
+          const timeProgress = Math.min(95, Math.max(5, Math.round((curSecs / targetSeconds) * 100)));
+          return acc + timeProgress;
+        }
+        return acc + 0;
+      }, 0);
+      completionRatePct = Math.round(taskProgressSum / total);
+    }
 
     return {
       total,
@@ -508,10 +736,21 @@ export default function ProjectsPage() {
                 </div>
               ) : (
                 userFilteredTasks.map((t, idx) => {
-                  const safeTitle = safeText(t.task || t.title, "Untitled Task");
-                  const safeAssignee = safeText(t.assignedTo, "Unassigned Member");
+                  const safeTitle = safeText(t.task || t.task_title || t.title, "Untitled Task");
+                  const assigneeEmail = (t.assigned_to_email || t.email || "").toLowerCase().trim();
+                  const matchedUser = assigneeDirectory.find(a => a.email.toLowerCase() === assigneeEmail);
+                  const safeAssignee = (t.assigned_to_name && !t.assigned_to_name.includes("Unassigned") && t.assigned_to_name !== "Assigned User")
+                    ? t.assigned_to_name
+                    : (t.assignedTo && !t.assignedTo.includes("Unassigned")
+                    ? t.assignedTo
+                    : (matchedUser
+                    ? matchedUser.name
+                    : (assigneeEmail
+                    ? assigneeEmail.split("@")[0].replace(/[._-]/g, " ").replace(/\b\w/g, c => c.toUpperCase())
+                    : "Assigned Staff")));
+
                   const safeCategory = safeText(t.category, "General");
-                  const safeDueDate = safeText(t.dueDate, "No Due Date");
+                  const safeDueDate = safeText(t.dueDate || t.due_date, "No Due Date");
                   const safePriority = safeText(t.priority, "Normal");
 
                   const isCompleted = t.status === "Completed";
@@ -530,7 +769,10 @@ export default function ProjectsPage() {
                             {safeCategory}
                           </span>
                           <span className="text-xs font-medium text-[#64748B]">
-                            Assignee: <strong className="text-[#0F172A] font-semibold">{safeAssignee}</strong>
+                            Assignee: <strong className="text-[#0F172A] font-bold">{safeAssignee}</strong>
+                            {assigneeEmail && (
+                              <span className="text-[11px] text-[#2563EB] font-medium ml-1 font-mono">({assigneeEmail})</span>
+                            )}
                           </span>
                           <span className="text-[10px] font-semibold text-[#64748B] bg-[#F1F5F9] px-2 py-0.5 rounded-md">
                             Priority: {safePriority}
@@ -541,8 +783,25 @@ export default function ProjectsPage() {
                           {safeTitle}
                         </h3>
 
-                        <div className="flex items-center gap-4 text-[11px] text-[#64748B] pt-0.5">
-                          <span>Due: {safeDueDate}</span>
+                        <div className="flex flex-wrap items-center gap-3 text-[11px] text-[#64748B] pt-0.5">
+                          <span className="font-semibold text-slate-700">Due: {safeDueDate}</span>
+                          {t.target_days && (
+                            <span className="px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 font-bold border border-blue-200">
+                              ⏱️ Target: {t.target_days} Day(s)
+                            </span>
+                          )}
+                          {t.due_date && (
+                            <span className="text-[10px] font-semibold text-slate-500">
+                              {(() => {
+                                const days = Math.ceil((new Date(t.due_date).getTime() - new Date().setHours(0,0,0,0)) / 86400000);
+                                if (isCompleted) return "✓ Done";
+                                if (days > 1) return `⏳ ${days} days remaining`;
+                                if (days === 1) return "⏳ Due tomorrow";
+                                if (days === 0) return "⚠️ Due today";
+                                return `🔴 Overdue by ${Math.abs(days)} day(s)`;
+                              })()}
+                            </span>
+                          )}
                         </div>
                       </div>
 
@@ -610,7 +869,11 @@ export default function ProjectsPage() {
                             </button>
 
                             {activeKebabId === t.id && (
-                              <div className="absolute right-0 mt-1 w-36 rounded-xl bg-white p-1.5 shadow-lg border border-[#E2E8F0] z-30 space-y-0.5 text-xs animate-in fade-in zoom-in-95 duration-100">
+                              <div className={`absolute right-0 w-36 rounded-xl bg-white p-1.5 shadow-xl border border-[#E2E8F0] z-50 space-y-0.5 text-xs animate-in fade-in zoom-in-95 duration-100 ${
+                                idx >= Math.max(0, userFilteredTasks.length - 2)
+                                  ? "bottom-full mb-1 origin-bottom-right"
+                                  : "top-full mt-1 origin-top-right"
+                              }`}>
                                 <button
                                   onClick={() => {
                                     setActiveKebabId(null);
@@ -718,39 +981,117 @@ export default function ProjectsPage() {
 
       {/* TAB 2: PROJECTS DIRECTORY */}
       {activeTab === "projects" && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-xs">
-          {projects.map((p) => (
-            <div key={p.id} className="bg-white rounded-2xl border border-[#E2E8F0] p-6 shadow-sm space-y-4 flex flex-col justify-between">
-              <div className="space-y-3">
-                <div className="flex items-center justify-between border-b border-[#E2E8F0] pb-3">
-                  <div>
-                    <span className="text-[10px] font-bold uppercase px-2.5 py-0.5 rounded bg-[#EFF6FF] text-[#2563EB] border border-[#2563EB]/20">
-                      Client: {p.client || "Client Deal"}
-                    </span>
-                    <h3 className="font-bold text-[#0F172A] text-base mt-1">{p.title || "Untitled Project"}</h3>
+        <div className="space-y-6">
+          {/* Header Bar */}
+          <div className="bg-white rounded-2xl p-6 border border-[#E2E8F0] shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-[#2563EB] bg-[#EFF6FF] px-2.5 py-1 rounded-full border border-[#2563EB]/20">
+                  Software House Master Projects
+                </span>
+              </div>
+              <h2 className="text-xl font-bold text-[#0F172A] mt-1.5 flex items-center gap-2">
+                <FaFolderOpen className="text-[#2563EB]" />
+                <span>Enterprise Projects Directory ({projects.length})</span>
+              </h2>
+              <p className="text-xs text-[#64748B] mt-0.5">
+                Active client deliverables, milestone progress, budget allocation, and assigned engineering teams.
+              </p>
+            </div>
+
+            {(role === "admin" || role === "hr" || role === "manager") && (
+              <button
+                type="button"
+                onClick={() => setCreateProjectModalOpen(true)}
+                className="bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold px-4 py-2.5 rounded-xl text-xs transition-colors shadow-xs flex items-center gap-2 cursor-pointer shrink-0"
+              >
+                <FaPlusCircle />
+                <span>+ Register New Client Project</span>
+              </button>
+            )}
+          </div>
+
+          {/* Project Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-xs">
+            {projects.map((p) => (
+              <div key={p.id} className="bg-white rounded-2xl border border-[#E2E8F0] p-6 shadow-sm space-y-4 flex flex-col justify-between hover:shadow-md transition-shadow">
+                <div className="space-y-3">
+                  <div className="flex items-start justify-between border-b border-[#E2E8F0] pb-3 gap-2">
+                    <div>
+                      <span className="text-[10px] font-bold uppercase px-2.5 py-0.5 rounded bg-[#EFF6FF] text-[#2563EB] border border-[#2563EB]/20">
+                        Client: {p.client || "Client Deal"}
+                      </span>
+                      <h3 className="font-bold text-[#0F172A] text-base mt-1.5 leading-snug">{p.title || "Untitled Project"}</h3>
+                      <p className="text-[11px] text-[#64748B] font-medium mt-0.5">{p.department || "Engineering"}</p>
+                    </div>
+
+                    <div className="text-right shrink-0">
+                      <span className="text-[10px] font-semibold text-[#64748B] bg-[#F8FAFC] px-2.5 py-1 rounded border border-[#E2E8F0] block">
+                        Deadline: {p.deadline || "Ongoing"}
+                      </span>
+                      {p.budget && (
+                        <span className="text-[11px] font-bold text-emerald-600 font-mono mt-1 block">
+                          Budget: {p.budget}
+                        </span>
+                      )}
+                    </div>
                   </div>
-                  <span className="text-[10px] font-semibold text-[#64748B] bg-[#F8FAFC] px-2.5 py-1 rounded border border-[#E2E8F0]">
-                    Deadline: {p.deadline || "Ongoing"}
-                  </span>
+
+                  <p className="text-[#64748B] text-xs leading-relaxed">{p.description || "Active Software House project deliverable."}</p>
+
+                  {/* Progress Bar */}
+                  <div className="space-y-1.5 pt-1">
+                    <div className="flex justify-between text-[11px] font-semibold">
+                      <span className="text-slate-600">Completion Milestone Progress</span>
+                      <span className="text-[#2563EB] font-bold font-mono">{p.progress || 50}%</span>
+                    </div>
+                    <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden border border-slate-200">
+                      <div
+                        className="h-full bg-gradient-to-r from-[#2563EB] to-emerald-500 rounded-full transition-all duration-300"
+                        style={{ width: `${p.progress || 50}%` }}
+                      ></div>
+                    </div>
+                  </div>
                 </div>
 
-                <p className="text-[#64748B] text-xs leading-relaxed">{p.description || "Active Software House project deliverable."}</p>
-              </div>
+                <div className="pt-3 border-t border-[#E2E8F0] flex items-center justify-between">
+                  <span className={`font-bold text-[11px] px-2.5 py-1 rounded-full border ${
+                    p.status === "Review Phase"
+                      ? "bg-amber-50 text-amber-800 border-amber-300"
+                      : p.status === "Planning Phase"
+                      ? "bg-purple-50 text-purple-800 border-purple-300"
+                      : p.status === "Completed"
+                      ? "bg-emerald-50 text-emerald-800 border-emerald-300"
+                      : "bg-[#EFF6FF] text-[#2563EB] border-[#2563EB]/20"
+                  }`}>
+                    {p.status || "In Progress"}
+                  </span>
 
-              <div className="pt-2 border-t border-[#E2E8F0] flex items-center justify-between">
-                <span className="font-semibold text-[#2563EB] bg-[#EFF6FF] px-2.5 py-1 rounded-md border border-[#2563EB]/20">
-                  {p.status || "Active Workstream"}
-                </span>
+                  <div className="flex items-center gap-3">
+                    {(role === "admin" || role === "hr" || role === "manager") && (
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteProject(p.id)}
+                        className="text-slate-400 hover:text-rose-600 transition-colors text-xs p-1 cursor-pointer"
+                        title="Delete Project"
+                      >
+                        <FaTrash />
+                      </button>
+                    )}
 
-                <button
-                  onClick={() => setSelectedProjectModal(p)}
-                  className="text-[#2563EB] hover:underline font-semibold text-xs cursor-pointer"
-                >
-                  Inspect Project Details →
-                </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedProjectModal(p)}
+                      className="text-[#2563EB] hover:underline font-bold text-xs cursor-pointer flex items-center gap-1"
+                    >
+                      <span>Inspect Details</span>
+                      <FaArrowRight className="text-[10px]" />
+                    </button>
+                  </div>
+                </div>
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       )}
 
@@ -779,6 +1120,73 @@ export default function ProjectsPage() {
                 />
               </div>
 
+              {/* Assignee Target Scope */}
+              <div className="space-y-1">
+                <label className="font-semibold text-slate-700">Assign Target Scope *</label>
+                <select
+                  value={newTaskForm.targetType}
+                  onChange={(e) => setNewTaskForm({ ...newTaskForm, targetType: e.target.value })}
+                  className="w-full p-2.5 rounded-xl border border-slate-200 font-bold text-slate-900 outline-none focus:border-blue-600 bg-white"
+                >
+                  <option value="individual">👤 Select Specific Person (Employee / Student / Intern)</option>
+                  <option value="all_employees">👨‍💼 Assign to All Employees / Staff ({assigneeDirectory.filter(a => a.roleGroup === 'Staff / Employees').length})</option>
+                  <option value="all_students">🌐 Assign to All Enrolled Students ({assigneeDirectory.filter(a => a.roleGroup.includes('Student')).length})</option>
+                  <option value="all_interns">💼 Assign to All Interns ({assigneeDirectory.filter(a => a.roleGroup.includes('Intern')).length})</option>
+                </select>
+              </div>
+
+              {/* Individual Person Selector */}
+              {newTaskForm.targetType === "individual" && (
+                <div className="space-y-1">
+                  <label className="font-semibold text-slate-700">Select Assignee (Employee / Student / Intern) *</label>
+                  <select
+                    value={newTaskForm.assignedToEmail}
+                    onChange={(e) => {
+                      const selected = assigneeDirectory.find(a => a.email.toLowerCase() === e.target.value.toLowerCase());
+                      setNewTaskForm({
+                        ...newTaskForm,
+                        assignedToEmail: e.target.value,
+                        assignedToName: selected ? selected.name : ""
+                      });
+                    }}
+                    required
+                    className="w-full p-2.5 rounded-xl border border-slate-200 font-bold text-blue-700 outline-none focus:border-blue-600 bg-white"
+                  >
+                    <optgroup label="👨‍💼 Employees & Paid Staff">
+                      {assigneeDirectory.filter(a => a.roleGroup === "Staff / Employees").map((emp, idx) => (
+                        <option key={`emp-${emp.id || emp.email}-${idx}`} value={emp.email}>
+                          {emp.name} — {emp.detail} ({emp.email})
+                        </option>
+                      ))}
+                    </optgroup>
+
+                    <optgroup label="🌐 Remote Students">
+                      {assigneeDirectory.filter(a => a.roleGroup === "Remote Students").map((st, idx) => (
+                        <option key={`rem-st-${st.id || st.email}-${idx}`} value={st.email}>
+                          🌐 {st.name} — {st.detail} ({st.email})
+                        </option>
+                      ))}
+                    </optgroup>
+
+                    <optgroup label="🏫 On-Site Students">
+                      {assigneeDirectory.filter(a => a.roleGroup === "On-Site Students").map((st, idx) => (
+                        <option key={`ons-st-${st.id || st.email}-${idx}`} value={st.email}>
+                          🏫 {st.name} — {st.detail} ({st.email})
+                        </option>
+                      ))}
+                    </optgroup>
+
+                    <optgroup label="💼 Remote & On-Site Interns">
+                      {assigneeDirectory.filter(a => a.roleGroup.includes("Intern")).map((intItem, idx) => (
+                        <option key={`int-${intItem.id || intItem.email}-${idx}`} value={intItem.email}>
+                          💼 {intItem.name} — {intItem.badge} ({intItem.email})
+                        </option>
+                      ))}
+                    </optgroup>
+                  </select>
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <label className="font-semibold text-[#64748B]">Task Category</label>
@@ -806,6 +1214,40 @@ export default function ProjectsPage() {
                     <option value="Medium">Medium Priority</option>
                     <option value="Low">Low Priority</option>
                   </select>
+                </div>
+              </div>
+
+              {/* Target Days Duration / Deadline */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="font-semibold text-[#64748B]">Target Duration (Days to Complete)</label>
+                  <select
+                    value={newTaskForm.targetDays}
+                    onChange={(e) => {
+                      const days = Number(e.target.value);
+                      const due = new Date(Date.now() + days * 86400000).toISOString().split("T")[0];
+                      setNewTaskForm({ ...newTaskForm, targetDays: days, dueDate: due });
+                    }}
+                    className="w-full p-2.5 rounded-xl border border-[#E2E8F0] font-bold text-[#2563EB] outline-none focus:border-[#2563EB] bg-white"
+                  >
+                    <option value={1}>⏱️ 1 Day (Complete Today / 24h)</option>
+                    <option value={2}>⏱️ 2 Days (48 Hours)</option>
+                    <option value={3}>⏱️ 3 Days (Standard Sprint)</option>
+                    <option value={5}>⏱️ 5 Days (Full Work Week)</option>
+                    <option value={7}>⏱️ 7 Days (1 Week Sprint)</option>
+                    <option value={14}>⏱️ 14 Days (2 Weeks)</option>
+                    <option value={30}>⏱️ 30 Days (1 Month Phase)</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="font-semibold text-[#64748B]">Target Due Date</label>
+                  <input
+                    type="date"
+                    value={newTaskForm.dueDate}
+                    onChange={(e) => setNewTaskForm({ ...newTaskForm, dueDate: e.target.value })}
+                    className="w-full p-2.5 rounded-xl border border-[#E2E8F0] font-semibold text-[#0F172A] outline-none focus:border-[#2563EB]"
+                  />
                 </div>
               </div>
 
@@ -880,8 +1322,140 @@ export default function ProjectsPage() {
             <p className="text-xs text-[#64748B]">{selectedProjectModal.description}</p>
 
             <div className="pt-2 text-right">
-              <button onClick={() => setSelectedProjectModal(null)} className="bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-semibold px-4 py-2 rounded-xl text-xs">Close</button>
+              <button onClick={() => setSelectedProjectModal(null)} className="bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-semibold px-4 py-2 rounded-xl text-xs cursor-pointer">Close</button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* CREATE NEW CLIENT PROJECT MODAL */}
+      {createProjectModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-[#E2E8F0] space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between border-b border-[#E2E8F0] pb-3">
+              <h3 className="text-base font-bold text-[#0F172A] flex items-center gap-2">
+                <FaPlusCircle className="text-[#2563EB]" />
+                <span>Register New Client Project</span>
+              </h3>
+              <button onClick={() => setCreateProjectModalOpen(false)} className="text-[#64748B] hover:text-[#0F172A] font-bold cursor-pointer">✕</button>
+            </div>
+
+            <form onSubmit={handleCreateProject} className="space-y-3 text-xs">
+              <div className="space-y-1">
+                <label className="font-semibold text-[#64748B]">Project Title *</label>
+                <input
+                  type="text"
+                  required
+                  value={newProjectForm.title}
+                  onChange={(e) => setNewProjectForm({ ...newProjectForm, title: e.target.value })}
+                  placeholder="e.g. Nexa ERP Enterprise Portal v2.0"
+                  className="w-full p-2.5 rounded-xl border border-[#E2E8F0] font-semibold text-[#0F172A] outline-none focus:border-[#2563EB]"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="font-semibold text-[#64748B]">Client Name / Deal *</label>
+                  <input
+                    type="text"
+                    required
+                    value={newProjectForm.client}
+                    onChange={(e) => setNewProjectForm({ ...newProjectForm, client: e.target.value })}
+                    placeholder="e.g. Global Logistics Ltd"
+                    className="w-full p-2.5 rounded-xl border border-[#E2E8F0] font-semibold text-[#0F172A] outline-none focus:border-[#2563EB]"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="font-semibold text-[#64748B]">Department / Track</label>
+                  <input
+                    type="text"
+                    value={newProjectForm.department}
+                    onChange={(e) => setNewProjectForm({ ...newProjectForm, department: e.target.value })}
+                    placeholder="e.g. Web Development"
+                    className="w-full p-2.5 rounded-xl border border-[#E2E8F0] font-semibold text-[#0F172A] outline-none focus:border-[#2563EB]"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="font-semibold text-[#64748B]">Project Budget (PKR)</label>
+                  <input
+                    type="text"
+                    value={newProjectForm.budget}
+                    onChange={(e) => setNewProjectForm({ ...newProjectForm, budget: e.target.value })}
+                    placeholder="e.g. Rs. 450,000"
+                    className="w-full p-2.5 rounded-xl border border-[#E2E8F0] font-semibold text-[#0F172A] outline-none focus:border-[#2563EB]"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="font-semibold text-[#64748B]">Target Deadline</label>
+                  <input
+                    type="date"
+                    value={newProjectForm.deadline}
+                    onChange={(e) => setNewProjectForm({ ...newProjectForm, deadline: e.target.value })}
+                    className="w-full p-2.5 rounded-xl border border-[#E2E8F0] font-semibold text-[#0F172A] outline-none focus:border-[#2563EB]"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="font-semibold text-[#64748B]">Status Phase</label>
+                  <select
+                    value={newProjectForm.status}
+                    onChange={(e) => setNewProjectForm({ ...newProjectForm, status: e.target.value })}
+                    className="w-full p-2.5 rounded-xl border border-[#E2E8F0] font-semibold text-[#0F172A] outline-none focus:border-[#2563EB] bg-white"
+                  >
+                    <option value="In Progress">In Progress</option>
+                    <option value="Review Phase">Review Phase</option>
+                    <option value="Planning Phase">Planning Phase</option>
+                    <option value="Completed">Completed</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="font-semibold text-[#64748B]">Initial Progress (%)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={newProjectForm.progress}
+                    onChange={(e) => setNewProjectForm({ ...newProjectForm, progress: Number(e.target.value) })}
+                    className="w-full p-2.5 rounded-xl border border-[#E2E8F0] font-semibold text-[#0F172A] outline-none focus:border-[#2563EB]"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="font-semibold text-[#64748B]">Scope & Description</label>
+                <textarea
+                  rows={3}
+                  value={newProjectForm.description}
+                  onChange={(e) => setNewProjectForm({ ...newProjectForm, description: e.target.value })}
+                  placeholder="Summarize project scope, deliverables, and architecture..."
+                  className="w-full p-2.5 rounded-xl border border-[#E2E8F0] font-semibold text-[#0F172A] outline-none focus:border-[#2563EB]"
+                />
+              </div>
+
+              <div className="pt-2 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setCreateProjectModalOpen(false)}
+                  className="flex-1 py-2.5 rounded-xl bg-white hover:bg-[#F8FAFC] text-[#2563EB] border border-[#E2E8F0] font-semibold cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-2.5 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold cursor-pointer"
+                >
+                  Register Project
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

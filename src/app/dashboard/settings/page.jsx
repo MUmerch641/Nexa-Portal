@@ -75,7 +75,11 @@ export default function SettingsPage() {
     const savedPassKey = `user_password_${emailKey}`;
     const storedPassword = localStorage.getItem(savedPassKey) || "admin123";
 
-    if (currentPassword !== storedPassword) {
+    // Admin can change password without current password verification
+    const userRole = localStorage.getItem("user_role") || "admin";
+    const isAdmin = userRole === "admin" || userRole === "hr" || userRole === "manager";
+
+    if (!isAdmin && currentPassword !== storedPassword) {
       showToast("Incorrect Password 🛑", "Current password does not match.", "error");
       return;
     }
@@ -85,14 +89,17 @@ export default function SettingsPage() {
       return;
     }
 
-    const strongPasswordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
-    if (!strongPasswordRegex.test(newPassword)) {
-      showToast(
-        "Weak Password Policy 🛑",
-        "Must be 8+ chars with uppercase, lowercase, number, & special char.",
-        "warning"
-      );
-      return;
+    // Admin can set any password without strict requirements
+    if (!isAdmin) {
+      const strongPasswordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
+      if (!strongPasswordRegex.test(newPassword)) {
+        showToast(
+          "Weak Password Policy 🛑",
+          "Must be 8+ chars with uppercase, lowercase, number, & special char.",
+          "warning"
+        );
+        return;
+      }
     }
 
     localStorage.setItem(savedPassKey, newPassword);
