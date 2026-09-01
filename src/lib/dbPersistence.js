@@ -2,7 +2,7 @@ import { supabase } from "@/lib/supabase";
 
 export const TABLE_STORAGE_KEYS = {
   employees: "persistent_employees",
-  projects: "software_house_full_projects",
+  projects: "software_house_projects",
   daily_tasks: "software_house_daily_tasks",
   clients: "software_house_clients",
   invoices: "software_house_invoices",
@@ -20,6 +20,7 @@ export const TABLE_STORAGE_KEYS = {
   interns: "persistent_interns",
   utility_bills: "software_house_utility_bills",
   client_projects: "software_house_client_projects",
+  monitoring_sessions: "monitoring_sessions",
   remote_work_sessions: "remote_work_sessions",
   activity_logs: "remote_activity_logs",
   screenshot_logs: "remote_screenshot_logs",
@@ -27,6 +28,8 @@ export const TABLE_STORAGE_KEYS = {
   work_timelines: "remote_work_timelines",
   productivity_reports: "remote_productivity_reports",
   student_fee_cycles: "persistent_student_fee_cycles",
+  registered_accounts: "registered_system_users",
+  student_attendance: "student_attendance_records",
 };
 
 /**
@@ -40,7 +43,9 @@ export function cleanPayloadForDb(record, table = "") {
   const invalidColumns = [
     "cnic", "internship_mode", "resources_url", "screen_access_url",
     "start_date", "end_date", "daily_logs", "work_mode", "is_remote",
-    "course_mode", "reminder_sent", "assigned_password", "enrollment_mode"
+    "course_mode", "reminder_sent", "assigned_password", "enrollment_mode",
+    "auth_user_id", "blood_group", "guardian_phone", "emergency_phone",
+    "total_fee", "course_fee", "submitted_fee", "fee_paid", "remaining_fee"
   ];
 
   Object.keys(record).forEach((key) => {
@@ -49,9 +54,12 @@ export function cleanPayloadForDb(record, table = "") {
     if (typeof value === "function" || typeof value === "symbol") return;
     if (value && typeof value === "object" && !Array.isArray(value) && !(value instanceof Date)) return;
 
-    // If ID is a custom frontend string like "emp-178540..." or "s-123", strip it so PostgreSQL auto-assigns integer ID
-    if (key === "id" && typeof value === "string" && isNaN(Number(value))) {
-      return;
+    // If ID is a custom frontend string like "dt-1785..." or "emp-123", strip it so PostgreSQL auto-assigns valid UUID
+    if (key === "id" && typeof value === "string") {
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (!uuidRegex.test(value) && isNaN(Number(value))) {
+        return;
+      }
     }
 
     // Strip unmapped custom frontend columns to prevent Supabase PostgREST 400 schema errors
@@ -61,6 +69,21 @@ export function cleanPayloadForDb(record, table = "") {
 
     cleaned[key] = value;
   });
+
+  if (table === "employees") {
+    if (record.password || record.assigned_password) {
+      cleaned.user_id = `auth:${record.password || record.assigned_password}`;
+    }
+  }
+
+  if (table === "students") {
+    cleaned.enrollment_no = record.enrollment_no || record.student_id || record.id || `s-${Date.now()}`;
+    cleaned.course_name = record.course_name || record.course || "Full Stack MERN Web Development";
+    cleaned.admission_date = record.admission_date || record.enrollment_date || record.start_date || new Date().toISOString().split("T")[0];
+    if (record.password || record.assigned_password) {
+      cleaned.emergency_contact = `auth:${record.password || record.assigned_password}`;
+    }
+  }
 
   return cleaned;
 }
@@ -87,29 +110,57 @@ const MEM_CACHE_TTL = 30000; // 30 seconds TTL
  * Fetch records from Supabase DB merged with local storage fallback.
  * Returns cached data in <1ms while syncing with Supabase in the background.
  */
-export async function dbFetch(table, defaultData = []) {
+export async function dbFetch(table, defaultData = [], forceFresh = false) {
   const storageKey = TABLE_STORAGE_KEYS[table] || `persistent_${table}`;
   
-  // Read deleted IDs blacklist
-  let deletedIds = [];
+  if (forceFresh) {
+    MEM_CACHE.delete(table);
+  } else {
+    // Check RAM Cache
+    const cached = MEM_CACHE.get(table);
+    if (cached && Date.now() - cached.timestamp < MEM_CACHE_TTL && Array.isArray(cached.data) && cached.data.length > 0) {
+      return cached.data;
+    }
+  }
+  
+  // Read deleted IDs and emails universal blacklist
+  let deletedBlacklist = new Set();
   try {
     if (typeof window !== "undefined") {
-      const d = localStorage.getItem("deleted_intern_ids");
-      if (d) deletedIds = JSON.parse(d);
+      const keys = [
+        "deleted_intern_ids",
+        "deleted_employee_ids",
+        "deleted_payrolls_list",
+        "software_house_deleted_performances",
+        "deleted_entity_blacklist"
+      ];
+      keys.forEach(k => {
+        const raw = localStorage.getItem(k);
+        if (raw) {
+          try {
+            const arr = JSON.parse(raw);
+            if (Array.isArray(arr)) {
+              arr.forEach(val => {
+                if (val) deletedBlacklist.add(String(val).toLowerCase().trim());
+              });
+            }
+          } catch(e) {}
+        }
+      });
     }
   } catch (e) {}
 
   const isDeleted = (item) => {
     if (!item) return true;
     const itemId = String(item.id || "").toLowerCase().trim();
-    const itemEmail = String(item.email || "").toLowerCase().trim();
-    const itemName = String(item.full_name || item.name || item.title || "").toLowerCase().trim();
+    const itemEmail = String(item.email || item.student_email || item.assigned_to_email || "").toLowerCase().trim();
+    const itemName = String(item.full_name || item.name || item.title || item.employee_name || "").toLowerCase().trim();
 
-    return deletedIds.some(d => {
-      const del = String(d).toLowerCase().trim();
-      if (!del) return false;
-      return (itemId && itemId === del) || (itemEmail && itemEmail === del) || (itemName && itemName === del);
-    });
+    return (
+      (itemId && deletedBlacklist.has(itemId)) ||
+      (itemEmail && deletedBlacklist.has(itemEmail)) ||
+      (itemName && deletedBlacklist.has(itemName))
+    );
   };
 
   // 1. Load Database Data via Server Persistence Proxy API (Database is Single Source of Truth)
@@ -117,7 +168,11 @@ export async function dbFetch(table, defaultData = []) {
   let fetchedFromDb = false;
   try {
     if (typeof window !== "undefined") {
-      const res = await fetch(`/api/persistence?table=${encodeURIComponent(table)}`).catch(() => null);
+      const cacheBust = forceFresh ? `&t=${Date.now()}` : "";
+      const res = await fetch(`/api/persistence?table=${encodeURIComponent(table)}${cacheBust}`, {
+        cache: "no-store",
+        headers: { "Cache-Control": "no-cache" }
+      }).catch(() => null);
       if (res && res.ok) {
         const json = await res.json();
         if (json && Array.isArray(json.data)) {
@@ -138,46 +193,31 @@ export async function dbFetch(table, defaultData = []) {
     }
   } catch (e) {}
 
-  // 3. Deduplicate and Merge Datasets (Database takes priority over local cached data)
-  const map = new Map();
-
+  // 3. Database is Single Source of Truth
+  let merged = [];
   if (fetchedFromDb) {
-    // DB is active: Use DB data directly as primary truth, filtered against blacklist
-    dbData.forEach(item => {
-      if (item && !isDeleted(item)) {
-        const k = getDedupeKey(item);
-        if (k) map.set(k, item);
-      }
-    });
-
-    // Keep all local items not present in DB (matching by unique dedupe key)
-    localData.forEach(item => {
-      if (item && !isDeleted(item)) {
-        const k = getDedupeKey(item);
-        if (k && !map.has(k)) {
-          map.set(k, item);
+    // DB is live: Use DB data directly as primary truth, filtered against blacklist
+    merged = dbData.filter(i => !isDeleted(i));
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.setItem(storageKey, JSON.stringify(merged));
+        // Clear old aliases
+        if (table === "projects") {
+          localStorage.setItem("software_house_projects", JSON.stringify(merged));
+          localStorage.setItem("software_house_full_projects", JSON.stringify(merged));
         }
-      }
-    });
+      } catch(e) {}
+    }
   } else {
     // Fallback if DB fetch is offline
-    localData.forEach(item => {
-      if (item && !isDeleted(item)) {
-        const k = getDedupeKey(item);
-        if (k) map.set(k, item);
-      }
-    });
+    merged = (localData || []).filter(i => !isDeleted(i));
   }
 
-  const merged = Array.from(map.values()).filter(i => !isDeleted(i));
-
-  // Update RAM Cache & Local Storage with clean merged list
-  MEM_CACHE.set(table, { data: merged, timestamp: Date.now() });
-  if (typeof window !== "undefined") {
-    try {
-      localStorage.setItem(storageKey, JSON.stringify(merged));
-    } catch(e) {}
-  }
+  // Update RAM Cache
+  MEM_CACHE.set(table, {
+    data: merged,
+    timestamp: Date.now()
+  });
 
   return merged;
 }
@@ -194,29 +234,17 @@ export async function dbSaveList(table, list = []) {
     } catch(e) {}
   }
 
+  // Single POST call to sync first record with Supabase (no duplicates)
   try {
-    if (Array.isArray(list) && list.length > 0) {
-      const cleanedList = list.map(item => cleanPayloadForDb(item, table));
-      if (typeof window !== "undefined") {
-        fetch("/api/persistence", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ table, record: cleanedList[0], action: "save" })
-        }).catch(() => {});
-      }
+    if (Array.isArray(list) && list.length > 0 && typeof window !== "undefined") {
+      const cleanedRecord = cleanPayloadForDb(list[0], table);
+      fetch("/api/persistence", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ table, record: cleanedRecord, action: "save" })
+      }).catch(() => {});
     }
   } catch(e) {}
-
-  if (typeof window !== "undefined") {
-    fetch("/api/persistence", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ table, record: list[0], action: "save" })
-    }).catch(() => {});
-
-    window.dispatchEvent(new Event("dataChanged"));
-    window.dispatchEvent(new Event("storage"));
-  }
 
   return list;
 }
@@ -261,11 +289,8 @@ export async function dbSaveRecord(table, record) {
     }
   } catch(e) {}
 
-  // 3. Trigger cross-tab/window event
-  if (typeof window !== "undefined") {
-    window.dispatchEvent(new Event("dataChanged"));
-    window.dispatchEvent(new Event("storage"));
-  }
+  // 3. Done — callers dispatch events explicitly when needed
+
 
   return record;
 }
@@ -284,8 +309,14 @@ export async function dbDeleteRecord(table, id, emailField = "") {
   
   if (typeof window !== "undefined") {
     try {
-      const targetKey = String(id || emailField).toLowerCase().trim();
+      const targetKey = String(id || "").toLowerCase().trim();
       const targetEmail = String(emailField || "").toLowerCase().trim();
+
+      // Add to universal blacklist
+      const blacklist = JSON.parse(localStorage.getItem("deleted_entity_blacklist") || "[]");
+      if (targetKey && !blacklist.includes(targetKey)) blacklist.push(targetKey);
+      if (targetEmail && !blacklist.includes(targetEmail)) blacklist.push(targetEmail);
+      localStorage.setItem("deleted_entity_blacklist", JSON.stringify(blacklist));
 
       storageKeys.forEach(key => {
         const saved = localStorage.getItem(key);
@@ -296,9 +327,8 @@ export async function dbDeleteRecord(table, id, emailField = "") {
               if (!item) return false;
               const itemId = String(item.id || "").toLowerCase().trim();
               const itemEmail = String(item.email || "").toLowerCase().trim();
-              if (id && itemId === String(id).toLowerCase().trim()) return false;
-              if (targetEmail && itemEmail === targetEmail) return false;
               if (targetKey && (itemId === targetKey || itemEmail === targetKey)) return false;
+              if (targetEmail && (itemEmail === targetEmail || itemId === targetEmail)) return false;
               return true;
             });
             localStorage.setItem(key, JSON.stringify(filtered));
@@ -335,11 +365,6 @@ export async function dbDeleteRecord(table, id, emailField = "") {
     }
   } catch(e) {
     backendError = e.message;
-  }
-
-  if (typeof window !== "undefined") {
-    window.dispatchEvent(new Event("dataChanged"));
-    window.dispatchEvent(new Event("storage"));
   }
 
   if (backendError && !backendSuccess) {

@@ -36,7 +36,7 @@ export default function SalaryPage() {
     try {
       const saved = localStorage.getItem("persistent_employees");
       if (saved) localEmps = JSON.parse(saved);
-    } catch(e) {}
+    } catch (e) { }
 
     try {
       const { data, error } = await supabase
@@ -51,7 +51,7 @@ export default function SalaryPage() {
         setEmployees(Array.from(empMap.values()));
         return;
       }
-    } catch (err) {}
+    } catch (err) { }
 
     if (localEmps.length > 0) {
       setEmployees(localEmps);
@@ -59,7 +59,7 @@ export default function SalaryPage() {
       setEmployees([
         { id: "emp-101", full_name: "Muhammad Ali" },
         { id: "emp-102", full_name: "Sara Khan" },
-        { id: "emp-103", full_name: "Muhammad Rahim Bugti" },
+        { id: "emp-103", full_name: "Muhammad " },
         { id: "emp-104", full_name: "Usman Tariq" }
       ]);
     }
@@ -104,8 +104,8 @@ export default function SalaryPage() {
           amount: Number(amount),
           payment_method: paymentMethod,
         },
-      ]).catch(() => {});
-    } catch(err) {}
+      ]).catch(() => { });
+    } catch (err) { }
 
     showAlert("Salary Record Saved!", `Payroll disbursement recorded successfully for ${empName}.`, "success");
 

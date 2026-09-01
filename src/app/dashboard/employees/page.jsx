@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { dbFetch, dbSaveRecord } from "@/lib/dbPersistence";
+import { dbFetch, dbSaveRecord, dbDeleteRecord } from "@/lib/dbPersistence";
 import { logActivity, initActivityStatusTracker } from "@/lib/activityUtils";
 import Modal from "@/components/Modal";
 import { showToast } from "@/components/Toast";
@@ -36,9 +37,14 @@ const INITIAL_DEMO_EMPLOYEES = [
 ];
 
 export default function EmployeesPage() {
+  const router = useRouter();
   const [employees, setEmployees] = useState([]);
   const [fetching, setFetching] = useState(true);
   const [loading, setLoading] = useState(false);
+  const [role, setRole] = useState("admin");
+  const [userEmail, setUserEmail] = useState("");
+  const [emailError, setEmailError] = useState("");
+  const [nameError, setNameError] = useState("");
 
   // Modals & Popup State
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -53,7 +59,7 @@ export default function EmployeesPage() {
     father_name: "",
     phone: "",
     email: "",
-    assigned_password: "employeepassword123",
+    assigned_password: "",
     blood_group: "O+",
     address: "",
     guardian_phone: "",
@@ -62,20 +68,20 @@ export default function EmployeesPage() {
     designation: "Senior Lead Developer",
     employment_type: "Paid Staff (Full Time)",
     joining_date: new Date().toISOString().split("T")[0],
+    assigned_shift: "Full Time (10:00 AM – 6:00 PM)",
+    basic_salary: "45000",
+    bank_account_number: "",
+    status: "active"
   });
 
-  const [emailError, setEmailError] = useState("");
-  const [nameError, setNameError] = useState("");
-
-  const [role, setRole] = useState("admin");
-  const [userEmail, setUserEmail] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [showInactive, setShowInactive] = useState(false);
 
-  // Fetch Employees & Deduplicate
+  // Fetch Employees from Database (Force Fresh Real-Time Sync)
   const fetchEmployees = async () => {
     setFetching(true);
-    const rawEmps = await dbFetch("employees", INITIAL_DEMO_EMPLOYEES);
+
+    const rawEmps = await dbFetch("employees", [], true);
     
     // Deduplicate employees strictly by ID / Email
     const map = new Map();
@@ -86,26 +92,41 @@ export default function EmployeesPage() {
         map.set(key, e);
       }
     });
-    setEmployees(Array.from(map.values()));
+
+    const list = Array.from(map.values());
+    setEmployees(list);
+
+    if (typeof window !== "undefined" && list.length > 0) {
+      localStorage.setItem("persistent_employees", JSON.stringify(list));
+    }
+
     setFetching(false);
   };
 
   useEffect(() => {
-    const savedRole = localStorage.getItem("user_role") || "admin";
-    const savedEmail = localStorage.getItem("current_user_email") || "";
+    const savedRole = localStorage.getItem("user_role") || "employee";
+    const savedEmail = (localStorage.getItem("current_user_email") || "").toLowerCase().trim();
+    const adminCheck = savedRole === "admin" || savedEmail.includes("admin") || savedEmail.includes("owner");
+
     setRole(savedRole);
     setUserEmail(savedEmail);
+
+    if (!adminCheck) {
+      setFetching(false);
+      showToast("Access Restricted 🔒", "Employees Directory is reserved for Admin only.", "warning");
+      router.replace(savedRole === "student" ? "/dashboard/student" : "/dashboard/employee");
+      return;
+    }
+
     fetchEmployees();
 
     const cleanupTracker = initActivityStatusTracker(savedEmail);
-    const handleStorageChange = () => fetchEmployees();
-    window.addEventListener("storage", handleStorageChange);
 
     return () => {
       cleanupTracker();
-      window.removeEventListener("storage", handleStorageChange);
     };
   }, []);
+
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -183,8 +204,8 @@ export default function EmployeesPage() {
         father_name: "",
         phone: "",
         email: "",
-        assigned_password: "employeepassword123",
-        confirm_password: "employeepassword123",
+        assigned_password: "",
+        confirm_password: "",
         blood_group: "O+",
         address: "",
         guardian_phone: "",
@@ -213,7 +234,13 @@ export default function EmployeesPage() {
       setEmployees(updatedList);
       try {
         localStorage.setItem("persistent_employees", JSON.stringify(updatedList));
+        await dbSaveRecord("employees", { ...emp, status: "inactive" });
         await supabase.from("employees").update({ status: "inactive" }).eq("id", emp.id);
+        fetch("/api/persistence", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ table: "employees", record: { ...emp, status: "inactive" }, action: "save" })
+        }).catch(() => {});
       } catch(e) {}
       showToast("Employee Deactivated 🛑", `Account for ${emp.full_name} deactivated. Historical data preserved.`, "info");
     } else if (type === "reactivate") {
@@ -221,7 +248,13 @@ export default function EmployeesPage() {
       setEmployees(updatedList);
       try {
         localStorage.setItem("persistent_employees", JSON.stringify(updatedList));
+        await dbSaveRecord("employees", { ...emp, status: "active" });
         await supabase.from("employees").update({ status: "active" }).eq("id", emp.id);
+        fetch("/api/persistence", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ table: "employees", record: { ...emp, status: "active" }, action: "save" })
+        }).catch(() => {});
       } catch(e) {}
       showToast("Employee Reactivated 🟢", `Account for ${emp.full_name} reactivated.`, "success");
     } else if (type === "delete") {
@@ -229,7 +262,27 @@ export default function EmployeesPage() {
       setEmployees(updatedList);
       try {
         localStorage.setItem("persistent_employees", JSON.stringify(updatedList));
-        await supabase.from("employees").delete().eq("id", emp.id);
+        if (emp.email) {
+          const deletedList = JSON.parse(localStorage.getItem("deleted_payrolls_list") || "[]");
+          if (!deletedList.includes(emp.email.toLowerCase().trim())) {
+            deletedList.push(emp.email.toLowerCase().trim());
+            localStorage.setItem("deleted_payrolls_list", JSON.stringify(deletedList));
+          }
+        }
+        await dbDeleteRecord("employees", emp.id);
+        if (emp.id) {
+          await supabase.from("employees").delete().eq("id", emp.id);
+          await supabase.from("payrolls").delete().eq("id", emp.id);
+        }
+        if (emp.email) {
+          await supabase.from("employees").delete().eq("email", emp.email.toLowerCase().trim());
+          await supabase.from("payrolls").delete().eq("email", emp.email.toLowerCase().trim());
+        }
+        fetch("/api/persistence", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ table: "employees", record: { id: emp.id, email: emp.email }, action: "delete" })
+        }).catch(() => {});
       } catch(e) {}
       showToast("Employee Deleted 🗑️", `'${emp.full_name}' purged permanently.`, "info");
     }
@@ -389,7 +442,7 @@ export default function EmployeesPage() {
         </div>
 
         {/* Directory Table */}
-        <div className="overflow-x-auto rounded-xl border border-[#E2E8F0]">
+        <div className="overflow-x-auto rounded-xl border border-[#E2E8F0] min-h-[260px] pb-12">
           <table className="w-full text-left text-xs border-collapse">
             <thead className="bg-[#F8FAFC] text-[#64748B] font-semibold uppercase text-[10px] tracking-wider border-b border-[#E2E8F0] sticky top-0">
               <tr>
@@ -473,7 +526,10 @@ export default function EmployeesPage() {
                             View History →
                           </button>
 
-                          <div className="relative">
+                          <div
+                            className="relative kebab-menu-container"
+                            onMouseLeave={() => setActiveKebabId(null)}
+                          >
                             <button
                               type="button"
                               onClick={() => setActiveKebabId(activeKebabId === emp.id ? null : emp.id)}
@@ -483,7 +539,11 @@ export default function EmployeesPage() {
                             </button>
 
                             {activeKebabId === emp.id && (
-                              <div className="absolute right-0 mt-1 w-44 rounded-xl bg-white p-1.5 shadow-lg border border-[#E2E8F0] z-30 space-y-0.5 text-xs text-left animate-in fade-in zoom-in-95 duration-100">
+                              <div className={`absolute right-0 w-44 rounded-xl bg-white p-1.5 shadow-2xl border border-[#E2E8F0] z-50 space-y-0.5 text-xs text-left animate-in fade-in zoom-in-95 duration-100 ${
+                                filteredEmployees.length > 3 && idx >= filteredEmployees.length - 1
+                                  ? "bottom-full mb-1 origin-bottom-right"
+                                  : "top-full mt-1 origin-top-right"
+                              }`}>
                                 <button
                                   type="button"
                                   onClick={() => {
@@ -724,13 +784,13 @@ export default function EmployeesPage() {
                   </div>
 
                   <div className="space-y-1">
-                    <label className="font-semibold text-[#64748B]">Assign Login Password *</label>
+                    <label className="font-semibold text-[#64748B]">Assign Login Password</label>
                     <input
                       type="text"
                       name="assigned_password"
-                      required
                       value={form.assigned_password}
                       onChange={handleChange}
+                      placeholder="Set Employee Password (e.g. Pass123)"
                       className="w-full p-2.5 rounded-xl border border-[#E2E8F0] font-semibold text-[#0F172A] outline-none focus:border-[#2563EB]"
                     />
                   </div>
