@@ -32,17 +32,18 @@ const adminMenuGroups = [
     id: "core",
     items: [
       { name: "Overview Dashboard", href: "/dashboard", icon: FaChartPie },
+      { name: "Staff Dashboard View", href: "/dashboard/employee", icon: FaUserTie },
       { name: "Employees Directory", href: "/dashboard/employees", icon: FaUsers },
       { name: "Projects Directory", href: "/dashboard/projects", icon: FaProjectDiagram },
       { name: "Remote Monitoring", href: "/dashboard/remote-monitoring", icon: FaDesktop },
     ]
   },
   {
-    title: "Attendance & HR",
+    title: "Attendance & Admin",
     id: "hr",
     items: [
       { name: "Attendance Control", href: "/dashboard/attendance", icon: FaCalendarCheck },
-      { name: "Leave Approvals", href: "/dashboard/leaves", icon: FaUserClock },
+      { name: "Leave & Admin Approvals", href: "/dashboard/leaves", icon: FaUserClock },
       { name: "Payroll & Payslips", href: "/dashboard/payroll", icon: FaWallet },
       { name: "Performance Reviews", href: "/dashboard/performance", icon: FaTrophy },
       { name: "Complaints Hub", href: "/dashboard/complaints", icon: FaExclamationTriangle },
@@ -52,7 +53,6 @@ const adminMenuGroups = [
     title: "Academic & Students",
     id: "academic",
     items: [
-      { name: "Student Portal", href: "/dashboard/student", icon: FaGraduationCap },
       { name: "Courses & Students", href: "/dashboard/courses", icon: FaGraduationCap },
       { name: "3-Month Internships", href: "/dashboard/internships", icon: FaLaptopCode },
       { name: "Announcement Board", href: "/dashboard/announcements", icon: FaBullhorn },
@@ -165,13 +165,9 @@ export default function Sidebar({ isOpen, onClose }) {
   const groups =
     role === "admin" || role === "hr" || role === "manager" || role === "accounts"
       ? adminMenuGroups
-      : role === "student" || role === "course_student" || role === "intern"
+      : role === "student" || role === "course_student"
       ? studentMenuGroups
       : employeeMenuGroups;
-
-  if (role !== "admin" && role !== "hr" && role !== "manager" && role !== "accounts" && role !== "client") {
-    return null;
-  }
 
   return (
     <>
@@ -219,33 +215,16 @@ export default function Sidebar({ isOpen, onClose }) {
           </button>
         </div>
 
-        {/* Role View Mode Switcher */}
-        <div className="border-b border-[#E2E8F0] p-3 bg-[#F8FAFC]">
-          <div className="text-[10px] font-bold uppercase tracking-wider text-[#64748B] mb-1 flex items-center justify-between">
-            <span>Portal View Mode</span>
-            {role === "admin" && (
-              <span className="text-[9px] bg-[#EFF6FF] text-[#2563EB] px-1.5 py-0.5 rounded font-bold border border-[#2563EB]/20">
-                ADMIN
-              </span>
-            )}
+        {/* Active Portal Badge */}
+        <div className="border-b border-[#E2E8F0] px-4 py-2.5 bg-[#F8FAFC]">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-[#64748B]">
+              Portal Mode
+            </span>
+            <span className="text-[9px] bg-[#EFF6FF] text-[#2563EB] px-2 py-0.5 rounded-md font-bold uppercase border border-[#2563EB]/20">
+              {role === "admin" ? "Admin Master" : role}
+            </span>
           </div>
-
-          {role === "admin" ? (
-            <select
-              value={role}
-              onChange={(e) => changeRole(e.target.value)}
-              className="w-full rounded-xl bg-white border border-[#E2E8F0] px-2.5 py-1.5 text-xs text-[#0F172A] outline-none font-semibold cursor-pointer hover:border-[#2563EB] transition-colors"
-            >
-              <option value="admin">Admin Portal Mode</option>
-              <option value="employee">Staff / Employee View</option>
-              <option value="client">Client Portal View</option>
-            </select>
-          ) : (
-            <div className="flex items-center gap-2 text-xs font-semibold text-[#0F172A] bg-white px-2.5 py-1.5 rounded-xl border border-[#E2E8F0]">
-              <FaUserTie className="text-[#2563EB]" />
-              <span>{role === "client" ? "Client Portal Mode" : "User Portal Mode"}</span>
-            </div>
-          )}
         </div>
 
         {/* Navigation Items Organized into Collapsible Sections */}

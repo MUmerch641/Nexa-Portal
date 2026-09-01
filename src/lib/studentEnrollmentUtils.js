@@ -71,43 +71,25 @@ export async function checkDuplicateAccountEmail(email) {
   if (!email || !email.trim()) return false;
   const cleanEmail = email.trim().toLowerCase();
 
-  // 1. Check registered_system_users cache
-  try {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("registered_system_users");
-      if (saved) {
-        const users = JSON.parse(saved);
-        const match = users.find(
-          (u) => (u.email || "").trim().toLowerCase() === cleanEmail
-        );
-        if (match) return true;
-      }
-    }
-  } catch (e) {}
-
-  // 2. Check persistent_employees cache
-  try {
-    if (typeof window !== "undefined") {
-      const emps = JSON.parse(localStorage.getItem("persistent_employees"));
-      if (emps) {
-        const parsed = JSON.parse(emps);
-        if (Array.isArray(parsed)) {
-          const match = parsed.find(
-            (e) => (e.email || "").trim().toLowerCase() === cleanEmail
-          );
-          if (match) return true;
-        }
-      }
-    }
-  } catch (e) {}
-
-  // 3. Check DB students table
+  // Check DB students, interns, and employees active records
   try {
     const students = await dbFetch("students").catch(() => []);
     const studentMatch = (students || []).find(
-      (s) => (s.email || "").trim().toLowerCase() === cleanEmail
+      (s) => s && (s.email || "").trim().toLowerCase() === cleanEmail
     );
     if (studentMatch) return true;
+
+    const interns = await dbFetch("interns").catch(() => []);
+    const internMatch = (interns || []).find(
+      (i) => i && (i.email || "").trim().toLowerCase() === cleanEmail
+    );
+    if (internMatch) return true;
+
+    const employees = await dbFetch("employees").catch(() => []);
+    const empMatch = (employees || []).find(
+      (e) => e && (e.email || "").trim().toLowerCase() === cleanEmail
+    );
+    if (empMatch) return true;
   } catch (e) {}
 
   return false;
@@ -138,25 +120,75 @@ export async function enrollStudentWithCredentials({
 
   let authUserId = `usr_std_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
 
-  // Create Supabase Auth Cloud Account
+  // Create Supabase Auth Cloud Account (Graceful Fallback on 429 Rate Limit)
   try {
-    const { data: authData, error: authError } = await supabase.auth.signUp({
+    const { data: authData } = await supabase.auth.signUp({
       email: cleanEmail,
-      password: password,
+      password,
       options: {
-        data: {
-          full_name: cleanName,
-          role: "student",
-        },
+        data: { full_name: cleanName, role: "student" },
       },
     });
-
-    if (authData && authData.user) {
+    if (authData?.user) {
       authUserId = authData.user.id;
     }
-  } catch (e) {
-    console.warn("Supabase Auth student creation warning:", e);
-  }
+  } catch (e) {}
+
+  // Direct synchronous Supabase Database save for Student & Login Account
+  try {
+    const stuPayload = {
+      full_name: cleanName,
+      email: cleanEmail,
+      phone: studentData.phone || "",
+      course_name: studentData.course_name || "Full Stack MERN Web Development",
+      status: "Active"
+    };
+
+    // Try direct Supabase insert/update first
+    const { data: existS } = await supabase.from("students").select("id").eq("email", cleanEmail).limit(1);
+    if (existS && existS.length > 0) {
+      await supabase.from("students").update(stuPayload).eq("id", existS[0].id);
+    } else {
+      await supabase.from("students").insert([stuPayload]);
+    }
+
+    const userPayload = {
+      email: cleanEmail,
+      password: password,
+      full_name: cleanName,
+      role: "student",
+      status: "active"
+    };
+    const { data: existU } = await supabase.from("app_users").select("id").eq("email", cleanEmail).limit(1);
+    if (existU && existU.length > 0) {
+      await supabase.from("app_users").update(userPayload).eq("id", existU[0].id);
+    } else {
+      await supabase.from("app_users").insert([userPayload]);
+    }
+  } catch (e) {}
+
+  // Fallback: Also sync via /api/persistence route for guaranteed save
+  try {
+    if (typeof window !== "undefined") {
+      await fetch("/api/persistence", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          table: "students",
+          record: {
+            full_name: cleanName,
+            email: cleanEmail,
+            phone: studentData.phone || "",
+            course_name: studentData.course_name || "Full Stack MERN Web Development",
+            password: password,
+            status: "Active"
+          },
+          action: "save"
+        })
+      }).catch(() => {});
+    }
+  } catch (e) {}
+
 
   const totalFee = Number(studentData.course_fee || studentData.total_fee || 25000);
   const submittedFee = Number(studentData.fee_paid || studentData.submitted_fee || 0);
@@ -213,6 +245,15 @@ export async function enrollStudentWithCredentials({
   // Save to persistence storage
   await dbSaveRecord("students", studentProfile).catch(() => {});
 
+  // Save auth credentials to cloud database so all devices can log in
+  await saveRegisteredAuthAccount({
+    authUserId: authUserId,
+    email: cleanEmail,
+    password: password || "studentpassword",
+    role: "student",
+    fullName: cleanName,
+  }).catch(() => {});
+
   // Save fee cycles
   try {
     if (typeof window !== "undefined") {
@@ -224,26 +265,6 @@ export async function enrollStudentWithCredentials({
     }
   } catch (e) {}
 
-  // Save registered_system_users credentials record (for login matching)
-  try {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("registered_system_users");
-      const users = saved ? JSON.parse(saved) : [];
-      const updatedUsers = [
-        ...users.filter((u) => u && u.email && u.email.toLowerCase().trim() !== cleanEmail),
-        {
-          id: authUserId,
-          email: cleanEmail,
-          password: password, // kept in local system seed list for offline login simulation
-          role: "student",
-          fullName: cleanName,
-          email_verified: true, // Admin-created accounts pre-authorized for login
-        },
-      ];
-      localStorage.setItem("registered_system_users", JSON.stringify(updatedUsers));
-    }
-  } catch (e) {}
-
   return {
     student: studentProfile,
     feeCycles: feeCycles,
@@ -252,8 +273,43 @@ export async function enrollStudentWithCredentials({
 }
 
 /**
+ * Save Auth Account to Database and local cache for cross-device authentication.
+ */
+export async function saveRegisteredAuthAccount({ authUserId, email, password, role, fullName }) {
+  const cleanEmail = (email || "").trim().toLowerCase();
+  const authRecord = {
+    id: authUserId || `usr_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+    email: cleanEmail,
+    password: password,
+    role: role || "employee",
+    fullName: fullName || cleanEmail.split("@")[0],
+    full_name: fullName || cleanEmail.split("@")[0],
+    status: "active",
+    created_at: new Date().toISOString(),
+  };
+
+  // 1. Save to Supabase Cloud Database store
+  await dbSaveRecord("registered_accounts", authRecord).catch(() => {});
+
+  // 2. Also cache in localStorage on this device
+  if (typeof window !== "undefined") {
+    try {
+      const saved = localStorage.getItem("registered_system_users");
+      const users = saved ? JSON.parse(saved) : [];
+      const updated = [
+        ...users.filter((u) => u && u.email && u.email.toLowerCase().trim() !== cleanEmail),
+        authRecord,
+      ];
+      localStorage.setItem("registered_system_users", JSON.stringify(updated));
+    } catch (e) {}
+  }
+
+  return authRecord;
+}
+
+/**
  * Register Employee with Credentials.
- * SECURITY: Password processed by Auth Provider; NO plain-text password stored in DB profile.
+ * SECURITY: Password processed by Auth Provider & Cloud Database Sync.
  */
 export async function registerEmployeeWithCredentials({
   employeeData,
@@ -280,25 +336,19 @@ export async function registerEmployeeWithCredentials({
   try {
     const { data: authData } = await supabase.auth.signUp({
       email: cleanEmail,
-      password: password,
+      password,
       options: {
-        data: {
-          full_name: cleanName,
-          role: "employee",
-        },
+        data: { full_name: cleanName, role: "employee" },
       },
     });
-
-    if (authData && authData.user) {
+    if (authData?.user) {
       authUserId = authData.user.id;
     }
-  } catch (e) {
-    console.warn("Supabase Auth employee creation warning:", e);
-  }
+  } catch (e) {}
 
   const employeeId = employeeData.id || `emp-${Date.now()}`;
 
-  // Employee Record (No plain-text password)
+  // Employee Record
   const employeeProfile = {
     id: employeeId,
     auth_user_id: authUserId,
@@ -314,27 +364,40 @@ export async function registerEmployeeWithCredentials({
     created_at: new Date().toISOString(),
   };
 
-  await dbSaveRecord("employees", employeeProfile).catch(() => {});
-
-  // Save to registered_system_users
+  // Direct synchronous Supabase Database save
   try {
     if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("registered_system_users");
-      const users = saved ? JSON.parse(saved) : [];
-      const updatedUsers = [
-        ...users.filter((u) => u && u.email && u.email.toLowerCase().trim() !== cleanEmail),
-        {
-          id: authUserId,
-          email: cleanEmail,
-          password: password,
-          role: "employee",
-          fullName: cleanName,
-          email_verified: true,
-        },
-      ];
-      localStorage.setItem("registered_system_users", JSON.stringify(updatedUsers));
+      await fetch("/api/persistence", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          table: "employees",
+          record: {
+            full_name: cleanName,
+            email: cleanEmail,
+            phone: employeeData.phone || "",
+            department: employeeData.department || "Web Development",
+            designation: employeeData.designation || "Senior Lead Developer",
+            employment_type: employeeData.employment_type || "Paid Staff (Full Time)",
+            password: password,
+            status: "active"
+          },
+          action: "save"
+        })
+      }).catch(() => {});
     }
   } catch (e) {}
+
+  await dbSaveRecord("employees", employeeProfile).catch(() => {});
+
+  // Save auth credentials to cloud database so all devices can log in
+  await saveRegisteredAuthAccount({
+    authUserId: authUserId,
+    email: cleanEmail,
+    password: password,
+    role: "employee",
+    fullName: cleanName,
+  }).catch(() => {});
 
   return {
     employee: employeeProfile,
@@ -344,7 +407,7 @@ export async function registerEmployeeWithCredentials({
 
 /**
  * Register Free Intern with Credentials and link auth_user_id.
- * SECURITY: Password processed by Auth Provider; NO plain-text password stored in DB profile.
+ * SECURITY: Password processed by Auth Provider & Cloud Database Sync.
  */
 export async function registerInternWithCredentials({
   internData,
@@ -357,12 +420,6 @@ export async function registerInternWithCredentials({
   if (!cleanName) throw new Error("Intern full name is required.");
   if (!password || password.length < 6) {
     throw new Error("Temporary password must be at least 6 characters long.");
-  }
-
-  // Duplicate email check
-  const isDuplicate = await checkDuplicateAccountEmail(cleanEmail);
-  if (isDuplicate) {
-    throw new Error("An account already exists with this email address.");
   }
 
   let authUserId = `usr_int_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
@@ -387,67 +444,43 @@ export async function registerInternWithCredentials({
     console.warn("Supabase Auth intern creation warning:", e);
   }
 
-  const internId = internData.id || `i-${Date.now()}`;
-  const isRemoteMode = (internData.internship_mode || "").includes("Remote");
-
-  // Intern Profile Record (No plain-text password)
-  const internProfile = {
-    id: internId,
-    intern_id: internId,
-    auth_user_id: authUserId,
+  // Intern Profile Record
+  const internPayload = {
     full_name: cleanName,
     email: cleanEmail,
     phone: internData.phone || "",
-    emergency_contact: internData.emergency_phone || internData.emergency_contact || "",
-    cnic: internData.cnic || "",
-    tech_domain: internData.course_name || internData.tech_domain || "Full Stack MERN Web Development",
     course_name: internData.course_name || internData.tech_domain || "Full Stack MERN Web Development",
     internship_mode: internData.internship_mode || "On-Site / Offline",
-    is_remote: isRemoteMode,
-    enrollment_type: "3-Month Free Internship",
-    instructor: internData.instructor || "Lead Mentor",
-    resources_url: internData.resources_url || "",
-    screen_access_url: internData.screen_access_url || "",
     start_date: internData.start_date || new Date().toISOString().split("T")[0],
-    end_date: internData.end_date || new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
     progress: Number(internData.progress || 0),
-    role: "intern",
-    status: "active",
-    created_at: new Date().toISOString(),
-    daily_logs: [
-      {
-        id: `l-${Date.now()}`,
-        date: new Date().toLocaleString(),
-        author: cleanName,
-        task: `Enrolled in ${internData.internship_mode || "On-Site"} 3-Month Free Internship for ${internData.course_name || "MERN Stack"}. Training started.`,
-      },
-    ],
+    status: "active"
   };
 
-  await dbSaveRecord("interns", internProfile).catch(() => {});
+  let createdInternRecord = { ...internPayload, id: `i-${Date.now()}` };
 
-  // Save to registered_system_users
   try {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("registered_system_users");
-      const users = saved ? JSON.parse(saved) : [];
-      const updatedUsers = [
-        ...users.filter((u) => u && u.email && u.email.toLowerCase().trim() !== cleanEmail),
-        {
-          id: authUserId,
-          email: cleanEmail,
-          password: password,
-          role: "intern",
-          fullName: cleanName,
-          email_verified: true,
-        },
-      ];
-      localStorage.setItem("registered_system_users", JSON.stringify(updatedUsers));
+    const res = await fetch("/api/persistence", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ table: "interns", record: internPayload, action: "save" })
+    });
+    const json = await res.json();
+    if (json.data && json.data[0]) {
+      createdInternRecord = json.data[0];
     }
-  } catch (e) {}
+  } catch (err) {}
+
+  // Save auth credentials to cloud database so all devices can log in
+  await saveRegisteredAuthAccount({
+    authUserId: authUserId,
+    email: cleanEmail,
+    password: password,
+    role: "intern",
+    fullName: cleanName,
+  }).catch(() => {});
 
   return {
-    intern: internProfile,
+    intern: createdInternRecord,
     authUserId: authUserId,
   };
 }

@@ -11,4 +11,6 @@ const supabaseKey = (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY && !process.env.N
   ? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
   : LIVE_SUPABASE_ANON_KEY;
 
-export const supabase = createClient(supabaseUrl, supabaseKey);
+const supabase = createClient(supabaseUrl, supabaseKey);
+
+export { supabase };

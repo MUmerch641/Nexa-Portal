@@ -2,10 +2,12 @@
 
 import { memo, useState, useMemo } from "react";
 import { FaChartLine, FaMoneyBillWave, FaArrowUp, FaArrowDown, FaDownload, FaInfoCircle } from "react-icons/fa";
+import Modal from "@/components/Modal";
 
-function FinancialChart({ revenue = 0, expenses = 0, categoryData = [] }) {
+function FinancialChart({ revenue = 0, expenses = 0, categoryData = [], onBudgetRatioClick }) {
   const [activeTooltip, setActiveTooltip] = useState(null);
   const [timeRange, setTimeRange] = useState("6M");
+  const [showBudgetModal, setShowBudgetModal] = useState(false);
 
   const formatCurrency = (val) => {
     const num = Number(val) || 0;
@@ -201,9 +203,21 @@ function FinancialChart({ revenue = 0, expenses = 0, categoryData = [] }) {
                   <p className="text-xs text-[#64748B]">Monthly Budget Distribution</p>
                 </div>
               </div>
-              <span className="text-[10px] font-bold bg-[#EFF6FF] text-[#2563EB] px-2.5 py-1 rounded-full border border-[#2563EB]/20">
-                Budget Ratio
-              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  if (onBudgetRatioClick) onBudgetRatioClick();
+                  setShowBudgetModal(true);
+                }}
+                className="text-[10px] font-bold bg-[#EFF6FF] hover:bg-[#2563EB] text-[#2563EB] hover:text-white px-3 py-1.5 rounded-full border border-[#2563EB]/20 transition-all cursor-pointer shadow-2xs flex items-center gap-1.5 group shrink-0"
+                title="Click for detailed Budget Ratio Analysis"
+              >
+                <FaMoneyBillWave className="text-[10px] text-[#2563EB] group-hover:text-white transition-colors" />
+                <span>Budget Ratio</span>
+                <span className="text-[9px] bg-[#2563EB] group-hover:bg-white text-white group-hover:text-[#2563EB] px-1.5 py-0.2 rounded-full font-black transition-colors">
+                  {safeRevenue > 0 ? `${Math.round((safeExpenses / safeRevenue) * 100)}%` : "0%"}
+                </span>
+              </button>
             </div>
 
             <div className="space-y-4 pt-4 text-xs">
@@ -275,11 +289,180 @@ function FinancialChart({ revenue = 0, expenses = 0, categoryData = [] }) {
 
           <div className="pt-2 text-xs text-[#64748B] flex items-center gap-1.5 justify-center">
             <FaInfoCircle className="text-[#2563EB]" />
-            <span>Hover any period bar for breakdown. CSV export available.</span>
+            <span>Hover any period bar for breakdown. Click Budget Ratio for detailed analysis.</span>
           </div>
         </div>
 
       </div>
+
+      {/* BUDGET RATIO ANALYSIS MODAL */}
+      <Modal
+        isOpen={showBudgetModal}
+        onClose={() => setShowBudgetModal(false)}
+        title="Monthly Budget Ratio & Financial Health Analytics"
+        type="info"
+        maxWidth="max-w-3xl"
+      >
+        <div className="space-y-5 text-xs text-[#0F172A]">
+          {/* Financial Health Status Banner */}
+          <div className={`p-4 rounded-xl border flex items-start gap-3 ${
+            safeRevenue === 0
+              ? "bg-slate-50 border-slate-200 text-slate-700"
+              : (safeExpenses / safeRevenue) <= 0.5
+                ? "bg-emerald-50 border-emerald-200 text-emerald-900"
+                : (safeExpenses / safeRevenue) <= 0.8
+                  ? "bg-amber-50 border-amber-200 text-amber-900"
+                  : "bg-rose-50 border-rose-200 text-rose-900"
+          }`}>
+            <FaInfoCircle className="text-base shrink-0 mt-0.5" />
+            <div className="space-y-1">
+              <h4 className="font-bold text-sm">
+                {safeRevenue === 0
+                  ? "No Active Revenue Recorded"
+                  : (safeExpenses / safeRevenue) <= 0.5
+                    ? "🟢 Healthy Budget Ratio (Optimal Cash Flow)"
+                    : (safeExpenses / safeRevenue) <= 0.8
+                      ? "🟠 Moderate Expense Ratio (Monitor Allocations)"
+                      : "🔴 High Expense Ratio Alert (Over-budget)"}
+              </h4>
+              <p className="text-xs leading-relaxed">
+                {safeRevenue === 0
+                  ? "Record client invoices and monthly revenue to compute live expense-to-revenue ratio."
+                  : (safeExpenses / safeRevenue) <= 0.5
+                    ? `Operating expenses consume only ${Math.round((safeExpenses / safeRevenue) * 100)}% of monthly revenue. Your organization has strong retained earnings and operational liquidity.`
+                    : (safeExpenses / safeRevenue) <= 0.8
+                      ? `Expenses account for ${Math.round((safeExpenses / safeRevenue) * 100)}% of revenue. Review discretionary spending and key expense categories.`
+                      : `Expenses consume ${Math.round((safeExpenses / safeRevenue) * 100)}% of current revenue. High overhead may reduce profit margins.`}
+              </p>
+            </div>
+          </div>
+
+          {/* Metric Cards Grid */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="p-3.5 rounded-xl bg-[#EFF6FF] border border-[#2563EB]/20 space-y-1">
+              <span className="text-[10px] font-bold uppercase text-[#2563EB] tracking-wider block">Monthly Revenue</span>
+              <p className="text-lg font-black text-[#2563EB]">{formatCurrency(safeRevenue)}</p>
+              <span className="text-[10px] text-[#64748B]">Total Collections</span>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-1">
+              <span className="text-[10px] font-bold uppercase text-[#64748B] tracking-wider block">Total Expenses</span>
+              <p className="text-lg font-black text-[#0F172A]">{formatCurrency(safeExpenses)}</p>
+              <span className="text-[10px] text-[#64748B]">Operating Spend</span>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-[#FEF3C7] border border-[#F59E0B]/20 space-y-1">
+              <span className="text-[10px] font-bold uppercase text-[#92400E] tracking-wider block">Expense Ratio</span>
+              <p className="text-lg font-black text-[#92400E]">
+                {safeRevenue > 0 ? `${Math.round((safeExpenses / safeRevenue) * 100)}%` : "0%"}
+              </p>
+              <span className="text-[10px] text-[#92400E]">Spend / Income</span>
+            </div>
+
+            <div className={`p-3.5 rounded-xl border space-y-1 ${
+              netProfit >= 0 ? "bg-[#ECFDF5] border-[#059669]/20" : "bg-[#FEE2E2] border-[#EF4444]/20"
+            }`}>
+              <span className={`text-[10px] font-bold uppercase tracking-wider block ${netProfit >= 0 ? "text-[#059669]" : "text-rose-700"}`}>
+                Net Margin
+              </span>
+              <p className={`text-lg font-black ${netProfit >= 0 ? "text-[#059669]" : "text-rose-700"}`}>
+                {profitMarginPct}%
+              </p>
+              <span className="text-[10px] text-[#64748B]">Profitability</span>
+            </div>
+          </div>
+
+          {/* Visual Progress Ratio Bar */}
+          <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-2">
+            <div className="flex items-center justify-between text-xs font-bold">
+              <span>Revenue vs Expense Allocation Breakdown</span>
+              <span className="text-[#2563EB]">100% Total Budget Window</span>
+            </div>
+            <div className="w-full h-4 bg-slate-200 rounded-full overflow-hidden flex">
+              <div
+                className="h-full bg-emerald-500 transition-all"
+                style={{ width: `${safeRevenue > 0 ? Math.max(0, Math.min(100, Math.round((netProfit / safeRevenue) * 100))) : 0}%` }}
+                title="Net Profit Portion"
+              />
+              <div
+                className="h-full bg-[#2563EB] transition-all"
+                style={{ width: `${safeRevenue > 0 ? Math.min(100, Math.round((safeExpenses / safeRevenue) * 100)) : 0}%` }}
+                title="Operating Expenses Portion"
+              />
+            </div>
+            <div className="flex items-center justify-between text-[10px] text-slate-500 pt-1 font-medium">
+              <span className="flex items-center gap-1">
+                <span className="w-2.5 h-2.5 rounded-full bg-[#2563EB] inline-block" />
+                Operating Expenses ({safeRevenue > 0 ? Math.round((safeExpenses / safeRevenue) * 100) : 0}%)
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block" />
+                Retained Profit Margin ({profitMarginPct}%)
+              </span>
+            </div>
+          </div>
+
+          {/* Category Distribution Breakdown */}
+          <div className="space-y-3">
+            <h4 className="font-bold text-xs uppercase tracking-wider text-[#64748B]">
+              Category Expense Distribution
+            </h4>
+
+            {categoryData.length === 0 ? (
+              <div className="p-4 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] text-center text-[#64748B] italic">
+                No category breakdown recorded for current selection.
+              </div>
+            ) : (
+              <div className="overflow-x-auto rounded-xl border border-[#E2E8F0]">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead className="bg-[#F8FAFC] text-[#64748B] font-semibold uppercase text-[10px] tracking-wider border-b border-[#E2E8F0]">
+                    <tr>
+                      <th className="py-2.5 px-3">Expense Category</th>
+                      <th className="py-2.5 px-3 text-right">Amount (PKR)</th>
+                      <th className="py-2.5 px-3 text-right">% of Expenses</th>
+                      <th className="py-2.5 px-3 text-right">% of Revenue</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#E2E8F0]">
+                    {categoryData.map((cat, idx) => {
+                      const amt = Number(cat.amount) || 0;
+                      const expPct = safeExpenses > 0 ? Math.round((amt / safeExpenses) * 100) : 0;
+                      const revPct = safeRevenue > 0 ? Math.round((amt / safeRevenue) * 100) : 0;
+                      return (
+                        <tr key={idx} className="hover:bg-[#F8FAFC]">
+                          <td className="py-2.5 px-3 font-semibold text-[#0F172A]">{cat.category || cat.title || "General"}</td>
+                          <td className="py-2.5 px-3 text-right font-mono font-bold text-[#2563EB]">{formatCurrency(amt)}</td>
+                          <td className="py-2.5 px-3 text-right font-semibold text-[#0F172A]">{expPct}%</td>
+                          <td className="py-2.5 px-3 text-right font-medium text-[#64748B]">{revPct}%</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* Footer actions */}
+          <div className="pt-2 border-t border-[#E2E8F0] flex flex-col sm:flex-row items-center justify-between gap-3">
+            <button
+              type="button"
+              onClick={handleExportCsv}
+              className="w-full sm:w-auto bg-[#EFF6FF] hover:bg-[#DBEAFE] text-[#2563EB] font-bold px-4 py-2 rounded-xl text-xs transition-colors cursor-pointer flex items-center justify-center gap-1.5 border border-[#2563EB]/20"
+            >
+              <FaDownload className="text-xs" /> Export Budget Report CSV
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setShowBudgetModal(false)}
+              className="w-full sm:w-auto bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold px-5 py-2 rounded-xl text-xs transition-colors cursor-pointer text-center"
+            >
+              Close Analytics
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

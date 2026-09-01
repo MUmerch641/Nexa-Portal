@@ -43,6 +43,8 @@ export default function ComplaintsPage() {
   // Delete Safeguard Modal State
   const [activeKebabId, setActiveKebabId] = useState(null);
   const [deleteModal, setDeleteModal] = useState({ isOpen: false, record: null, loading: false });
+  const [adminNoteModal, setAdminNoteModal] = useState({ isOpen: false, ticket: null, note: "" });
+  const [seenTicketIds, setSeenTicketIds] = useState([]);
 
   // Modal Notification
   const [modal, setModal] = useState({ isOpen: false, title: "", message: "", type: "info" });
@@ -60,6 +62,11 @@ export default function ComplaintsPage() {
     const savedEmail = localStorage.getItem("current_user_email") || "";
     setRole(savedRole);
     setUserEmail(savedEmail);
+
+    try {
+      const savedSeen = JSON.parse(localStorage.getItem("software_house_seen_tickets") || "[]");
+      setSeenTicketIds(savedSeen);
+    } catch(e) {}
 
     dbFetch("complaints", []).then(data => {
       // Filter out any stale demo complaints (comp-101, comp-102, comp-103)
@@ -129,6 +136,7 @@ export default function ComplaintsPage() {
     const nowIso = new Date().toISOString();
     const nowLocal = new Date().toLocaleString();
 
+    const isAdminUser = role === "admin" || role === "hr" || role === "manager";
     const newObj = {
       id: "comp-" + Date.now(),
       ticket_id: ticketId,
@@ -141,32 +149,44 @@ export default function ComplaintsPage() {
       attachment_name: form.attachment ? form.attachment.name : null,
       status: "Pending",
       created_at: nowLocal,
-      admin_note: "Complaint ticket generated successfully. Awaiting HR/Admin assignment.",
+      created_by_role: role,
+      is_admin_notice: isAdminUser,
+      admin_note: isAdminUser ? "📢 Official Admin Notice / Announcement Broadcast" : "Complaint ticket generated successfully. Awaiting HR/Admin assignment.",
     };
 
     const updated = [newObj, ...complaints];
     saveComplaintsState(updated);
 
     try {
-      await supabase.from("complaints").insert([
-        {
-          ticket_id: ticketId,
-          title: form.title.trim(),
-          category: form.category,
-          description: form.description.trim(),
-          is_anonymous: form.is_anonymous,
-          submitted_by: form.is_anonymous ? "Anonymous" : userEmail,
-          status: "Pending",
-          created_at: nowIso,
-        }
-      ]);
-    } catch (dbErr) {}
+      const res = await fetch("/api/persistence", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ table: "complaints", record: newObj, action: "save" })
+      });
+      const json = await res.json();
+      if (json.error) {
+        console.error("Complaints DB persistence error:", json.error);
+        showToast("Database Notice ⚠️", `Ticket saved locally! DB note: ${json.error}`, "warning");
+      }
+    } catch (dbErr) {
+      console.error("Failed to post complaint to /api/persistence:", dbErr);
+    }
 
     setIsModalOpen(false);
     setForm({ category: "Internet Issues", title: "", description: "", is_anonymous: false, attachment: null });
     setValidationErrors({ title: "", description: "" });
 
-    showToast(`Ticket Generated (${ticketId}) 📩`, "Your complaint ticket has been submitted for HR review.", "success");
+    showToast(`Ticket Generated (${ticketId}) 📩`, isAdminUser ? "Broadcast notice posted to all user dashboards." : "Your complaint ticket has been submitted to Admin.", "success");
+  };
+
+  const handleMarkAsSeen = (ticketIdKey) => {
+    if (!ticketIdKey) return;
+    const updatedSeen = [...seenTicketIds, ticketIdKey];
+    setSeenTicketIds(updatedSeen);
+    try {
+      localStorage.setItem("software_house_seen_tickets", JSON.stringify(updatedSeen));
+    } catch(e) {}
+    showToast("Notice Seen 👁️", "Broadcast notice acknowledged and dismissed.", "info");
   };
 
   const handleUpdateStatus = (id, newStatus) => {
@@ -175,6 +195,17 @@ export default function ComplaintsPage() {
     );
     saveComplaintsState(updated);
     showToast("Status Updated 🔄", `Ticket status changed to ${newStatus}.`, "info");
+  };
+
+  const handleSaveAdminNote = (e) => {
+    e.preventDefault();
+    if (!adminNoteModal.ticket) return;
+    const updated = complaints.map((c) =>
+      c.id === adminNoteModal.ticket.id ? { ...c, admin_note: adminNoteModal.note } : c
+    );
+    saveComplaintsState(updated);
+    setAdminNoteModal({ isOpen: false, ticket: null, note: "" });
+    showToast("Resolution Note Saved 📝", "Admin response updated for complaint ticket.", "success");
   };
 
   const executeDeleteRecord = async () => {
@@ -196,7 +227,26 @@ export default function ComplaintsPage() {
   const filteredComplaints = complaints.filter((c) => {
     const matchesCategory = filterCategory === "All" || c.category === filterCategory;
     const matchesStatus = filterStatus === "All" || c.status === filterStatus;
-    const matchesUser = role === "admin" || role === "hr" || role === "manager" || (c.email && c.email.toLowerCase() === userEmail.toLowerCase());
+
+    const ticketIdKey = c.id || c.ticket_id;
+    const isSeenByUser = seenTicketIds.includes(ticketIdKey);
+    const isAdminNotice = c.is_admin_notice || c.created_by_role === "admin" || c.created_by_role === "hr" || c.created_by_role === "manager";
+    const isAdminUser = role === "admin" || role === "hr" || role === "manager";
+
+    // 1. Admin Broadcast Notice: Visible to all, but automatically disappears for user once marked as "Seen"!
+    if (isAdminNotice) {
+      if (!isAdminUser && isSeenByUser) {
+        return false; // Auto-disappears for user after seen!
+      }
+      return matchesCategory && matchesStatus;
+    }
+
+    // 2. Student / Employee Complaint Privacy: Visible ONLY to Admin and the creator student/employee!
+    const cleanUserEmail = (userEmail || "").toLowerCase().trim();
+    const cleanTicketEmail = (c.email || "").toLowerCase().trim();
+    const isOwner = cleanTicketEmail && cleanTicketEmail === cleanUserEmail;
+
+    const matchesUser = isAdminUser || isOwner;
     return matchesCategory && matchesStatus && matchesUser;
   });
 
@@ -361,7 +411,11 @@ export default function ComplaintsPage() {
                       </button>
 
                       {activeKebabId === c.id && (
-                        <div className="absolute right-0 mt-1 w-44 rounded-xl bg-white p-1.5 shadow-lg border border-[#E2E8F0] z-30 space-y-0.5 text-xs text-left animate-in fade-in zoom-in-95 duration-100">
+                        <div className={`absolute right-0 w-44 rounded-xl bg-white p-1.5 shadow-xl border border-[#E2E8F0] z-50 space-y-0.5 text-xs text-left animate-in fade-in zoom-in-95 duration-100 ${
+                          idx >= Math.max(0, filteredComplaints.length - 2)
+                            ? "bottom-full mb-1 origin-bottom-right"
+                            : "top-full mt-1 origin-top-right"
+                        }`}>
                           <button
                             type="button"
                             onClick={() => {
@@ -402,6 +456,44 @@ export default function ComplaintsPage() {
                   <span>{c.created_at}</span>
                 </div>
               </div>
+
+              {(role === "admin" || role === "hr" || role === "manager") && (
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] font-bold text-slate-500">Update Status:</span>
+                    <select
+                      value={c.status || "Pending"}
+                      onChange={(e) => handleUpdateStatus(c.id, e.target.value)}
+                      className="px-2.5 py-1 rounded-lg border border-slate-200 text-xs font-bold text-slate-900 bg-white outline-none focus:border-blue-600"
+                    >
+                      <option value="Pending">⏳ Pending Review</option>
+                      <option value="In Investigation">🔍 In Investigation</option>
+                      <option value="Resolved">✔️ Resolved</option>
+                      <option value="Closed">✖️ Closed</option>
+                    </select>
+                  </div>
+
+                  <button
+                    onClick={() => setAdminNoteModal({ isOpen: true, ticket: c, note: c.admin_note || "" })}
+                    className="px-3 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold border border-blue-200 transition-colors flex items-center gap-1 cursor-pointer"
+                  >
+                    <FaCommentDots /> {c.admin_note ? "Edit Resolution Note" : "+ Add Admin Note"}
+                  </button>
+                </div>
+              )}
+
+              {/* Non-Admin User "Mark as Seen & Dismiss" button for Admin Notices */}
+              {(role !== "admin" && role !== "hr" && role !== "manager") && (c.is_admin_notice || c.created_by_role === "admin" || c.created_by_role === "hr" || c.created_by_role === "manager") && (
+                <div className="flex items-center justify-end pt-2 border-t border-slate-100">
+                  <button
+                    onClick={() => handleMarkAsSeen(c.id || c.ticket_id)}
+                    className="px-3.5 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-extrabold text-xs border border-emerald-200 transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                  >
+                    <FaCheckCircle className="text-emerald-600" />
+                    <span>Mark as Seen & Dismiss ✔️</span>
+                  </button>
+                </div>
+              )}
 
               {c.admin_note && (
                 <div className="p-3 bg-[#EFF6FF] border border-[#2563EB]/20 rounded-xl text-xs space-y-0.5">
@@ -567,6 +659,53 @@ export default function ComplaintsPage() {
                 {deleteModal.loading ? "Purging..." : "Confirm & Delete 🗑️"}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ADMIN RESOLUTION NOTE MODAL */}
+      {adminNoteModal.isOpen && adminNoteModal.ticket && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl border border-[#E2E8F0] space-y-4">
+            <div className="flex items-center justify-between border-b border-[#E2E8F0] pb-3">
+              <h3 className="font-bold text-[#0F172A] text-base flex items-center gap-2">
+                <FaCommentDots className="text-[#2563EB]" />
+                <span>Admin Resolution Note</span>
+              </h3>
+              <button onClick={() => setAdminNoteModal({ isOpen: false, ticket: null, note: "" })} className="text-[#64748B] text-lg font-bold">✕</button>
+            </div>
+
+            <form onSubmit={handleSaveAdminNote} className="space-y-4 text-xs">
+              <div>
+                <label className="block text-xs font-semibold uppercase text-[#0F172A] mb-1">
+                  Official Resolution / Investigation Response *
+                </label>
+                <textarea
+                  rows="4"
+                  required
+                  value={adminNoteModal.note}
+                  onChange={(e) => setAdminNoteModal({ ...adminNoteModal, note: e.target.value })}
+                  placeholder="Enter official resolution details or investigation update for the applicant..."
+                  className="w-full rounded-xl border border-[#E2E8F0] p-3 text-xs text-[#0F172A] outline-none focus:border-[#2563EB] bg-white font-medium"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-[#E2E8F0]">
+                <button
+                  type="button"
+                  onClick={() => setAdminNoteModal({ isOpen: false, ticket: null, note: "" })}
+                  className="px-4 py-2 rounded-xl bg-white hover:bg-[#F8FAFC] text-[#64748B] border border-[#E2E8F0] font-semibold text-xs cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold text-xs cursor-pointer shadow-xs"
+                >
+                  Save Resolution Response
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
