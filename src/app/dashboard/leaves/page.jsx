@@ -1,5 +1,7 @@
 "use client";
 
+import { authenticatedFetch } from "@/lib/authenticatedFetch";
+
 import { useEffect, useState, useRef, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
 import { dbFetch, dbSaveRecord } from "@/lib/dbPersistence";
@@ -81,7 +83,7 @@ export default function LeavesPage() {
   useEffect(() => {
     const storedRole = (localStorage.getItem("user_role") || "admin").toLowerCase().trim();
     const currentEmail = (localStorage.getItem("current_user_email") || "").toLowerCase().trim();
-    const adminCheck = storedRole === "admin" || storedRole === "hr" || storedRole === "manager" || currentEmail.includes("admin") || currentEmail === "admin@gmail.com";
+    const adminCheck = ["admin", "hr", "manager"].includes(storedRole);
     
     setRole(storedRole);
     setIsAdmin(adminCheck);
@@ -228,7 +230,7 @@ export default function LeavesPage() {
     setLeaves(updated);
     localStorage.setItem("software_house_leaves", JSON.stringify(updated));
     dbDeleteRecord("leaves", id).catch(() => {});
-    fetch("/api/persistence", {
+    authenticatedFetch("/api/persistence", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ table: "leaves", record: { id }, action: "delete" })

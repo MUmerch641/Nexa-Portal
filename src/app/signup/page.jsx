@@ -5,8 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { showToast } from "@/components/Toast";
 import { supabase } from "@/lib/supabase";
-import { saveRegisteredAuthAccount } from "@/lib/studentEnrollmentUtils";
-import { FaLock, FaEnvelope, FaUser, FaBuilding, FaArrowRight, FaShieldAlt, FaEye, FaEyeSlash } from "react-icons/fa";
+import { FaLock, FaEnvelope, FaUser, FaArrowRight, FaShieldAlt, FaEye, FaEyeSlash } from "react-icons/fa";
 
 export default function SignupPage() {
   const router = useRouter();
@@ -14,7 +13,6 @@ export default function SignupPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [role, setRole] = useState("student");
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e) => {
@@ -37,40 +35,17 @@ export default function SignupPage() {
         email: cleanEmail,
         password,
         options: {
-          data: { full_name: fullName.trim(), role },
+          data: { full_name: fullName.trim() },
         },
       });
 
       if (error) throw error;
 
-      // Save credentials to cloud database store so all devices can log in
-      await saveRegisteredAuthAccount({
-        authUserId: data?.user?.id || `usr_${Date.now()}`,
-        email: cleanEmail,
-        password: password,
-        role: role,
-        fullName: fullName.trim(),
-      }).catch(() => {});
-
       if (data.session) {
-        localStorage.setItem("isLoggedIn", "true");
-        localStorage.setItem("user_role", role);
-        localStorage.setItem("current_user_email", cleanEmail);
-        localStorage.setItem("current_user_name", fullName.trim());
-        showToast("Account Created 🎉", `Welcome ${fullName}! Logging you into the portal...`, "success");
-
-        const destination = role === "admin"
-          ? "/dashboard"
-          : role === "employee"
-            ? "/dashboard/employee"
-            : role === "student"
-              ? "/dashboard/student"
-              : role === "intern"
-                ? "/dashboard/internships"
-                : "/dashboard";
-        router.replace(destination);
+        showToast("Account created", "Your account is waiting for administrator approval.", "success");
+        router.replace("/login");
       } else {
-        showToast("Account Created 🎉", "Your account is active! You can now log in from any device.", "success");
+        showToast("Account created", "Check your email to confirm your address. An administrator must approve portal access.", "success");
         router.replace("/login");
       }
     } catch (error) {
@@ -145,23 +120,6 @@ export default function SignupPage() {
               >
                 {showPassword ? <FaEyeSlash className="text-sm" /> : <FaEye className="text-sm" />}
               </button>
-            </div>
-          </div>
-
-          <div className="space-y-1">
-            <label className="font-semibold text-[#0F172A] uppercase text-[10px]">Account Role *</label>
-            <div className="relative">
-              <FaBuilding className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#94A3B8]" />
-              <select
-                value={role}
-                onChange={(e) => setRole(e.target.value)}
-                className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-[#E2E8F0] text-xs text-[#0F172A] outline-none focus:border-[#2563EB] bg-white transition-colors"
-              >
-                <option value="student">🎓 Course Student</option>
-                <option value="employee">👔 Staff / Engineer</option>
-                <option value="intern">💼 Intern</option>
-                <option value="admin">🛡️ Administrator</option>
-              </select>
             </div>
           </div>
 

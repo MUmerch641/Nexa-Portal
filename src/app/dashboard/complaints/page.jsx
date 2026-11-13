@@ -1,5 +1,7 @@
 "use client";
 
+import { authenticatedFetch } from "@/lib/authenticatedFetch";
+
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import Modal from "@/components/Modal";
@@ -158,7 +160,7 @@ export default function ComplaintsPage() {
     saveComplaintsState(updated);
 
     try {
-      const res = await fetch("/api/persistence", {
+      const res = await authenticatedFetch("/api/persistence", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ table: "complaints", record: newObj, action: "save" })

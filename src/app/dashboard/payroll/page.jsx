@@ -1,5 +1,7 @@
 "use client";
 
+import { authenticatedFetch } from "@/lib/authenticatedFetch";
+
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
@@ -50,7 +52,6 @@ export default function PayrollDashboardPage() {
   const [newEmpForm, setNewEmpForm] = useState({
     employee_name: "",
     email: "",
-    assigned_password: "",
     department: "Engineering",
     designation: "Software Engineer",
     basic_salary: 75000,
@@ -295,23 +296,6 @@ export default function PayrollDashboardPage() {
       status: "processed"
     };
 
-    // Save Admin assigned login credentials so user can log in with their exact email, assigned password, and role!
-    const assignedRole = newEmpForm.account_role || "employee";
-    const userCredentials = {
-      fullName: newEmpForm.employee_name,
-      email: newEmpForm.email.toLowerCase().trim(),
-      password: newEmpForm.assigned_password || "userpassword123",
-      role: assignedRole,
-      department: newEmpForm.department,
-    };
-
-    try {
-      const saved = localStorage.getItem("registered_system_users");
-      const existing = saved ? JSON.parse(saved) : [];
-      const updatedUsers = [...existing.filter(u => u.email.toLowerCase() !== newEmpForm.email.toLowerCase().trim()), userCredentials];
-      localStorage.setItem("registered_system_users", JSON.stringify(updatedUsers));
-    } catch(e) {}
-
     // Save to Supabase Database synchronously first
     try {
       await supabase.from("employees").upsert([
@@ -359,7 +343,6 @@ export default function PayrollDashboardPage() {
     setNewEmpForm({
       employee_name: "",
       email: "",
-      assigned_password: "",
       department: "Engineering",
       designation: "Software Engineer",
       basic_salary: 75000,
@@ -372,8 +355,8 @@ export default function PayrollDashboardPage() {
       loan_deduction: 0,
     });
     showAlert(
-      "Employee Registered & Credentials Assigned! 🔑",
-      `Employee: ${newRecordObj.employee_name}\nLogin Email: ${newRecordObj.email}\nAssigned Password: ${userCredentials.password}\n\nNet Salary: Rs. ${finalNet.toLocaleString()}\n\nThe employee can now log in at /login with these credentials!`,
+      "Payroll record saved",
+      `Employee: ${newRecordObj.employee_name}\nEmail: ${newRecordObj.email}\nNet salary: Rs. ${finalNet.toLocaleString()}\n\nThe employee must create a Supabase account and wait for administrator approval before using the portal.`,
       "success"
     );
   };
@@ -448,12 +431,12 @@ export default function PayrollDashboardPage() {
         await supabase.from("payrolls").delete().eq("id", id);
         await supabase.from("employees").delete().eq("id", id);
       }
-      fetch("/api/persistence", {
+      authenticatedFetch("/api/persistence", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ table: "payrolls", record: { id, email: emailToDelete }, action: "delete" })
       }).catch(() => {});
-      fetch("/api/persistence", {
+      authenticatedFetch("/api/persistence", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ table: "employees", record: { id, email: emailToDelete }, action: "delete" })
@@ -779,30 +762,9 @@ export default function PayrollDashboardPage() {
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Account Role Type (Decided by Admin) *</label>
-                <select
-                  value={newEmpForm.account_role || "employee"}
-                  onChange={(e) => setNewEmpForm({ ...newEmpForm, account_role: e.target.value })}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-xs text-slate-900 outline-none focus:border-emerald-600 font-bold bg-emerald-50/50"
-                >
-                  <option value="employee">💼 Paid Employee Staff (Access Staff Features & Salary)</option>
-                  <option value="student">🎓 Enrolled Student (Access Course Fee Receipts & Exam Portal)</option>
-                  <option value="intern">💻 3-Month Intern (Access Internship Portal & Workspace)</option>
-                </select>
-              </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Assigned Login Password</label>
-                <input
-                  type="text"
-                  value={newEmpForm.assigned_password}
-                  onChange={(e) => setNewEmpForm({ ...newEmpForm, assigned_password: e.target.value })}
-                  placeholder="Set Login Password (e.g. Pass123)"
-                  className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-xs text-slate-900 outline-none focus:border-emerald-600 font-mono"
-                />
-                <p className="text-[10px] text-slate-400 mt-0.5">Custom password for the user to log in at /login (leave empty for default)</p>
-              </div>
+
+
 
               <div className="grid grid-cols-2 gap-3">
                 <div>

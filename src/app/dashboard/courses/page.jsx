@@ -1,5 +1,7 @@
 "use client";
 
+import { authenticatedFetch } from "@/lib/authenticatedFetch";
+
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { dbFetch, dbSaveRecord, dbDeleteRecord } from "@/lib/dbPersistence";
@@ -29,12 +31,7 @@ import {
   FaPrint,
   FaTimes,
   FaHistory,
-  FaLock,
-  FaKey,
-  FaShieldAlt,
   FaMoneyBillWave,
-  FaEye,
-  FaEyeSlash,
   FaVideo,
   FaTasks,
   FaEllipsisV,
@@ -48,8 +45,6 @@ export default function CoursesPage() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [role, setRole] = useState("admin");
-  const [showAssignedPassword, setShowAssignedPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   // Kebab Context Menu State
   const [activeKebabId, setActiveKebabId] = useState(null);
@@ -159,8 +154,6 @@ export default function CoursesPage() {
     full_name: "",
     cnic: "",
     email: "",
-    assigned_password: "",
-    confirm_password: "",
     phone: "",
     track_type: "Remote Student",
     tech_domain: "Full Stack MERN Web Development",
@@ -412,21 +405,11 @@ export default function CoursesPage() {
       return;
     }
 
-    const targetPassword = form.assigned_password && form.assigned_password.trim().length >= 6 
-      ? form.assigned_password.trim() 
-      : "student123";
-
-    if (form.confirm_password && form.assigned_password && form.assigned_password !== form.confirm_password) {
-      showToast("Password Mismatch 🔴", "Passwords do not match. Please re-enter.", "error");
-      return;
-    }
-
     setSubmitting(true);
 
     try {
       const res = await enrollStudentWithCredentials({
         studentData: form,
-        password: targetPassword,
       });
 
       setStudents(prev => {
@@ -444,8 +427,8 @@ export default function CoursesPage() {
       );
 
       showAlert(
-        "Student Enrolled & Account Created 🟢",
-        `Student "${form.full_name}" enrolled successfully!\n\nCourse: ${form.course_name}\nBatch: ${form.batch}\nLogin Email: ${form.email}\n30-Day Recurring Fee Cycles Generated: 3 Cycles\nAuth Account Created (No plain-text password stored in DB).`,
+        "Student profile saved 🟢",
+        `Student "${form.full_name}" enrolled successfully!\n\nCourse: ${form.course_name}\nBatch: ${form.batch}\nEmail: ${form.email}\n30-Day recurring fee cycles generated: 3\nThe student must create a Supabase account and wait for administrator approval.`,
         "success"
       );
 
@@ -453,9 +436,7 @@ export default function CoursesPage() {
         full_name: "",
         cnic: "",
         email: "",
-        assigned_password: "",
-        confirm_password: "",
-        phone: "",
+                phone: "",
         batch: "Batch #14 (Morning Tech)",
         guardian_name: "",
         guardian_phone: "",
@@ -547,7 +528,7 @@ export default function CoursesPage() {
     // 3. Trigger Server-Side Email Dispatch API (Pure TLS Gmail SMTP Mailer)
     let apiRes = null;
     try {
-      const response = await fetch("/api/send-email", {
+      const response = await authenticatedFetch("/api/send-email", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -599,7 +580,7 @@ export default function CoursesPage() {
       const filtered = students.filter((s) => s.id !== id && (email ? s.email !== email : true));
       setStudents(filtered);
       dbDeleteRecord("students", id, email || "").catch(() => {});
-      fetch("/api/persistence", {
+      authenticatedFetch("/api/persistence", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ table: "students", record: { id, email }, action: "delete" })
@@ -945,68 +926,7 @@ export default function CoursesPage() {
                 </div>
               </div>
 
-              {/* Login Credentials Section */}
-              <div className="rounded-xl border border-blue-100 bg-blue-50/50 p-3 space-y-2.5 my-2">
-                <div className="flex items-center gap-1.5 text-blue-900 font-bold text-xs">
-                  <FaLock className="text-blue-600" />
-                  <span>Student Login Credentials</span>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                  <div>
-                    <label className="block text-[10px] font-semibold uppercase text-slate-700 mb-1">
-                      Temporary Password *
-                    </label>
-                    <div className="relative">
-                      <input
-                        type={showAssignedPassword ? "text" : "password"}
-                        name="assigned_password"
-                        value={form.assigned_password || ""}
-                        onChange={handleChange}
-                        placeholder="Enter Temporary Password"
-                        required
-                        className="w-full rounded-lg border border-slate-200 bg-white pl-2.5 pr-8 py-1.5 text-xs text-slate-900 outline-none focus:border-blue-600 font-mono"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowAssignedPassword(!showAssignedPassword)}
-                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 transition-colors cursor-pointer p-1"
-                        title={showAssignedPassword ? "Hide Password" : "Show Password"}
-                      >
-                        {showAssignedPassword ? <FaEyeSlash className="text-xs" /> : <FaEye className="text-xs" />}
-                      </button>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-[10px] font-semibold uppercase text-slate-700 mb-1">
-                      Confirm Password *
-                    </label>
-                    <div className="relative">
-                      <input
-                        type={showConfirmPassword ? "text" : "password"}
-                        name="confirm_password"
-                        value={form.confirm_password || ""}
-                        onChange={handleChange}
-                        placeholder="Confirm Password"
-                        required
-                        className="w-full rounded-lg border border-slate-200 bg-white pl-2.5 pr-8 py-1.5 text-xs text-slate-900 outline-none focus:border-blue-600 font-mono"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 transition-colors cursor-pointer p-1"
-                        title={showConfirmPassword ? "Hide Password" : "Show Password"}
-                      >
-                        {showConfirmPassword ? <FaEyeSlash className="text-xs" /> : <FaEye className="text-xs" />}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-                <p className="text-[10px] text-slate-500 italic">
-                  Student will log in using: <span className="font-semibold text-slate-700">{form.email || "student@example.com"}</span>
-                </p>
-              </div>
+              <div className="rounded-xl border border-blue-100 bg-blue-50/50 p-3 my-2 text-xs text-blue-900">Student access uses Supabase Auth. The student must create an account with this email and an administrator must approve the student role.</div>
 
               {/* Full Width Primary Submit CTA Button (Requirement #2) */}
               <div className="pt-2">
@@ -1015,7 +935,7 @@ export default function CoursesPage() {
                   disabled={submitting}
                   className="w-full rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold py-3 text-xs transition-colors shadow-xs cursor-pointer"
                 >
-                  {submitting ? "Enrolling & Creating Account..." : "Enroll Student & Set 30-Day Cycle"}
+                  {submitting ? "Saving profile..." : "Enroll Student & Set 30-Day Cycle"}
                 </button>
               </div>
             </form>
