@@ -31,11 +31,7 @@ import {
   FaExternalLinkAlt,
   FaEllipsisV,
   FaCheck,
-  FaLock,
-  FaKey,
-  FaShieldAlt,
   FaEye,
-  FaEyeSlash,
   FaTasks,
   FaPlay,
   FaPause,
@@ -53,8 +49,6 @@ export default function InternshipsPage() {
   const [currentUserEmail, setCurrentUserEmail] = useState("");
   const [currentUserName, setCurrentUserName] = useState("");
   const [myTasks, setMyTasks] = useState([]);
-  const [showAssignedPassword, setShowAssignedPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   // Kebab Context Menu State
   const [activeKebabId, setActiveKebabId] = useState(null);
@@ -381,8 +375,6 @@ export default function InternshipsPage() {
     full_name: "",
     cnic: "",
     email: "",
-    assigned_password: "",
-    confirm_password: "",
     phone: "",
     emergency_phone: "",
     internship_mode: "On-Site / Offline",
@@ -524,32 +516,21 @@ export default function InternshipsPage() {
       return;
     }
 
-    if (!form.assigned_password || form.assigned_password.length < 6) {
-      showToast("Password Security Error 🔴", "Temporary password must be at least 6 characters long.", "error");
-      return;
-    }
-
-    if (form.confirm_password && form.assigned_password !== form.confirm_password) {
-      showToast("Password Mismatch 🔴", "Passwords do not match. Please re-enter.", "error");
-      return;
-    }
-
     setSubmitting(true);
 
     try {
       const res = await registerInternWithCredentials({
         internData: form,
-        password: form.assigned_password,
       });
 
       const currentList = [res.intern, ...interns];
       setInterns(currentList);
       setSubmitting(false);
 
-      showToast("Intern Enrolled 🎉", `${form.full_name} enrolled as ${form.internship_mode}. Login account created.`, "success");
+      showToast("Intern Enrolled 🎉", `${form.full_name} enrolled as ${form.internship_mode}. Portal access requires account approval.`, "success");
       showAlert(
-        "Intern Account & Credentials Created 🟢",
-        `Intern "${form.full_name}" registered successfully!\n\nTech Domain: ${form.course_name}\nMode: ${form.internship_mode}\nLogin Email: ${form.email}\nAuth Account Created (No plain-text password stored in DB).`,
+        "Intern profile saved 🟢",
+        `Intern "${form.full_name}" registered successfully!\n\nTech Domain: ${form.course_name}\nMode: ${form.internship_mode}\nEmail: ${form.email}\nThe intern must create a Supabase account and wait for administrator approval.`,
         "success"
       );
 
@@ -557,9 +538,7 @@ export default function InternshipsPage() {
         full_name: "",
         cnic: "",
         email: "",
-        assigned_password: "internpassword123",
-        confirm_password: "internpassword123",
-        phone: "",
+                phone: "",
         emergency_phone: "",
         internship_mode: "On-Site / Offline",
         course_name: "Full Stack MERN Web Development",
@@ -1061,68 +1040,7 @@ export default function InternshipsPage() {
                 </div>
               </div>
 
-              {/* Login Credentials Section */}
-              <div className="rounded-xl border border-blue-100 bg-blue-50/50 p-3 space-y-2.5 my-2">
-                <div className="flex items-center gap-1.5 text-blue-900 font-bold text-xs">
-                  <FaLock className="text-blue-600" />
-                  <span>Intern Login Credentials</span>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                  <div>
-                    <label className="block text-[10px] font-semibold uppercase text-slate-700 mb-1">
-                      Temporary Password *
-                    </label>
-                    <div className="relative">
-                      <input
-                        type={showAssignedPassword ? "text" : "password"}
-                        name="assigned_password"
-                        value={form.assigned_password || ""}
-                        onChange={handleChange}
-                        placeholder="Enter Temporary Password"
-                        required
-                        className="w-full rounded-lg border border-slate-200 bg-white pl-2.5 pr-8 py-1.5 text-xs text-slate-900 outline-none focus:border-blue-600 font-mono"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowAssignedPassword(!showAssignedPassword)}
-                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 transition-colors cursor-pointer p-1"
-                        title={showAssignedPassword ? "Hide Password" : "Show Password"}
-                      >
-                        {showAssignedPassword ? <FaEyeSlash className="text-xs" /> : <FaEye className="text-xs" />}
-                      </button>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-[10px] font-semibold uppercase text-slate-700 mb-1">
-                      Confirm Password *
-                    </label>
-                    <div className="relative">
-                      <input
-                        type={showConfirmPassword ? "text" : "password"}
-                        name="confirm_password"
-                        value={form.confirm_password || ""}
-                        onChange={handleChange}
-                        placeholder="Confirm Password"
-                        required
-                        className="w-full rounded-lg border border-slate-200 bg-white pl-2.5 pr-8 py-1.5 text-xs text-slate-900 outline-none focus:border-blue-600 font-mono"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 transition-colors cursor-pointer p-1"
-                        title={showConfirmPassword ? "Hide Password" : "Show Password"}
-                      >
-                        {showConfirmPassword ? <FaEyeSlash className="text-xs" /> : <FaEye className="text-xs" />}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-                <p className="text-[10px] text-slate-500 italic">
-                  Intern will log in using: <span className="font-semibold text-slate-700">{form.email || "intern@example.com"}</span>
-                </p>
-              </div>
+              <div className="rounded-xl border border-blue-100 bg-blue-50/50 p-3 my-2 text-xs text-blue-900">Intern access uses Supabase Auth. The intern must create an account with this email and an administrator must approve the intern role.</div>
 
               {/* Full Width Primary CTA Button (Requirement #3) */}
               <div className="pt-1">
@@ -1131,7 +1049,7 @@ export default function InternshipsPage() {
                   disabled={submitting}
                   className="w-full rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold py-3 text-xs transition-colors shadow-xs cursor-pointer"
                 >
-                  {submitting ? "Enrolling & Creating Account..." : `Enroll ${form.internship_mode.includes("Remote") ? "Remote" : "On-Site"} Intern`}
+                  {submitting ? "Saving profile..." : `Enroll ${form.internship_mode.includes("Remote") ? "Remote" : "On-Site"} Intern`}
                 </button>
               </div>
             </form>

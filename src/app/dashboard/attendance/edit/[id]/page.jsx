@@ -35,7 +35,7 @@ export default function EditAttendance() {
   useEffect(() => {
     const role = localStorage.getItem("user_role") || "employee";
     const email = (localStorage.getItem("current_user_email") || "").toLowerCase().trim();
-    const adminCheck = role === "admin" || email.includes("admin") || email.includes("owner");
+    const adminCheck = ["admin", "manager", "hr"].includes(role);
 
     if (!adminCheck) {
       showToast("Access Restricted 🔒", "Attendance editing is reserved for Admins only.", "warning");

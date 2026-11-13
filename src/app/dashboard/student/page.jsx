@@ -1,5 +1,7 @@
 "use client";
 
+import { authenticatedFetch } from "@/lib/authenticatedFetch";
+
 import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import Modal from "@/components/Modal";
@@ -394,7 +396,7 @@ export default function StudentDedicatedDashboardPage() {
     const savedEmail = (localStorage.getItem("current_user_email") || "").trim().toLowerCase();
     const savedName = localStorage.getItem("current_user_name") || "";
 
-    const isAdmin = savedRole === "admin" || savedEmail.includes("admin") || savedEmail.includes("owner");
+    const isAdmin = ["admin", "manager", "hr"].includes(savedRole);
     setIsAdminUser(isAdmin);
     setRole(savedRole);
 
@@ -1107,7 +1109,7 @@ export default function StudentDedicatedDashboardPage() {
     };
 
     try {
-      await fetch("/api/persistence", {
+      await authenticatedFetch("/api/persistence", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ table: "complaints", record: payload, action: "save" })

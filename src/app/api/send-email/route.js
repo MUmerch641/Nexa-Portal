@@ -1,8 +1,13 @@
 import { NextResponse } from "next/server";
 import tls from "tls";
 import net from "net";
-import fs from "fs";
-import path from "path";
+import { getRequestUser, isPortalAdmin } from "@/lib/serverAuth";
+
+function escapeHtml(value) {
+  return String(value || "").replace(/[&<>"']/g, (character) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  })[character]);
+}
 
 function sendViaPort587({ user, pass, to, subject, html, text }) {
   return new Promise((resolve) => {
@@ -33,7 +38,7 @@ function sendViaPort587({ user, pass, to, subject, html, text }) {
           try {
             secureSocket = tls.connect({
               socket: currentSocket,
-              rejectUnauthorized: false
+              rejectUnauthorized: true
             }, () => {
               send(secureSocket, "EHLO nexa-portal.com");
             });
@@ -100,7 +105,7 @@ function sendViaPort465({ user, pass, to, subject, html, text }) {
     }
 
     try {
-      const client = tls.connect(465, "smtp.gmail.com", { rejectUnauthorized: false, timeout: 5000 }, () => {
+      const client = tls.connect(465, "smtp.gmail.com", { rejectUnauthorized: true, timeout: 5000 }, () => {
         let step = 0;
 
         const send = (cmd) => {
@@ -161,17 +166,23 @@ function sendViaPort465({ user, pass, to, subject, html, text }) {
 }
 
 export async function POST(request) {
+  const context = await getRequestUser(request);
+  if (context.error) return NextResponse.json({ error: context.error }, { status: context.status });
+  if (!isPortalAdmin(context.role)) return NextResponse.json({ error: "Only administrators can send fee reminders." }, { status: 403 });
+
   try {
     const body = await request.json();
     const { to, subject, content, studentName } = body;
 
-    if (!to) {
+    if (typeof to !== "string" || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to.trim())) {
       return NextResponse.json({ error: "Recipient email is required." }, { status: 400 });
     }
 
     const cleanEmail = to.trim().toLowerCase();
-    const emailSubject = subject || `💳 Monthly Fee Reminder Alert - Nexa Enterprise`;
-    const emailBodyText = content || `Dear ${studentName || "Student"},\n\nThis is an official fee reminder that your monthly course tuition fee is due.\n\nPlease clear your balance or submit your fee slip to maintain active student privileges.\n\nNexa Enterprise Accounts & Finance Dept`;
+    const safeStudentName = escapeHtml(String(studentName || "Student").slice(0, 150));
+    const emailSubject = String(subject || "💳 Monthly Fee Reminder Alert - Nexa Enterprise").replace(/[\r\n]/g, " ").slice(0, 200);
+    const emailBodyText = String(content || `Dear ${studentName || "Student"},\n\nThis is an official fee reminder that your monthly course tuition fee is due.\n\nPlease clear your balance or submit your fee slip to maintain active student privileges.\n\nNexa Enterprise Accounts & Finance Dept`).slice(0, 10000);
+    const safeEmailBody = escapeHtml(emailBodyText).replace(/\r?\n/g, "<br>");
 
     const htmlTemplate = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 16px; background-color: #ffffff; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
@@ -179,46 +190,22 @@ export async function POST(request) {
           💳 Nexa Enterprise Portal - Monthly Fee Alert
         </div>
         <div style="padding: 24px 0; color: #0f172a; line-height: 1.7; font-size: 14px;">
-          <p style="font-size: 16px; font-weight: bold; color: #1e293b;">Dear ${studentName || "Student"},</p>
+          <p style="font-size: 16px; font-weight: bold; color: #1e293b;">Dear ${safeStudentName},</p>
           <div style="background-color: #f8fafc; padding: 16px; border-radius: 12px; border-left: 4px solid #2563eb; font-size: 13px; color: #334155; margin: 16px 0; white-space: pre-line;">
-            ${emailBodyText}
+            ${safeEmailBody}
           </div>
           <p style="font-size: 12px; color: #64748b;">Please log into your Nexa Student Portal dashboard to view cycle details or upload your fee payment slip.</p>
         </div>
         <div style="background-color: #eff6ff; padding: 14px; border-radius: 10px; font-size: 11px; color: #1e40af; text-align: center; border: 1px solid #bfdbfe;">
-          Official System Notification • Dispatched to ${cleanEmail}
+          Official System Notification • Dispatched to ${escapeHtml(cleanEmail)}
         </div>
       </div>
     `;
 
-    // Dynamically load credentials from .env
+    // Read mail-provider credentials from deployment environment variables.
     let smtpUser = (process.env.SMTP_USER || process.env.EMAIL_USER || "").trim();
     let smtpPass = (process.env.SMTP_PASS || process.env.EMAIL_PASS || "").replace(/\s+/g, "").trim();
     let resendApiKey = (process.env.RESEND_API_KEY || "").trim();
-
-    try {
-      const envPath = path.join(process.cwd(), ".env");
-      if (fs.existsSync(envPath)) {
-        const envContent = fs.readFileSync(envPath, "utf-8");
-        const lines = envContent.split(/\r?\n/);
-        for (const line of lines) {
-          let cleanLine = line.trim();
-          if (cleanLine.includes("#")) cleanLine = cleanLine.split("#")[0].trim();
-          if (cleanLine.startsWith("SMTP_USER=") || cleanLine.startsWith("EMAIL_USER=")) {
-            const val = cleanLine.substring(cleanLine.indexOf("=") + 1).replace(/["']/g, "").trim();
-            if (val && !val.includes("apka-email")) smtpUser = val;
-          }
-          if (cleanLine.startsWith("SMTP_PASS=") || cleanLine.startsWith("EMAIL_PASS=")) {
-            const val = cleanLine.substring(cleanLine.indexOf("=") + 1).replace(/["']/g, "").replace(/\s+/g, "").trim();
-            if (val && !val.includes("abcdefgh")) smtpPass = val;
-          }
-          if (cleanLine.startsWith("RESEND_API_KEY=")) {
-            const val = cleanLine.substring(cleanLine.indexOf("=") + 1).replace(/["']/g, "").trim();
-            if (val) resendApiKey = val;
-          }
-        }
-      }
-    } catch(e) {}
 
     let smtpResult = { success: false, reason: "Init" };
 
@@ -232,7 +219,7 @@ export async function POST(request) {
             "Content-Type": "application/json"
           },
           body: JSON.stringify({
-            from: "Nexa Finance <onboarding@resend.dev>",
+            from: process.env.RESEND_FROM_EMAIL || "Nexa Finance <onboarding@resend.dev>",
             to: [cleanEmail],
             subject: emailSubject,
             html: htmlTemplate
@@ -267,15 +254,12 @@ export async function POST(request) {
       });
     }
 
-    const gmailWebUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(cleanEmail)}&su=${encodeURIComponent(emailSubject)}&body=${encodeURIComponent(emailBodyText)}`;
-
     return NextResponse.json({
-      success: true,
+      success: smtpResult.success,
       message: smtpResult.success
         ? `Fee reminder email delivered directly to ${cleanEmail} Gmail Inbox! 📧`
         : `Fee reminder notice logged. Web Gmail backup ready.`,
       smtpResult,
-      gmailWebUrl,
       smtpUser: smtpUser ? `${smtpUser.substring(0, 3)}***` : "none",
       emailDetails: {
         to: cleanEmail,

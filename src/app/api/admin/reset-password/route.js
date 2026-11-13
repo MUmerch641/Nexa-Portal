@@ -1,56 +1,25 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-
-const LIVE_SUPABASE_URL = "https://uzwmwtkldgchnuqxamov.supabase.co";
-const LIVE_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV6d213dGtsZGdjaG51cXhhbW92Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU0MDUxMjYsImV4cCI6MjEwMDk4MTEyNn0.dTw41DhaS-qDVqX4jj3WsrAvYE9CLigjOLZFiDt_7Rk";
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL && !process.env.NEXT_PUBLIC_SUPABASE_URL.includes("placeholder")
-  ? process.env.NEXT_PUBLIC_SUPABASE_URL
-  : LIVE_SUPABASE_URL;
-
-const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY && !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY.includes("placeholder")
-  ? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-  : LIVE_SUPABASE_ANON_KEY;
-
-const supabase = createClient(supabaseUrl, supabaseKey);
+import { getRequestUser, isPortalAdmin } from "@/lib/serverAuth";
 
 export async function POST(request) {
+  const context = await getRequestUser(request);
+  if (context.error) return NextResponse.json({ error: context.error }, { status: context.status });
+  if (!isPortalAdmin(context.role)) {
+    return NextResponse.json({ error: "Only administrators can request a password reset for another account." }, { status: 403 });
+  }
+
   try {
-    const body = await request.json();
-    const { targetEmail, requesterEmail, requesterRole } = body;
-
-    const isRequesterAdmin =
-      requesterRole === "admin" ||
-      (requesterEmail && requesterEmail.toLowerCase().trim() === "admin@gmail.com");
-
-    if (!isRequesterAdmin) {
-      return NextResponse.json(
-        { error: "403 Forbidden: Only authorized Admins can trigger password resets." },
-        { status: 403 }
-      );
+    const { targetEmail } = await request.json();
+    const email = String(targetEmail || "").trim().toLowerCase();
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return NextResponse.json({ error: "Enter a valid account email address." }, { status: 400 });
     }
-
-    if (!targetEmail || !targetEmail.trim()) {
-      return NextResponse.json({ error: "Target email address is required." }, { status: 400 });
-    }
-
-    // Trigger Supabase Auth password reset email securely
-    const { error } = await supabase.auth.resetPasswordForEmail(targetEmail.trim().toLowerCase(), {
-      redirectTo: `${request.headers.get("origin") || "http://localhost:3000"}/verify-email`,
+    const { error } = await context.client.auth.resetPasswordForEmail(email, {
+      redirectTo: `${new URL(request.url).origin}/verify-email`,
     });
-
-    if (error) {
-      console.error("Supabase Reset Password Error:", error);
-    }
-
-    return NextResponse.json({
-      success: true,
-      message: `Password reset instructions sent securely to ${targetEmail}.`,
-    });
-  } catch (err) {
-    return NextResponse.json(
-      { error: err.message || "Failed to trigger password reset." },
-      { status: 500 }
-    );
+    if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+    return NextResponse.json({ success: true, message: "Password reset instructions were sent if the account exists." });
+  } catch (error) {
+    return NextResponse.json({ error: error?.message || "Could not request a password reset." }, { status: 400 });
   }
 }

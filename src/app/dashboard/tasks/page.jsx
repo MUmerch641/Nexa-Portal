@@ -53,7 +53,7 @@ export default function TasksPage() {
       const savedRole = localStorage.getItem("user_role") || "employee";
       const savedEmail = (localStorage.getItem("current_user_email") || "").toLowerCase().trim();
       const savedName = localStorage.getItem("current_user_name") || savedEmail.split("@")[0] || "User";
-      const adminCheck = savedRole === "admin" || savedRole === "hr" || savedEmail.includes("admin") || savedEmail === "admin@gmail.com";
+      const adminCheck = ["admin", "hr", "manager"].includes(savedRole);
 
       setRole(savedRole);
       setUserEmail(savedEmail);

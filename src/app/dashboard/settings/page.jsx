@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import Modal from "@/components/Modal";
 import { showToast } from "@/components/Toast";
@@ -21,7 +22,8 @@ import {
   FaCheckCircle,
   FaKey,
   FaLock,
-  FaTrash
+  FaTrash,
+  FaUsers,
 } from "react-icons/fa";
 
 export default function SettingsPage() {
@@ -71,49 +73,30 @@ export default function SettingsPage() {
       return;
     }
 
-    const emailKey = (userEmail || "admin@gmail.com").toLowerCase().trim();
-    const savedPassKey = `user_password_${emailKey}`;
-    const storedPassword = localStorage.getItem(savedPassKey) || "admin123";
-
-    // Admin can change password without current password verification
-    const userRole = localStorage.getItem("user_role") || "admin";
-    const isAdmin = userRole === "admin" || userRole === "hr" || userRole === "manager";
-
-    if (!isAdmin && currentPassword !== storedPassword) {
-      showToast("Incorrect Password 🛑", "Current password does not match.", "error");
-      return;
-    }
-
     if (newPassword !== confirmNewPassword) {
       showToast("Password Mismatch ⚠️", "New passwords do not match.", "warning");
       return;
     }
 
-    // Admin can set any password without strict requirements
-    if (!isAdmin) {
-      const strongPasswordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
-      if (!strongPasswordRegex.test(newPassword)) {
-        showToast(
-          "Weak Password Policy 🛑",
-          "Must be 8+ chars with uppercase, lowercase, number, & special char.",
-          "warning"
-        );
-        return;
-      }
+    const strongPasswordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
+    if (!strongPasswordRegex.test(newPassword)) {
+      showToast("Weak Password Policy 🛑", "Use 8+ characters with uppercase, lowercase, number, and a special character.", "warning");
+      return;
     }
 
-    localStorage.setItem(savedPassKey, newPassword);
-
     try {
-      await supabase.from("user_profiles").upsert({
-        email: emailKey,
-        password_hash: newPassword,
-        updated_at: new Date().toISOString()
-      });
-    } catch (e) {}
+      const email = userEmail.trim().toLowerCase();
+      const { error: verifyError } = await supabase.auth.signInWithPassword({ email, password: currentPassword });
+      if (verifyError) throw new Error("Current password does not match.");
+      const { error: updateError } = await supabase.auth.updateUser({ password: newPassword });
+      if (updateError) throw updateError;
+    } catch (error) {
+      showToast("Password update failed", error?.message || "Could not update the password.", "error");
+      return;
+    }
 
     setPasswordForm({ currentPassword: "", newPassword: "", confirmNewPassword: "" });
-    showToast("Password Updated 🔑", "Password updated successfully.", "success");
+    showToast("Password Updated 🔑", "Password updated in Supabase Auth.", "success");
   };
 
   useEffect(() => {
@@ -234,6 +217,11 @@ export default function SettingsPage() {
             Manage Organization Details • Logo Upload • Currency Symbol • Office IP Restrictions
           </p>
         </div>
+        {["admin", "manager", "hr"].includes(role) && (
+          <Link href="/dashboard/settings/users" className="inline-flex items-center gap-2 rounded-xl bg-[#2563EB] px-4 py-2.5 text-xs font-bold text-white hover:bg-[#1D4ED8]">
+            <FaUsers /> Manage team access
+          </Link>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

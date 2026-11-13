@@ -249,7 +249,7 @@ export default function EmployeeDedicatedDashboardPage() {
     const savedEmail = (localStorage.getItem("current_user_email") || "").trim().toLowerCase();
     const savedName = localStorage.getItem("current_user_name") || savedEmail.split("@")[0] || "Employee";
 
-    const isAdmin = savedRole === "admin" || savedEmail.includes("admin") || savedEmail.includes("owner");
+    const isAdmin = ["admin", "manager", "hr"].includes(savedRole);
     setIsAdminUser(isAdmin);
     setEmployeeEmail(savedEmail);
     setEmployeeName(savedName);
@@ -647,7 +647,7 @@ export default function EmployeeDedicatedDashboardPage() {
     if (typeof window !== "undefined") {
       const currentRole = localStorage.getItem("user_role") || "";
       const currentEmail = (localStorage.getItem("current_user_email") || "").toLowerCase().trim();
-      const isAdmin = currentRole === "admin" || currentRole === "hr" || currentRole === "manager" || currentEmail === "admin@gmail.com";
+      const isAdmin = ["admin", "hr", "manager"].includes(currentRole);
       setIsAdminUser(isAdmin);
     }
   }, []);

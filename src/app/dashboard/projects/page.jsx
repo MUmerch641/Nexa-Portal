@@ -1,5 +1,7 @@
 "use client";
 
+import { authenticatedFetch } from "@/lib/authenticatedFetch";
+
 import { useEffect, useState, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
 import Modal from "@/components/Modal";
@@ -191,7 +193,7 @@ export default function ProjectsPage() {
     dbSaveRecord("projects", newProjObj).catch(() => {});
 
     try {
-      await fetch("/api/persistence", {
+      await authenticatedFetch("/api/persistence", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ table: "projects", record: newProjObj, action: "save" })
@@ -223,7 +225,7 @@ export default function ProjectsPage() {
     dbDeleteRecord("projects", projId).catch(() => {});
 
     try {
-      await fetch("/api/persistence", {
+      await authenticatedFetch("/api/persistence", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ table: "projects", action: "delete", record: { id: projId } })
@@ -311,7 +313,7 @@ export default function ProjectsPage() {
         localStorage.setItem("software_house_daily_tasks", JSON.stringify([]));
         localStorage.setItem("software_house_assigned_tasks", JSON.stringify([]));
         localStorage.setItem("student_daily_tasks", JSON.stringify([]));
-        await fetch("/api/persistence", {
+        await authenticatedFetch("/api/persistence", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ table: "daily_tasks", action: "clear_all" })
@@ -325,7 +327,7 @@ export default function ProjectsPage() {
       saveTasksState(updated);
       try {
         dbDeleteRecord("daily_tasks", targetId).catch(() => {});
-        await fetch("/api/persistence", {
+        await authenticatedFetch("/api/persistence", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -439,7 +441,7 @@ export default function ProjectsPage() {
     for (let i = 0; i < newTasksToInsert.length; i++) {
       const t = newTasksToInsert[i];
       try {
-        const res = await fetch("/api/persistence", {
+        const res = await authenticatedFetch("/api/persistence", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ table: "daily_tasks", record: t, action: "save" })
