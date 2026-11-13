@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getRequestUser } from "@/lib/serverAuth";
+import { getRequestUser, isPortalAdmin } from "@/lib/serverAuth";
 
 const TABLES = new Set([
   "activity_logs", "announcements", "app_users", "attendance", "attendance_policy",
@@ -98,6 +98,9 @@ export async function POST(request) {
     if (!TABLES.has(table)) return NextResponse.json({ error: "Unknown data module." }, { status: 400 });
     if (!["select", "insert", "upsert", "update", "delete"].includes(operation)) {
       return NextResponse.json({ error: "Unsupported data operation." }, { status: 400 });
+    }
+    if (table === "attendance" && !isPortalAdmin(context.role)) {
+      return NextResponse.json({ error: "Use the live attendance clock to check in or out." }, { status: 403 });
     }
 
     const { data: stored, error: readError } = await context.client

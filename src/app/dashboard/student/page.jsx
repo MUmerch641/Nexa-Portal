@@ -12,6 +12,7 @@ import { generatePrintableInternshipExperienceCertificatePdf } from "@/lib/gener
 import { dbFetch, dbSaveRecord } from "@/lib/dbPersistence";
 import { calculate30DayFeeCycles } from "@/lib/studentEnrollmentUtils";
 import { isRecordFromToday, getTodayDateString } from "@/lib/attendanceUtils";
+import { clockAttendance } from "@/lib/attendanceClockUtils";
 import { startScreenBroadcast, stopScreenBroadcast } from "@/lib/webrtcScreenService";
 import {
   FaGraduationCap,
@@ -293,8 +294,8 @@ export default function StudentDedicatedDashboardPage() {
   const [submittingStudentLeave, setSubmittingStudentLeave] = useState(false);
   const [studentLeaveForm, setStudentLeaveForm] = useState({
     leave_type: "Casual Leave",
-    start_date: new Date().toISOString().split("T")[0],
-    end_date: new Date().toISOString().split("T")[0],
+    start_date: getTodayDateString(),
+    end_date: getTodayDateString(),
     reason: "",
   });
 
@@ -842,44 +843,18 @@ export default function StudentDedicatedDashboardPage() {
     }
 
     setMarkingAttendance(true);
-    const now = new Date();
-    const timeStr = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-    const currentMins = now.getHours() * 60 + now.getMinutes();
-
-    // Shift starts at 10:00 AM (600 mins). Grace period up to 10:15 AM (615 mins).
-    const isLate = currentMins > 615;
-    const attStatus = isLate ? "Late (Shift 10:00 AM - 06:00 PM)" : "Present (On Time)";
-
-    const newRecord = {
-      id: `att-${Date.now()}`,
-      student_id: studentInfo.enrollmentNo || studentInfo.email,
-      employee_id: studentInfo.enrollmentNo || studentInfo.email,
-      user_id: studentInfo.email,
-      user_email: studentInfo.email,
-      user_name: studentInfo.name,
-      employee_name: studentInfo.name,
-      user_role: isIntern ? "intern" : "student",
-      type: "check_in",
-      check_in_time: timeStr,
-      check_out_time: "Not Checked Out",
-      attendance_status: attStatus,
-      attendance_date: getTodayDateString(),
-      date: getTodayDateString(),
-      timestamp: now.toISOString(),
-      public_ip: "127.0.0.1",
-    };
-
-    setTodayAttendance(newRecord);
-    setStudentAttendanceHistory((prev) => [newRecord, ...prev.filter(r => r.attendance_date !== newRecord.attendance_date)]);
-
     try {
+      const persistedRecord = await clockAttendance("check_in");
       const key = `today_attendance_${studentInfo.email}`;
-      localStorage.setItem(key, JSON.stringify([newRecord]));
-      await dbSaveRecord("attendance", newRecord).catch(() => {});
-    } catch (e) {}
-
-    setMarkingAttendance(false);
-    showToast("Check-In Successful 🟢", `Checked in at ${timeStr} as ${attStatus}.`, "success");
+      setTodayAttendance(persistedRecord);
+      setStudentAttendanceHistory((prev) => [persistedRecord, ...prev.filter(r => r.attendance_date !== persistedRecord.attendance_date)]);
+      try { localStorage.setItem(key, JSON.stringify([persistedRecord])); } catch (storageError) {}
+      showToast("Check-In Successful", `Checked in at ${persistedRecord.check_in_time} as ${persistedRecord.attendance_status}.`, "success");
+    } catch (error) {
+      showToast("Check-In Not Saved", error?.message || "Could not save attendance to the portal.", "error");
+    } finally {
+      setMarkingAttendance(false);
+    }
   };
 
   const handleStudentCheckOut = async () => {
@@ -894,29 +869,20 @@ export default function StudentDedicatedDashboardPage() {
     }
 
     setMarkingAttendance(true);
-    const now = new Date();
-    const timeStr = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-
-    const updatedRecord = {
-      ...todayAttendance,
-      check_out_time: timeStr,
-      attendance_status: "Present (Completed)",
-      updated_at: now.toISOString(),
-    };
-
-    setTodayAttendance(updatedRecord);
-    setStudentAttendanceHistory((prev) =>
-      prev.map((r) => (r.id === updatedRecord.id || r.attendance_date === updatedRecord.attendance_date ? updatedRecord : r))
-    );
-
     try {
+      const persistedRecord = await clockAttendance("check_out");
       const key = `today_attendance_${studentInfo.email}`;
-      localStorage.setItem(key, JSON.stringify([updatedRecord]));
-      await dbSaveRecord("attendance", updatedRecord).catch(() => {});
-    } catch (e) {}
-
-    setMarkingAttendance(false);
-    showToast("Check-Out Successful 🔴", `Checked out at ${timeStr}. Daily log saved to database.`, "success");
+      setTodayAttendance(persistedRecord);
+      setStudentAttendanceHistory((prev) =>
+        prev.map((r) => (r.id === persistedRecord.id ? persistedRecord : r))
+      );
+      try { localStorage.setItem(key, JSON.stringify([persistedRecord])); } catch (storageError) {}
+      showToast("Check-Out Successful", `Checked out at ${persistedRecord.check_out_time}. Daily log saved to database.`, "success");
+    } catch (error) {
+      showToast("Check-Out Not Saved", error?.message || "Could not save the attendance update.", "error");
+    } finally {
+      setMarkingAttendance(false);
+    }
   };
 
   // Admin-Only Attendance Edit Function
@@ -981,28 +947,23 @@ export default function StudentDedicatedDashboardPage() {
       reason: studentLeaveForm.reason.trim(),
       status: "pending",
       salary_cut: false,
-      applied_at: new Date().toISOString().split("T")[0],
+      applied_at: getTodayDateString(),
     };
 
-    setMyStudentLeaves((prev) => [newLeave, ...prev]);
-
     try {
+      const savedLeave = await dbSaveRecord("leaves", newLeave);
+      if (!savedLeave) throw new Error("The server did not confirm your leave request.");
+      setMyStudentLeaves((prev) => [savedLeave, ...prev.filter((leave) => leave.id !== savedLeave.id)]);
       const savedLeaves = JSON.parse(localStorage.getItem("software_house_leaves") || "[]");
-      localStorage.setItem("software_house_leaves", JSON.stringify([newLeave, ...savedLeaves.filter(l => l.id !== newLeave.id)]));
+      localStorage.setItem("software_house_leaves", JSON.stringify([savedLeave, ...savedLeaves.filter(l => l.id !== savedLeave.id)]));
       window.dispatchEvent(new Event("storage"));
-    } catch (err) {}
-
-    await dbSaveRecord("leaves", newLeave).catch(() => {});
-
-    setSubmittingStudentLeave(false);
-    setStudentLeaveForm({
-      leave_type: "Casual Leave",
-      start_date: new Date().toISOString().split("T")[0],
-      end_date: new Date().toISOString().split("T")[0],
-      reason: "",
-    });
-
-    showToast("Leave Application Submitted 📝", "Submitted for Admin/HR review.", "success");
+      setStudentLeaveForm({ leave_type: "Casual Leave", start_date: getTodayDateString(), end_date: getTodayDateString(), reason: "" });
+      showToast("Leave Application Submitted 📝", "Submitted for Admin/HR review.", "success");
+    } catch (error) {
+      showToast("Leave request not saved", error?.message || "Could not submit your leave request.", "error");
+    } finally {
+      setSubmittingStudentLeave(false);
+    }
   };
 
   // Task Control Handlers
@@ -1012,16 +973,18 @@ export default function StudentDedicatedDashboardPage() {
       status: "In Progress",
       start_time: task.start_time || new Date().toISOString(),
     };
-    setActiveTaskTimerId(task.id);
-    setTimerSeconds(task.total_working_seconds || 0);
-
-    const updatedList = await saveTaskRecord(updatedTask);
-    setAssignedTasks(updatedList);
-    showToast("Task Started ⏱️", `Timer running for "${task.task_title}"`, "info");
+    try {
+      const updatedList = await saveTaskRecord(updatedTask, studentInfo.email);
+      setAssignedTasks(updatedList);
+      setActiveTaskTimerId(task.id);
+      setTimerSeconds(task.total_working_seconds || 0);
+      showToast("Task Started ⏱️", `Timer running for "${task.task_title}"`, "info");
+    } catch (error) {
+      showToast("Task could not start", error?.message || "The task update was not saved.", "error");
+    }
   };
 
   const handlePauseTask = async (task) => {
-    setActiveTaskTimerId(null);
     const updatedTask = {
       ...task,
       status: "Paused",
@@ -1029,13 +992,17 @@ export default function StudentDedicatedDashboardPage() {
       pause_time: new Date().toISOString(),
     };
 
-    const updatedList = await saveTaskRecord(updatedTask);
-    setAssignedTasks(updatedList);
-    showToast("Task Paused ⏸️", `Duration logged: ${Math.floor(timerSeconds / 60)} mins`, "warning");
+    try {
+      const updatedList = await saveTaskRecord(updatedTask, studentInfo.email);
+      setAssignedTasks(updatedList);
+      setActiveTaskTimerId(null);
+      showToast("Task Paused ⏸️", `Duration logged: ${Math.floor(timerSeconds / 60)} mins`, "warning");
+    } catch (error) {
+      showToast("Task could not pause", error?.message || "The task update was not saved.", "error");
+    }
   };
 
   const handleCompleteTask = async (task) => {
-    setActiveTaskTimerId(null);
     const updatedTask = {
       ...task,
       status: "Completed",
@@ -1043,9 +1010,14 @@ export default function StudentDedicatedDashboardPage() {
       completion_time: new Date().toISOString(),
     };
 
-    const updatedList = await saveTaskRecord(updatedTask);
-    setAssignedTasks(updatedList);
-    showToast("Task Completed 🎉", `Task "${task.task_title}" marked as complete!`, "success");
+    try {
+      const updatedList = await saveTaskRecord(updatedTask, studentInfo.email);
+      setAssignedTasks(updatedList);
+      setActiveTaskTimerId(null);
+      showToast("Task Completed 🎉", `Task "${task.task_title}" marked as complete!`, "success");
+    } catch (error) {
+      showToast("Task could not complete", error?.message || "The task update was not saved.", "error");
+    }
   };
 
 
@@ -1881,7 +1853,7 @@ export default function StudentDedicatedDashboardPage() {
           {myComplaints.length === 0 ? (
             <div className="p-6 text-center bg-slate-50 rounded-2xl border border-slate-200 text-slate-500 text-xs italic space-y-1">
               <p className="font-bold text-slate-700">No Queries / Complaints Submitted</p>
-              <p>Facing any issue with LMS, tasks, or attendance? Click "+ Submit Query" above.</p>
+              <p>Facing any issue with LMS, tasks, or attendance? Click &quot;+ Submit Query&quot; above.</p>
             </div>
           ) : (
             <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
@@ -2819,7 +2791,7 @@ export default function StudentDedicatedDashboardPage() {
                   <FaDesktop className="mx-auto h-12 w-12 text-purple-400 animate-pulse" />
                   <p className="text-sm font-bold text-white">Remote Screen Stream Ready</p>
                   <p className="text-slate-400 text-xs max-w-sm mx-auto">
-                    Click "Share Live Screen to Admin" on the remote workstation to broadcast real-time display and active code editor.
+                    Click &quot;Share Live Screen to Admin&quot; on the remote workstation to broadcast real-time display and active code editor.
                   </p>
                 </div>
               )}

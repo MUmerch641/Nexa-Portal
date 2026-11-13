@@ -70,8 +70,8 @@ export default function RemoteMonitoringPage() {
   const [activeTab, setActiveTab] = useState("live_users"); // 'live_users', 'overview', 'screenshots', 'timeline', 'analytics', 'settings'
   const [userEmail, setUserEmail] = useState("");
   const [employeeName, setEmployeeName] = useState("");
-  const [employeeId, setEmployeeId] = useState("emp-101");
-  const [department, setDepartment] = useState("Frontend Engineering");
+  const [employeeId, setEmployeeId] = useState("");
+  const [department, setDepartment] = useState("");
 
   // === Privacy & Session State ===
   const [isConsentAccepted, setIsConsentAccepted] = useState(false);
@@ -90,7 +90,7 @@ export default function RemoteMonitoringPage() {
   const [lastActivityTimestamp, setLastActivityTimestamp] = useState(Date.now());
   const [mouseEventsCount, setMouseEventsCount] = useState(0);
   const [keyboardEventsCount, setKeyboardEventsCount] = useState(0);
-  const [currentFocusedApp, setCurrentFocusedApp] = useState("VS Code — Software House Management");
+  const [currentFocusedApp, setCurrentFocusedApp] = useState("Waiting for activity data");
 
   // === Screenshot Random Capture Engine State ===
   const [nextScreenshotTimer, setNextScreenshotTimer] = useState(600);
@@ -224,6 +224,13 @@ export default function RemoteMonitoringPage() {
         setEmployeeName(firstUser.name);
         setDepartment(firstUser.department);
         setEmployeeId(firstUser.id);
+      } else if (employeeName) {
+        const currentUser = allUsersList.find((user) => user.email === String(userEmail || "").toLowerCase().trim() || user.name === employeeName);
+        if (currentUser) {
+          setEmployeeName(currentUser.name);
+          setDepartment(currentUser.department);
+          setEmployeeId(currentUser.id);
+        }
       }
     } catch (error) {
       console.error("Error loading remote monitoring data:", error);

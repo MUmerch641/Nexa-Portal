@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabase";
 import { logActivity } from "@/lib/activityUtils";
 import { showToast } from "@/components/Toast";
 import Modal from "@/components/Modal";
@@ -48,6 +47,11 @@ import {
   FaTrash
 } from "react-icons/fa";
 
+function currentMonthValue() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+}
+
 export default function ComprehensiveFinanceAccountingPage() {
   const [role, setRole] = useState("admin");
   const [activeTab, setActiveTab] = useState("dashboard"); // 'dashboard', 'expenses', 'incomes', 'utility_bills', 'salary_audit', 'pnl_reports'
@@ -59,7 +63,7 @@ export default function ComprehensiveFinanceAccountingPage() {
   const [salaryPayments, setSalaryPayments] = useState([]);
 
   // Report & Filter Controls
-  const [selectedMonth, setSelectedMonth] = useState("2026-08");
+  const [selectedMonth, setSelectedMonth] = useState(currentMonthValue);
   const [filterCategory, setFilterCategory] = useState("all");
 
   // Modal & Form States
@@ -98,7 +102,7 @@ export default function ComprehensiveFinanceAccountingPage() {
   const [billForm, setBillForm] = useState({
     bill_type: "Electricity Bill",
     company_name: "K-Electric",
-    bill_month: "2026-08",
+    bill_month: currentMonthValue(),
     due_date: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
     amount: "",
     status: "Pending",
@@ -129,20 +133,19 @@ export default function ComprehensiveFinanceAccountingPage() {
       // 3. Utility Bills
       const finalBills = await dbFetch("utility_bills", INITIAL_UTILITY_BILLS);
       setUtilityBills(finalBills);
+      const savedSalaries = await dbFetch("salary", []);
+      setSalaryPayments(savedSalaries);
       try {
         localStorage.setItem("software_house_utility_bills", JSON.stringify(finalBills));
       } catch(e) {}
     }
 
-    loadFinanceData();
-
-    // Fetch Employee Salaries from Payroll Master
-    const savedSalaries = localStorage.getItem("persistent_payroll_salaries");
-    if (savedSalaries) {
-      try { setSalaryPayments(JSON.parse(savedSalaries)); } catch(e) {}
-    } else {
+    loadFinanceData().catch(() => {
+      setExpenses([]);
+      setIncomes([]);
+      setUtilityBills([]);
       setSalaryPayments([]);
-    }
+    });
   }, []);
 
   // Save changes to localStorage & DB with automatic calculation & event triggers
@@ -191,31 +194,50 @@ export default function ComprehensiveFinanceAccountingPage() {
   const monthlyProfitLoss = monthlyIncome - monthlyExpenses;
 
   const pendingPayments = expenses.filter(e => e.status === "Pending").reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0);
-  const totalSalaryExpense = salaryPayments.reduce((acc, curr) => acc + (Number(curr.net_salary) || 0), 0);
+  const totalSalaryExpense = salaryPayments.reduce((acc, curr) => acc + (Number(curr.net_salary ?? curr.final_payable_salary ?? curr.amount) || 0), 0);
   const cashBalance = totalIncome - totalExpenses; // Revenue - Expense
 
   // Delete Handlers
   const handleDeleteExpense = async (id) => {
     const target = expenses.find(e => e.id === id);
-    const updated = expenses.filter(e => e.id !== id);
-    saveExpenses(updated);
-    try { await supabase.from("expenses").delete().eq("id", id); } catch(e) {}
-    try { await logActivity("Accounts Manager", "Expense Deleted", `Removed expense record: ${target?.title || id}`, "expense"); } catch(e) {}
+    const result = await dbDeleteRecord("expenses", id);
+    if (!result.success || !result.deleted) {
+      showToast("Expense was not deleted", result.error || "The record could not be found.", "error");
+      return;
+    }
+    saveExpenses(expenses.filter(e => e.id !== id));
+    await logActivity("Accounts Manager", "Expense Deleted", "Removed expense record: " + (target?.title || id), "expense");
     showToast("Expense Deleted 🗑️", "Expense record removed & totals re-calculated automatically.", "info");
   };
 
   const handleDeleteIncome = async (id) => {
     const target = incomes.find(i => i.id === id);
-    const updated = incomes.filter(i => i.id !== id);
-    saveIncomes(updated);
-    try { await supabase.from("incomes").delete().eq("id", id); } catch(e) {}
-    try { await logActivity("Accounts Manager", "Income Deleted", `Removed income record: ${target?.client_name || id}`, "expense"); } catch(e) {}
+    const result = await dbDeleteRecord("incomes", id);
+    if (!result.success || !result.deleted) {
+      showToast("Income was not deleted", result.error || "The record could not be found.", "error");
+      return;
+    }
+    saveIncomes(incomes.filter(i => i.id !== id));
+    await logActivity("Accounts Manager", "Income Deleted", "Removed income record: " + (target?.client_name || id), "expense");
     showToast("Income Deleted 🗑️", "Income record removed & totals re-calculated automatically.", "info");
   };
 
-  const handleDeleteBill = (id) => {
-    const updated = utilityBills.filter(b => b.id !== id);
-    saveBills(updated);
+  const handleDeleteBill = async (id) => {
+    const target = utilityBills.find((bill) => bill.id === id);
+    const result = await dbDeleteRecord("utility_bills", id);
+    if (!result.success || !result.deleted) {
+      showToast("Utility bill was not deleted", result.error || "The bill could not be found.", "error");
+      return;
+    }
+    saveBills(utilityBills.filter(b => b.id !== id));
+    if (target?.related_expense_id) {
+      const expenseResult = await dbDeleteRecord("expenses", target.related_expense_id);
+      if (!expenseResult.success || !expenseResult.deleted) {
+        showToast("Bill deleted; expense entry needs review", expenseResult.error || "The linked expense was not removed.", "warning");
+        return;
+      }
+      saveExpenses(expenses.filter((expense) => expense.id !== target.related_expense_id));
+    }
     showToast("Utility Bill Deleted 🗑️", "Utility bill record has been removed.", "info");
   };
 
@@ -223,10 +245,15 @@ export default function ComprehensiveFinanceAccountingPage() {
   const handleUpdateExpense = async (e) => {
     e.preventDefault();
     if (!editingExpense) return;
-    const updated = expenses.map(item => item.id === editingExpense.id ? editingExpense : item);
-    saveExpenses(updated);
-    try { await supabase.from("expenses").upsert([editingExpense]); } catch(err) {}
-    try { await logActivity("Accounts Manager", "Expense Updated", `Updated expense: ${editingExpense.title}`, "expense"); } catch(e) {}
+    let saved;
+    try {
+      saved = await dbSaveRecord("expenses", { ...editingExpense, date: editingExpense.date || editingExpense.expense_date, expense_date: editingExpense.expense_date || editingExpense.date, payment_status: editingExpense.payment_status || editingExpense.status, status: editingExpense.status || editingExpense.payment_status });
+    } catch (error) {
+      showToast("Expense was not updated", error?.message || "Could not save the change.", "error");
+      return;
+    }
+    saveExpenses(expenses.map(item => item.id === saved.id ? saved : item));
+    await logActivity("Accounts Manager", "Expense Updated", "Updated expense: " + saved.title, "expense");
     setEditingExpense(null);
     showToast("Expense Updated 🟢", "Expense details updated & totals re-calculated automatically.", "success");
   };
@@ -234,19 +261,51 @@ export default function ComprehensiveFinanceAccountingPage() {
   const handleUpdateIncome = async (e) => {
     e.preventDefault();
     if (!editingIncome) return;
-    const updated = incomes.map(item => item.id === editingIncome.id ? editingIncome : item);
-    saveIncomes(updated);
-    try { await supabase.from("incomes").upsert([editingIncome]); } catch(err) {}
-    try { await logActivity("Accounts Manager", "Income Updated", `Updated income record for ${editingIncome.client_name}`, "expense"); } catch(e) {}
+    let saved;
+    try {
+      saved = await dbSaveRecord("incomes", editingIncome);
+    } catch (error) {
+      showToast("Income was not updated", error?.message || "Could not save the change.", "error");
+      return;
+    }
+    saveIncomes(incomes.map(item => item.id === saved.id ? saved : item));
+    await logActivity("Accounts Manager", "Income Updated", "Updated income record for " + saved.client_name, "expense");
     setEditingIncome(null);
     showToast("Income Updated 🟢", "Income record updated & totals re-calculated automatically.", "success");
   };
 
-  const handleUpdateBill = (e) => {
+  const handleUpdateBill = async (e) => {
     e.preventDefault();
     if (!editingBill) return;
-    const updated = utilityBills.map(item => item.id === editingBill.id ? editingBill : item);
-    saveBills(updated);
+    let saved;
+    try {
+      saved = await dbSaveRecord("utility_bills", editingBill);
+    } catch (error) {
+      showToast("Utility bill was not updated", error?.message || "Could not save the change.", "error");
+      return;
+    }
+    saveBills(utilityBills.map(item => item.id === saved.id ? saved : item));
+    if (saved.related_expense_id) {
+      const linkedExpense = expenses.find((expense) => expense.id === saved.related_expense_id);
+      if (linkedExpense) {
+        try {
+          const savedExpense = await dbSaveRecord("expenses", {
+            ...linkedExpense,
+            title: saved.bill_type + " - " + saved.company_name,
+            category: saved.bill_type,
+            amount: Number(saved.amount),
+            status: saved.status,
+            payment_status: saved.status,
+            date: saved.payment_date || linkedExpense.date,
+            expense_date: saved.payment_date || linkedExpense.expense_date || linkedExpense.date,
+          });
+          saveExpenses(expenses.map((expense) => expense.id === savedExpense.id ? savedExpense : expense));
+        } catch (error) {
+          showToast("Bill updated; expense entry needs review", error?.message || "The bill saved, but its expense row did not.", "warning");
+          return;
+        }
+      }
+    }
     setEditingBill(null);
     showToast("Utility Bill Updated 🟢", "Utility bill record updated successfully.", "success");
   };
@@ -259,22 +318,14 @@ export default function ComprehensiveFinanceAccountingPage() {
       return;
     }
     const newEntry = { ...expenseForm, id: `EXP-${Date.now()}`, amount: Number(expenseForm.amount) };
-    saveExpenses([newEntry, ...expenses]);
-
     try {
-      const dbPayload = {
-        title: expenseForm.title,
-        category: expenseForm.category || "General Expense",
-        amount: Number(expenseForm.amount),
-        payment_status: expenseForm.status || "Paid",
-        status: expenseForm.status || "Paid",
-        expense_date: expenseForm.date || new Date().toISOString().split("T")[0],
-        notes: expenseForm.description || null
-      };
-      await supabase.from("expenses").insert([dbPayload]);
-    } catch(err) {}
-
-    try { await logActivity("Accounts Manager", "Expense Added", `Recorded ${newEntry.category}: ${newEntry.title} (Rs. ${newEntry.amount.toLocaleString()})`, "expense"); } catch(e) {}
+      const saved = await dbSaveRecord("expenses", { ...newEntry, expense_date: newEntry.date, payment_status: newEntry.status });
+      saveExpenses([saved, ...expenses]);
+      await logActivity("Accounts Manager", "Expense Added", "Recorded " + saved.category + ": " + saved.title, "expense");
+    } catch (error) {
+      showToast("Expense was not saved", error?.message || "Could not save the expense.", "error");
+      return;
+    }
     setNewExpenseModal(false);
     setExpenseForm({ category: "Employee Salary", title: "", description: "", amount: "", payment_method: "Bank Transfer", status: "Paid", date: new Date().toISOString().split("T")[0], attachment: "", created_by: "Admin" });
     showToast("Expense Recorded 🟢", `Rs. ${newEntry.amount.toLocaleString()} added & calculated automatically.`, "success");
@@ -287,41 +338,31 @@ export default function ComprehensiveFinanceAccountingPage() {
       return;
     }
     const newEntry = { ...incomeForm, id: `INC-${Date.now()}`, amount: Number(incomeForm.amount) };
-    saveIncomes([newEntry, ...incomes]);
-
     try {
-      const dbPayload = {
-        client_name: incomeForm.client_name,
-        project_name: incomeForm.project_name || null,
-        amount: Number(incomeForm.amount),
-        income_type: incomeForm.income_type || "Client Project Payment",
-        payment_method: incomeForm.payment_method || "Bank Transfer",
-        status: incomeForm.status || "Paid",
-        date: incomeForm.date || new Date().toISOString().split("T")[0],
-        invoice_no: incomeForm.invoice_no || null,
-        notes: incomeForm.notes || null
-      };
-      await supabase.from("incomes").insert([dbPayload]);
-    } catch(err) {}
-
-    try { await logActivity("Accounts Manager", "Income Added", `Logged income payment from ${newEntry.client_name} (Rs. ${newEntry.amount.toLocaleString()})`, "expense"); } catch(e) {}
+      const saved = await dbSaveRecord("incomes", newEntry);
+      saveIncomes([saved, ...incomes]);
+      await logActivity("Accounts Manager", "Income Added", "Logged income payment from " + saved.client_name, "expense");
+    } catch (error) {
+      showToast("Income was not saved", error?.message || "Could not save the income.", "error");
+      return;
+    }
     setNewIncomeModal(false);
     setIncomeForm({ client_name: "", project_name: "", income_type: "Client Project Payment", amount: "", payment_method: "Bank Transfer", status: "Paid", date: new Date().toISOString().split("T")[0], invoice_no: `INV-${Math.floor(1000 + Math.random() * 9000)}`, notes: "" });
     showToast("Income Recorded 🟢", `Rs. ${newEntry.amount.toLocaleString()} added & calculated automatically.`, "success");
   };
 
-  const handleAddBill = (e) => {
+  const handleAddBill = async (e) => {
     e.preventDefault();
     if (!billForm.amount || !billForm.company_name) {
       showToast("Missing Fields 🛑", "Please enter utility company and bill amount.", "warning");
       return;
     }
     const newEntry = { ...billForm, id: `UB-${Date.now()}`, amount: Number(billForm.amount) };
-    saveBills([newEntry, ...utilityBills]);
-
+    const relatedExpenseId = `EXP-BILL-${Date.now()}`;
+    newEntry.related_expense_id = relatedExpenseId;
     // Also auto-add to expense table for consolidated accounting
     const matchingExpense = {
-      id: `EXP-BILL-${Date.now()}`,
+      id: relatedExpenseId,
       category: newEntry.bill_type,
       title: `${newEntry.bill_type} - ${newEntry.company_name}`,
       description: `Utility bill for ${newEntry.bill_month}`,
@@ -329,13 +370,29 @@ export default function ComprehensiveFinanceAccountingPage() {
       payment_method: "Online",
       status: newEntry.status,
       date: newEntry.payment_date || new Date().toISOString().split("T")[0],
-      attachment: newEntry.receipt_url || "utility_bill_receipt.pdf",
+      attachment: newEntry.receipt_url || "",
       created_by: "Admin Utility Center"
     };
-    saveExpenses([matchingExpense, ...expenses]);
+    let savedBill;
+    try {
+      savedBill = await dbSaveRecord("utility_bills", newEntry);
+    } catch (error) {
+      showToast("Utility bill was not saved", error?.message || "Could not save the bill.", "error");
+      return;
+    }
+    saveBills([savedBill, ...utilityBills]);
+    try {
+      const savedExpense = await dbSaveRecord("expenses", { ...matchingExpense, expense_date: matchingExpense.date, payment_status: matchingExpense.status });
+      saveExpenses([savedExpense, ...expenses]);
+    } catch (error) {
+      setNewBillModal(false);
+      setBillForm({ bill_type: "Electricity Bill", company_name: "K-Electric", bill_month: currentMonthValue(), due_date: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000).toISOString().split("T")[0], amount: "", status: "Pending", payment_date: "", receipt_url: "" });
+      showToast("Bill saved; expense entry needs review", error?.message || "The bill is saved, but its expense row was not.", "warning");
+      return;
+    }
 
     setNewBillModal(false);
-    setBillForm({ bill_type: "Electricity Bill", company_name: "K-Electric", bill_month: "2026-08", due_date: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000).toISOString().split("T")[0], amount: "", status: "Pending", payment_date: "", receipt_url: "" });
+    setBillForm({ bill_type: "Electricity Bill", company_name: "K-Electric", bill_month: currentMonthValue(), due_date: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000).toISOString().split("T")[0], amount: "", status: "Pending", payment_date: "", receipt_url: "" });
     showToast("Utility Bill Logged 🟢", `Bill of Rs. ${newEntry.amount.toLocaleString()} logged and synced to expenses.`, "success");
   };
 

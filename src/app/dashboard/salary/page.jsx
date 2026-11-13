@@ -1,16 +1,19 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabase";
-import { dbSaveRecord } from "@/lib/dbPersistence";
+import { dbFetch, dbSaveRecord } from "@/lib/dbPersistence";
 import Modal from "@/components/Modal";
 import Link from "next/link";
 import { FaLandmark, FaCalculator, FaMoneyBillWave } from "react-icons/fa";
 
+function currentMonthLabel() {
+  return new Date().toLocaleDateString(undefined, { month: "long", year: "numeric" });
+}
+
 export default function SalaryPage() {
   const [employees, setEmployees] = useState([]);
   const [employeeId, setEmployeeId] = useState("");
-  const [month, setMonth] = useState("July 2026");
+  const [month, setMonth] = useState(currentMonthLabel);
   const [amount, setAmount] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("Bank Transfer");
   const [loading, setLoading] = useState(false);
@@ -32,36 +35,12 @@ export default function SalaryPage() {
   };
 
   const getEmployees = async () => {
-    let localEmps = [];
     try {
-      const saved = localStorage.getItem("persistent_employees");
-      if (saved) localEmps = JSON.parse(saved);
-    } catch (e) { }
-
-    try {
-      const { data, error } = await supabase
-        .from("employees")
-        .select("id, full_name")
-        .order("full_name");
-
-      if (!error && data && data.length > 0) {
-        const empMap = new Map();
-        localEmps.forEach(e => { if (e.id && e.full_name) empMap.set(String(e.id), e); });
-        data.forEach(e => { if (e.id && e.full_name) empMap.set(String(e.id), e); });
-        setEmployees(Array.from(empMap.values()));
-        return;
-      }
-    } catch (err) { }
-
-    if (localEmps.length > 0) {
-      setEmployees(localEmps);
-    } else {
-      setEmployees([
-        { id: "emp-101", full_name: "Muhammad Ali" },
-        { id: "emp-102", full_name: "Sara Khan" },
-        { id: "emp-103", full_name: "Muhammad " },
-        { id: "emp-104", full_name: "Usman Tariq" }
-      ]);
+      const data = await dbFetch("employees", []);
+      setEmployees(data.sort((a, b) => String(a.full_name || "").localeCompare(String(b.full_name || ""))));
+    } catch (error) {
+      setEmployees([]);
+      showAlert("Employees could not be loaded", error?.message || "Refresh and try again.", "error");
     }
   };
 
@@ -94,23 +73,18 @@ export default function SalaryPage() {
       created_at: new Date().toISOString()
     };
 
-    await dbSaveRecord("salary", salaryObj);
-
     try {
-      await supabase.from("salary").insert([
-        {
-          employee_id: employeeId,
-          month: month,
-          amount: Number(amount),
-          payment_method: paymentMethod,
-        },
-      ]).catch(() => { });
-    } catch (err) { }
+      await dbSaveRecord("salary", salaryObj);
+    } catch (error) {
+      showAlert("Salary record was not saved", error?.message || "Could not save the payment.", "error");
+      setLoading(false);
+      return;
+    }
 
     showAlert("Salary Record Saved!", `Payroll disbursement recorded successfully for ${empName}.`, "success");
 
     setEmployeeId("");
-    setMonth("July 2026");
+    setMonth(currentMonthLabel());
     setAmount("");
     setPaymentMethod("Bank Transfer");
     setLoading(false);

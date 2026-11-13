@@ -6,11 +6,13 @@ import { dbFetch, dbSaveRecord, dbSaveList } from "@/lib/dbPersistence";
 import Modal from "@/components/Modal";
 import { showToast } from "@/components/Toast";
 import { verifyOfficeWifiAttendance } from "@/lib/attendanceIpUtils";
-import { isRecordFromToday, isRecordFromYesterday, getTodayDateString, getEmployeeCheckInStatus } from "@/lib/attendanceUtils";
+import { isRecordFromToday, isRecordFromYesterday, getTodayDateString } from "@/lib/attendanceUtils";
+import { clockAttendance } from "@/lib/attendanceClockUtils";
 import {
   FaUserCheck,
   FaCalendarCheck,
   FaTasks,
+  FaChartLine,
   FaBullhorn,
   FaClock,
   FaCheckCircle,
@@ -34,6 +36,7 @@ import {
   getExamAttemptsForUser,
   submitExamAttempt
 } from "@/lib/mcqExamUtils";
+import { getDailyTasks, saveTaskRecord } from "@/lib/studentTaskUtils";
 
 // Full Attendance Calendar Builder for Employees (Handles Sundays, Leaves, Presents, Shift Times & Absents)
 const buildFullEmployeeAttendanceCalendar = ({ rawLogs, leaves, joiningDate, todayRecord }) => {
@@ -175,6 +178,7 @@ export default function EmployeeDedicatedDashboardPage() {
 
   // Tasks State
   const [myTasks, setMyTasks] = useState([]);
+  const [savingTaskId, setSavingTaskId] = useState("");
   
   // Announcements & Meetings State
   const [announcements, setAnnouncements] = useState([]);
@@ -193,8 +197,8 @@ export default function EmployeeDedicatedDashboardPage() {
   const [myLeaves, setMyLeaves] = useState([]);
   const [leaveForm, setLeaveForm] = useState({
     leave_type: "Casual Leave",
-    start_date: new Date().toISOString().split("T")[0],
-    end_date: new Date().toISOString().split("T")[0],
+    start_date: getTodayDateString(),
+    end_date: getTodayDateString(),
     reason: "",
   });
   const [submittingLeave, setSubmittingLeave] = useState(false);
@@ -375,22 +379,8 @@ export default function EmployeeDedicatedDashboardPage() {
 
     // 2. Fetch My Assigned Tasks
     try {
-      const allTasks = await dbFetch("daily_tasks").catch(() => []);
       const cleanEmail = email.toLowerCase().trim();
-      const namePart = cleanEmail.split("@")[0];
-      const assigned = (allTasks || []).filter((t) => {
-        const tEmail = (t.assigned_to_email || t.assignedToEmail || t.email || "").toLowerCase().trim();
-        const tName = (t.assigned_to_name || t.assignedTo || "").toLowerCase().trim();
-        const targetAud = (t.targetAudience || "").toLowerCase();
-        return (
-          tEmail === cleanEmail ||
-          (cleanEmail && tEmail.includes(cleanEmail)) ||
-          (namePart && tName.includes(namePart)) ||
-          targetAud.includes("all paid staff") ||
-          targetAud.includes("all staff") ||
-          targetAud.includes("all employees")
-        );
-      });
+      const assigned = await getDailyTasks(cleanEmail, "employee");
       setMyTasks(assigned);
     } catch (e) {}
 
@@ -486,43 +476,26 @@ export default function EmployeeDedicatedDashboardPage() {
     }
 
     setMarkingAttendance(true);
-    const now = new Date();
-    const currentMinutes = now.getHours() * 60 + now.getMinutes();
-    const policyResult = getEmployeeCheckInStatus(currentMinutes);
-    const timeStr = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-
-    const newRecord = {
-      id: `att-${Date.now()}`,
-      employee_id: employeeEmail,
-      user_email: employeeEmail,
-      user_name: employeeName,
-      user_role: "employee",
-      type: "check_in",
-      check_in_time: timeStr,
-      check_out_time: "Not Checked Out",
-      attendance_status: policyResult.status, // "On Time", "Late Warning", or "Salary Deduction"
-      status: policyResult.status,
-      attendance_date: getTodayDateString(),
-      timestamp: now.toISOString(),
-      public_ip: userIp || "127.0.0.1",
-    };
-
-    setTodayAttendance(newRecord);
-    setMyAttendanceHistory((prev) => [newRecord, ...prev.filter(r => r.id !== newRecord.id)]);
 
     try {
+      const persistedRecord = await clockAttendance("check_in");
       const key = `today_attendance_${employeeEmail}`;
-      localStorage.setItem(key, JSON.stringify([newRecord]));
-      await dbSaveRecord("attendance", newRecord).catch(() => {});
-    } catch (e) {}
-
-    setMarkingAttendance(false);
-    showToast(`Check-In: ${policyResult.label}`, `Recorded at ${timeStr}. Status: ${policyResult.status}`, policyResult.colorKey === "emerald" ? "success" : policyResult.colorKey === "amber" ? "warning" : "error");
-    showAlert(
-      `Check-In Recorded: ${policyResult.label}`,
-      `Check-In Time: ${timeStr}\nAttendance Status: ${policyResult.status} (${policyResult.dot})\nPolicy Rule: ${policyResult.rule}\nNetwork: ${wifiStatus}`,
-      policyResult.colorKey === "emerald" ? "success" : policyResult.colorKey === "amber" ? "warning" : "error"
-    );
+      setTodayAttendance(persistedRecord);
+      setMyAttendanceHistory((prev) => [persistedRecord, ...prev.filter(r => r.id !== persistedRecord.id)]);
+      try { localStorage.setItem(key, JSON.stringify([persistedRecord])); } catch (storageError) {}
+      const status = persistedRecord.attendance_status || "Present";
+      const toastType = status === "On Time" ? "success" : status === "Late Warning" || status === "Late" ? "warning" : "error";
+      showToast(`Check-In: ${status}`, `Recorded at ${persistedRecord.check_in_time}.`, toastType);
+      showAlert(
+        `Check-In Recorded: ${status}`,
+        `Check-In Time: ${persistedRecord.check_in_time}\nAttendance Status: ${status}\nNetwork: ${wifiStatus}`,
+        toastType
+      );
+    } catch (error) {
+      showToast("Check-In Not Saved", error?.message || "Could not save attendance to the portal.", "error");
+    } finally {
+      setMarkingAttendance(false);
+    }
   };
 
   // Check-Out Handler
@@ -538,34 +511,26 @@ export default function EmployeeDedicatedDashboardPage() {
     }
 
     setMarkingAttendance(true);
-    const now = new Date();
-    const timeStr = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-
-    const updatedRecord = {
-      ...todayAttendance,
-      check_out_time: timeStr,
-      attendance_status: todayAttendance.attendance_status || "On Time",
-      updated_at: now.toISOString(),
-    };
-
-    setTodayAttendance(updatedRecord);
-    setMyAttendanceHistory((prev) =>
-      prev.map((r) => (r.id === updatedRecord.id || r.attendance_date === updatedRecord.attendance_date ? updatedRecord : r))
-    );
-
     try {
+      const persistedRecord = await clockAttendance("check_out");
       const key = `today_attendance_${employeeEmail}`;
-      localStorage.setItem(key, JSON.stringify([updatedRecord]));
-      await dbSaveRecord("attendance", updatedRecord).catch(() => {});
-    } catch (e) {}
-
-    setMarkingAttendance(false);
-    showToast("Check-Out Successful 🔴", `Checked out at ${timeStr}. Daily work log completed.`, "success");
-    showAlert("Check-Out Successful 🔴", `Checked out successfully at ${timeStr}!\n\nStatus: ${updatedRecord.attendance_status}\nDaily attendance log marked as Completed.`, "success");
+      setTodayAttendance(persistedRecord);
+      setMyAttendanceHistory((prev) =>
+        prev.map((r) => (r.id === persistedRecord.id ? persistedRecord : r))
+      );
+      try { localStorage.setItem(key, JSON.stringify([persistedRecord])); } catch (storageError) {}
+      showToast("Check-Out Successful", `Checked out at ${persistedRecord.check_out_time}. Daily work log completed.`, "success");
+      showAlert("Check-Out Successful", `Checked out successfully at ${persistedRecord.check_out_time}.\n\nStatus: ${persistedRecord.attendance_status}\nDaily attendance log marked as Completed.`, "success");
+    } catch (error) {
+      showToast("Check-Out Not Saved", error?.message || "Could not save the attendance update.", "error");
+    } finally {
+      setMarkingAttendance(false);
+    }
   };
 
   // Task Status Update Handler
   const handleUpdateTaskStatus = async (taskId, newStatus) => {
+    if (savingTaskId === taskId) return;
     const updated = myTasks.map((t) => {
       if (t.id === taskId) {
         return {
@@ -578,14 +543,18 @@ export default function EmployeeDedicatedDashboardPage() {
       return t;
     });
 
-    setMyTasks(updated);
-
     const targetTask = updated.find((t) => t.id === taskId);
-    if (targetTask) {
-      await dbSaveRecord("daily_tasks", targetTask).catch(() => {});
+    if (!targetTask) return;
+    setSavingTaskId(taskId);
+    try {
+      const updatedTasks = await saveTaskRecord(targetTask, employeeEmail, "employee");
+      setMyTasks(updatedTasks);
+      showToast("Task Updated 📝", `Status updated to '${newStatus}'.`, "success");
+    } catch (error) {
+      showToast("Task update failed", error?.message || "The change was not saved.", "error");
+    } finally {
+      setSavingTaskId("");
     }
-
-    showToast("Task Updated 📝", `Status updated to '${newStatus}'.`, "success");
   };
 
   // Submit Leave Request Handler
@@ -612,30 +581,25 @@ export default function EmployeeDedicatedDashboardPage() {
       reason: leaveForm.reason.trim(),
       status: "pending",
       salary_cut: false,
-      applied_at: new Date().toISOString().split("T")[0],
+      applied_at: getTodayDateString(),
     };
 
-    const updatedLeaves = [newLeave, ...myLeaves];
-    setMyLeaves(updatedLeaves);
-
     try {
+      const savedLeave = await dbSaveRecord("leaves", newLeave);
+      if (!savedLeave) throw new Error("The server did not confirm your leave request.");
+      const updatedLeaves = [savedLeave, ...myLeaves.filter((leave) => leave.id !== savedLeave.id)];
+      setMyLeaves(updatedLeaves);
       const savedLeaves = JSON.parse(localStorage.getItem("software_house_leaves") || "[]");
-      localStorage.setItem("software_house_leaves", JSON.stringify([newLeave, ...savedLeaves.filter(l => l.id !== newLeave.id)]));
+      localStorage.setItem("software_house_leaves", JSON.stringify([savedLeave, ...savedLeaves.filter(l => l.id !== savedLeave.id)]));
       window.dispatchEvent(new Event("storage"));
-    } catch (err) {}
-
-    await dbSaveRecord("leaves", newLeave).catch(() => {});
-
-    setSubmittingLeave(false);
-    setLeaveForm({
-      leave_type: "Casual Leave",
-      start_date: new Date().toISOString().split("T")[0],
-      end_date: new Date().toISOString().split("T")[0],
-      reason: "",
-    });
-
-    showToast("Leave Submitted 📝", "Your leave request has been submitted for Admin approval.", "success");
-    showAlert("Leave Request Submitted 🟢", `Leave request (${leaveForm.leave_type}) submitted successfully!\n\nStatus: Pending Admin/HR Approval.`, "success");
+      setLeaveForm({ leave_type: "Casual Leave", start_date: getTodayDateString(), end_date: getTodayDateString(), reason: "" });
+      showToast("Leave Submitted 📝", "Your leave request has been submitted for Admin approval.", "success");
+      showAlert("Leave Request Submitted 🟢", `Leave request (${leaveForm.leave_type}) submitted successfully!\n\nStatus: Pending Admin/HR Approval.`, "success");
+    } catch (error) {
+      showToast("Leave request not saved", error?.message || "Could not submit your leave request.", "error");
+    } finally {
+      setSubmittingLeave(false);
+    }
   };
 
   // Metrics Calculations
@@ -747,7 +711,7 @@ export default function EmployeeDedicatedDashboardPage() {
           className="bg-white p-5 rounded-2xl border border-[#E2E8F0] shadow-sm space-y-2 hover:border-emerald-400 hover:shadow-md transition-all cursor-pointer group block"
         >
           <div className="flex justify-between items-center text-xs text-[#64748B]">
-            <span className="font-semibold text-slate-700">Today's Attendance</span>
+            <span className="font-semibold text-slate-700">Today&apos;s Attendance</span>
             <FaCalendarCheck className="text-emerald-500 group-hover:scale-110 transition-transform" />
           </div>
           <p className="text-base font-bold text-[#0F172A]">

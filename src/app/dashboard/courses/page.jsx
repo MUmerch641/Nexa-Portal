@@ -182,47 +182,6 @@ export default function CoursesPage() {
     const handleRoleChange = () => setRole(localStorage.getItem("user_role") || "admin");
     window.addEventListener("roleChanged", handleRoleChange);
 
-    const initialDefaultStudents = [
-      {
-        id: "s-101",
-        full_name: "Muhammad Ali",
-        cnic: "35201-1234567-1",
-        email: "ali.student@gmail.com",
-        phone: "03001234567",
-        enrollment_type: "Paid Course Student",
-        course_name: "Full Stack MERN Web Development",
-        instructor: "Lead Full-Stack Instructor",
-        start_date: "2026-05-01",
-        end_date: "2026-08-01",
-        progress: 100,
-        course_fee: 25000,
-        fee_paid: 25000,
-        last_payment_date: "2026-07-01",
-        next_due_date: "2026-08-01",
-        fee_status: "Paid",
-        batch: "Batch #14 (Morning Tech)",
-      },
-      {
-        id: "s-102",
-        full_name: "Sara Khan",
-        cnic: "35201-9876543-2",
-        email: "sara.design@gmail.com",
-        phone: "03219876543",
-        enrollment_type: "Paid Course Student",
-        course_name: "UI/UX Graphic & Product Design",
-        instructor: "Ayesha Malik (Senior UI/UX Designer)",
-        start_date: "2026-06-01",
-        end_date: "2026-09-01",
-        progress: 65,
-        course_fee: 20000,
-        fee_paid: 20000,
-        last_payment_date: "2026-07-01",
-        next_due_date: "2026-08-01",
-        fee_status: "Pending Due",
-        batch: "Batch #15 (Afternoon Lab)",
-      },
-    ];
-
     dbFetch("students", [], true).then((data) => {
       // Deduplicate students list by unique email and ID
       const uniqueStudents = [];

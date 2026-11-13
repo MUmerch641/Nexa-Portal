@@ -44,10 +44,17 @@ export async function GET(request) {
   try {
     const params = new URL(request.url).searchParams;
     const targetDate = params.get("date");
+    const startDate = params.get("from");
+    const endDate = params.get("to");
     const targetStudent = String(params.get("studentId") || "").toLowerCase();
     const limit = Math.max(1, Math.min(Number.parseInt(params.get("limit") || "30", 10) || 30, 500));
+    if ((startDate && !/^\d{4}-\d{2}-\d{2}$/.test(startDate)) || (endDate && !/^\d{4}-\d{2}-\d{2}$/.test(endDate))) {
+      return NextResponse.json({ error: "Attendance date range must use YYYY-MM-DD." }, { status: 400 });
+    }
     const rows = (await readAttendance(context)).map(({ payload }) => payload || {})
       .filter((item) => !targetDate || String(item.attendance_date || item.date || "") === targetDate)
+      .filter((item) => !startDate || String(item.attendance_date || item.date || "") >= startDate)
+      .filter((item) => !endDate || String(item.attendance_date || item.date || "") <= endDate)
       .filter((item) => !targetStudent || [item.student_id, item.user_email, item.user_id, item.email].some((value) => String(value || "").toLowerCase() === targetStudent))
       .sort((a, b) => String(b.created_at || b.timestamp || "").localeCompare(String(a.created_at || a.timestamp || "")))
       .slice(0, limit)
@@ -75,6 +82,9 @@ export async function POST(request) {
     const body = await request.json();
     if (!['save', 'bulk_save', 'delete'].includes(body.action)) return NextResponse.json({ error: "Unsupported attendance action." }, { status: 400 });
     const admin = isPortalAdmin(context.role);
+    if (!admin) {
+      return NextResponse.json({ error: "Attendance corrections are restricted to administrators. Use the live attendance clock for check-in and check-out." }, { status: 403 });
+    }
     const userEmail = String(context.user.email || "").trim().toLowerCase();
 
     if (body.action === "delete") {
@@ -105,7 +115,7 @@ export async function POST(request) {
       const date = String(record.date || record.attendance_date || body.date || new Date().toISOString().slice(0, 10));
       const status = normalizeStatus(record.status || record.attendance_status);
       const id = record.id || `attendance:${email}:${date}`;
-      const checkIn = to24Hour(record.check_in || record.check_in_time) || "09:00:00";
+      const checkIn = to24Hour(record.check_in || record.check_in_time) || "--:--";
       const checkOut = to24Hour(record.check_out || record.check_out_time);
       const payload = {
         id: String(id), student_id: email, user_email: email, user_name: admin

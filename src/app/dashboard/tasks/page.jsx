@@ -47,6 +47,7 @@ export default function TasksPage() {
     dueDate: new Date().toISOString().split("T")[0],
   });
   const [creating, setCreating] = useState(false);
+  const [savingTaskId, setSavingTaskId] = useState("");
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -115,6 +116,7 @@ export default function TasksPage() {
 
   // Status Change Handler
   const handleUpdateStatus = async (taskId, newStatus) => {
+    if (savingTaskId === taskId) return;
     const updated = tasks.map((t) => {
       if (t.id === taskId) {
         return {
@@ -127,12 +129,19 @@ export default function TasksPage() {
       return t;
     });
 
-    setTasks(updated);
     const target = updated.find((t) => t.id === taskId);
-    if (target) {
-      await dbSaveRecord("daily_tasks", target).catch(() => {});
+    if (!target) return;
+    setSavingTaskId(taskId);
+    try {
+      const savedTask = await dbSaveRecord("daily_tasks", target);
+      if (!savedTask) throw new Error("The server did not confirm the task update.");
+      setTasks((current) => current.map((task) => task.id === taskId ? savedTask : task));
+      showToast("Task Updated 📝", `Status changed to '${newStatus}'.`, "success");
+    } catch (error) {
+      showToast("Task update failed", error?.message || "The change was not saved.", "error");
+    } finally {
+      setSavingTaskId("");
     }
-    showToast("Task Updated 📝", `Status changed to '${newStatus}'.`, "success");
   };
 
   // Create Task Handler
@@ -160,21 +169,25 @@ export default function TasksPage() {
       created_at: new Date().toISOString(),
     };
 
-    const updated = [record, ...tasks];
-    setTasks(updated);
-    await dbSaveRecord("daily_tasks", record).catch(() => {});
-
-    setCreating(false);
-    setCreateModalOpen(false);
-    setNewTask({
-      task: "",
-      description: "",
-      priority: "Normal",
-      assignedToEmail: "",
-      assignedToName: "",
-      dueDate: new Date().toISOString().split("T")[0],
-    });
-    showToast("Task Created 🎉", "New task assigned successfully.", "success");
+    try {
+      const savedTask = await dbSaveRecord("daily_tasks", record);
+      if (!savedTask) throw new Error("The server did not confirm the task save.");
+      setTasks((current) => [savedTask, ...current.filter((task) => task.id !== savedTask.id)]);
+      setCreateModalOpen(false);
+      setNewTask({
+        task: "",
+        description: "",
+        priority: "Normal",
+        assignedToEmail: "",
+        assignedToName: "",
+        dueDate: new Date().toISOString().split("T")[0],
+      });
+      showToast("Task Created 🎉", "New task assigned successfully.", "success");
+    } catch (error) {
+      showToast("Task could not be created", error?.message || "The task was not saved.", "error");
+    } finally {
+      setCreating(false);
+    }
   };
 
   return (

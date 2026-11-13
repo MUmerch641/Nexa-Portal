@@ -10,6 +10,8 @@ import {
   getStudentAttendanceByDate,
   markBulkStudentAttendance,
   exportAttendanceToCSV,
+  getTodayDateString,
+  toLocalDateString,
   getAttendanceStatusColor,
   calculateAttendancePercentage,
   timeToMinutes,
@@ -39,7 +41,7 @@ import {
 export default function StudentAttendancePage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split("T")[0]);
+  const [selectedDate, setSelectedDate] = useState(getTodayDateString);
   const [students, setStudents] = useState([]);
   const [attendanceRecords, setAttendanceRecords] = useState([]);
   const [attendanceState, setAttendanceState] = useState({}); // studentId -> status
@@ -151,7 +153,7 @@ export default function StudentAttendancePage() {
           student_name: student.full_name || student.student_name || "",
           date: selectedDate,
           status: attendanceState[studentId] || "Present",
-          ip_address: "127.0.0.1"
+          ip_address: ""
         };
       });
 
@@ -191,7 +193,7 @@ export default function StudentAttendancePage() {
         student_name: student.full_name || student.student_name || "",
         date: selectedDate,
         status: attendanceState[studentId] || "Present",
-        ip_address: "127.0.0.1"
+        ip_address: ""
       };
     });
 
@@ -202,9 +204,9 @@ export default function StudentAttendancePage() {
 
   // Handle date change
   const handleDateChange = (daysOffset) => {
-    const date = new Date(selectedDate);
+    const date = new Date(`${selectedDate}T12:00:00`);
     date.setDate(date.getDate() + daysOffset);
-    setSelectedDate(date.toISOString().split("T")[0]);
+    setSelectedDate(toLocalDateString(date));
   };
 
   if (loading) {
@@ -470,10 +472,10 @@ export default function StudentAttendancePage() {
             <h3 className="font-bold text-blue-900 text-sm mb-1">How to use this attendance system:</h3>
             <ul className="text-xs text-blue-800 space-y-1 list-disc pl-5">
               <li>Select the date using the calendar controls in the header</li>
-              <li>Click on "Present", "Absent", "Late", or "Leave" for each student</li>
+              <li>Click on &quot;Present&quot;, &quot;Absent&quot;, &quot;Late&quot;, or &quot;Leave&quot; for each student</li>
               <li>Use the search bar to quickly find specific students</li>
-              <li>Click "Save Attendance" to save all changes to Supabase</li>
-              <li>Click "Export CSV" to download a report of today's attendance</li>
+              <li>Click &quot;Save Attendance&quot; to save all changes to Supabase</li>
+              <li>Click &quot;Export CSV&quot; to download a report of today&apos;s attendance</li>
               <li>Attendance stats are shown at the top for quick overview</li>
             </ul>
           </div>

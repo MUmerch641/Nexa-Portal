@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import { dbFetch, dbSaveRecord, dbDeleteRecord } from "@/lib/dbPersistence";
+import { getDailyTasks, saveTaskRecord } from "@/lib/studentTaskUtils";
 import Modal from "@/components/Modal";
 import { showToast } from "@/components/Toast";
 import ScrollableTabs from "@/components/ScrollableTabs";
@@ -420,22 +421,8 @@ export default function InternshipsPage() {
 
   const fetchMyTasks = async (email, name) => {
     try {
-      const allTasks = await dbFetch("daily_tasks").catch(() => []);
       const cleanEmail = (email || "").toLowerCase().trim();
-      const cleanName = (name || "").toLowerCase().trim();
-
-      const userTasks = (allTasks || []).filter((t) => {
-        const tEmail = (t.assigned_to_email || t.assignedToEmail || t.email || "").toLowerCase().trim();
-        const tName = (t.assigned_to_name || t.assignedTo || "").toLowerCase().trim();
-        const targetAud = (t.targetAudience || "").toLowerCase();
-
-        return (
-          (cleanEmail && (tEmail === cleanEmail || tEmail.includes(cleanEmail) || cleanEmail.includes(tEmail))) ||
-          (cleanName && (tName.includes(cleanName) || cleanName.includes(tName))) ||
-          targetAud.includes("all remote & onsite interns") ||
-          targetAud.includes("all interns")
-        );
-      });
+      const userTasks = await getDailyTasks(cleanEmail, "intern");
       setMyTasks(userTasks);
     } catch (e) {
       console.error("Error fetching intern tasks:", e);
@@ -464,24 +451,33 @@ export default function InternshipsPage() {
   };
 
   const handleStartTask = async (task) => {
-    const updated = myTasks.map(t => t.id === task.id ? { ...t, isTimerRunning: true, status: "In Progress" } : t);
-    setMyTasks(updated);
-    await dbSaveRecord("daily_tasks", { ...task, isTimerRunning: true, status: "In Progress" }).catch(() => { });
-    showToast("Task Started ▶️", `Stopwatch running for '${task.task || task.task_title}'.`, "info");
+    try {
+      const updatedTasks = await saveTaskRecord({ ...task, isTimerRunning: true, status: "In Progress" }, currentUserEmail, "intern");
+      setMyTasks(updatedTasks);
+      showToast("Task Started ▶️", `Stopwatch running for '${task.task || task.task_title}'.`, "info");
+    } catch (error) {
+      showToast("Task could not start", error?.message || "The task update was not saved.", "error");
+    }
   };
 
   const handlePauseTask = async (task) => {
-    const updated = myTasks.map(t => t.id === task.id ? { ...t, isTimerRunning: false, status: "Paused" } : t);
-    setMyTasks(updated);
-    await dbSaveRecord("daily_tasks", { ...task, isTimerRunning: false, status: "Paused" }).catch(() => { });
-    showToast("Task Paused ⏸️", `Stopwatch paused for '${task.task || task.task_title}'.`, "info");
+    try {
+      const updatedTasks = await saveTaskRecord({ ...task, isTimerRunning: false, status: "Paused" }, currentUserEmail, "intern");
+      setMyTasks(updatedTasks);
+      showToast("Task Paused ⏸️", `Stopwatch paused for '${task.task || task.task_title}'.`, "info");
+    } catch (error) {
+      showToast("Task could not pause", error?.message || "The task update was not saved.", "error");
+    }
   };
 
   const handleCompleteTask = async (task) => {
-    const updated = myTasks.map(t => t.id === task.id ? { ...t, isTimerRunning: false, status: "Completed" } : t);
-    setMyTasks(updated);
-    await dbSaveRecord("daily_tasks", { ...task, isTimerRunning: false, status: "Completed" }).catch(() => { });
-    showToast("Task Completed 🎉", `Great job! Task marked as completed.`, "success");
+    try {
+      const updatedTasks = await saveTaskRecord({ ...task, isTimerRunning: false, status: "Completed" }, currentUserEmail, "intern");
+      setMyTasks(updatedTasks);
+      showToast("Task Completed 🎉", "Great job! Task marked as completed.", "success");
+    } catch (error) {
+      showToast("Task could not complete", error?.message || "The task update was not saved.", "error");
+    }
   };
 
   const handleDomainSelect = (e) => {

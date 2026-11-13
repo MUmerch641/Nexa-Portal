@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { supabase } from "@/lib/supabase";
 import Modal from "@/components/Modal";
 import { showToast } from "@/components/Toast";
+import { dbFetch, dbSaveRecord } from "@/lib/dbPersistence";
 import {
   FaBuilding,
   FaProjectDiagram,
@@ -30,116 +30,6 @@ import {
   FaPaperPlane,
   FaPlusCircle
 } from "react-icons/fa";
-
-// Seed Datasets for Client Accounts & Projects (Row-Level Security Simulation by Client ID & Email)
-const CLIENT_DATABASE = [
-  { id: "CL-901", email: "client@acmetech.com", name: "Acme Technologies Solutions", contactPerson: "Johnathan Smith" },
-  { id: "CL-902", email: "client.globallogistics@gmail.com", name: "Global Logistics Ltd.", contactPerson: "Sarah Jenkins" },
-  { id: "CL-903", email: "client.apex@gmail.com", name: "Apex Healthcare Systems", contactPerson: "Dr. Tariq Mahmood" },
-];
-
-const MASTER_CLIENT_PROJECTS = [
-  {
-    id: "PROJ-801",
-    title: "Enterprise SaaS Logistics Tracker & Fleet System",
-    clientId: "CL-901",
-    clientEmail: "client@acmetech.com",
-    description: "Cloud-based logistics tracking platform with real-time GPS telemetry, driver management, automated dispatching, and accounting API webhooks.",
-    projectManager: "Muhammad Rahim Bugti",
-    assignedTeam: [
-      { name: "Muhammad Rahim Bugti", role: "Project Lead & Full Stack" },
-      { name: "Sara Khan", role: "UI/UX Designer" },
-      { name: "Ali Hassan", role: "QA Engineer & Tester" }
-    ],
-    startDate: "2026-05-10",
-    expectedCompletionDate: "2026-09-30",
-    currentStatus: "Development", // "Planning", "UI/UX Design", "Development", "Testing", "Bug Fixing", "Deployment", "Completed"
-    progress: 74,
-    completedTasksCount: 37,
-    remainingTasksCount: 13,
-    currentPhase: "Backend API Integration & Payment Webhooks",
-    demoLink: "https://staging-fleet.acmetech.com",
-    latestDeveloperNotes: "Payment gateway integration (JazzCash & Stripe) completed. Currently building live GPS telemetry socket stream.",
-    screenshots: [
-      "https://images.unsplash.com/photo-1551288049-bebda4e38f71?auto=format&fit=crop&w=800&q=80",
-      "https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&w=800&q=80"
-    ],
-    progressReports: [
-      { id: "REP-101", type: "Daily Progress", date: "2026-08-03", title: "Supabase Auth RLS & Storage Buckets", notes: "Completed row-level security policy checks for client file access." },
-      { id: "REP-102", type: "Weekly Progress", date: "2026-08-01", title: "Sprint 4 Demo Delivery", notes: "Delivered mobile dispatch app mockup & API endpoints." },
-      { id: "REP-103", type: "Monthly Progress", date: "2026-07-31", title: "July Milestone Report", notes: "All July deliverables completed on schedule with zero critical bugs." }
-    ],
-    files: [
-      { id: "F-1", name: "Project_Proposal_Acme_v2.pdf", type: "Proposal", size: "2.4 MB", date: "2026-05-12" },
-      { id: "F-2", name: "Service_Level_Agreement_Contract.pdf", type: "Contract", size: "1.8 MB", date: "2026-05-15" },
-      { id: "F-3", name: "Invoice_INV-4921_Milestone1.pdf", type: "Invoice", size: "450 KB", date: "2026-06-01" },
-      { id: "F-4", name: "System_Architecture_Requirements.pdf", type: "Requirement Documents", size: "5.1 MB", date: "2026-05-18" },
-      { id: "F-5", name: "Figma_UI_UX_Master_Design.fig", type: "Design Files", size: "14.2 MB", date: "2026-06-10" },
-      { id: "F-6", name: "Final_Sprint4_Progress_Report.pdf", type: "Progress Reports", size: "1.1 MB", date: "2026-08-01" }
-    ],
-    notifications: [
-      { id: "N-1", title: "Milestone Completed 🎉", message: "UI/UX Design phase signed off and verified.", date: "2026-07-25" },
-      { id: "N-2", title: "New File Shared 📄", message: "Final_Sprint4_Progress_Report.pdf uploaded by PM.", date: "2026-08-01" },
-      { id: "N-3", title: "Development Status Updated 🚀", message: "Project status changed to Backend API Integration phase.", date: "2026-08-03" }
-    ]
-  },
-  {
-    id: "PROJ-802",
-    title: "Cross-Platform E-Commerce Mobile App",
-    clientId: "CL-901",
-    clientEmail: "client@acmetech.com",
-    description: "iOS & Android shopping app with AI product recommendations and instant checkout.",
-    projectManager: "Sara Khan",
-    assignedTeam: [
-      { name: "Sara Khan", role: "PM & Lead UI" },
-      { name: "Usman Tariq", role: "Flutter Developer" }
-    ],
-    startDate: "2026-06-01",
-    expectedCompletionDate: "2026-10-15",
-    currentStatus: "UI/UX Design",
-    progress: 35,
-    completedTasksCount: 14,
-    remainingTasksCount: 26,
-    currentPhase: "Interactive Prototype Design",
-    demoLink: "https://figma.com/proto/acme-mobile-app",
-    latestDeveloperNotes: "High-fidelity wireframes completed. Client reviewing color theme palette.",
-    screenshots: [
-      "https://images.unsplash.com/photo-1512941937669-90a1b58e7e9c?auto=format&fit=crop&w=800&q=80"
-    ],
-    progressReports: [
-      { id: "REP-201", type: "Weekly Progress", date: "2026-08-02", title: "Wireframe Review", notes: "Submitted 15 mobile screen mockups for approval." }
-    ],
-    files: [
-      { id: "F-10", name: "Mobile_App_Requirement_Spec.pdf", type: "Requirement Documents", size: "3.2 MB", date: "2026-06-02" },
-      { id: "F-11", name: "UI_Style_Guide_Palettes.pdf", type: "Design Files", size: "8.9 MB", date: "2026-06-20" }
-    ],
-    notifications: [
-      { id: "N-10", title: "Project Initialized 🚀", message: "Mobile App kick-off meeting completed.", date: "2026-06-01" }
-    ]
-  },
-  {
-    id: "PROJ-803",
-    title: "Global Supply Chain Fleet Portal",
-    clientId: "CL-902",
-    clientEmail: "client.globallogistics@gmail.com",
-    description: "Fleet portal for Global Logistics Ltd. for real-time truck tracking.",
-    projectManager: "Muhammad Rahim Bugti",
-    assignedTeam: [{ name: "Muhammad Rahim Bugti", role: "Dev" }],
-    startDate: "2026-04-01",
-    expectedCompletionDate: "2026-08-20",
-    currentStatus: "Testing",
-    progress: 90,
-    completedTasksCount: 45,
-    remainingTasksCount: 5,
-    currentPhase: "QA Automated Testing",
-    demoLink: "https://globallogistics.test",
-    latestDeveloperNotes: "Final security audit in progress.",
-    screenshots: [],
-    progressReports: [],
-    files: [],
-    notifications: []
-  }
-];
 
 export default function ClientPortalDashboardPage() {
   const [role, setRole] = useState("client");
@@ -176,15 +66,15 @@ export default function ClientPortalDashboardPage() {
       
       // 1. Fetch User Record
       let matchedUser = {
-        id: "CL-901",
+        id: email,
         email: email,
-        fullName: email.split("@")[0].toUpperCase() + " Corp",
-        companyName: email.split("@")[0].toUpperCase() + " Solutions",
+        fullName: email.split("@")[0],
+        companyName: "",
         contactPerson: email.split("@")[0]
       };
 
       try {
-        const { data: userData } = await supabase.from("users").select("*").eq("email", email).single();
+        const userData = (await dbFetch("users", [])).find((user) => String(user.email || "").toLowerCase() === email);
         if (userData) {
           matchedUser = {
             id: userData.uid || userData.id,
@@ -200,8 +90,8 @@ export default function ClientPortalDashboardPage() {
       // 2. Fetch Projects (Strict RLS: clientEmail OR clientId matching)
       let projList = [];
       try {
-        const { data: dbProj } = await supabase.from("projects").select("*");
-        if (dbProj && dbProj.length > 0) {
+        const dbProj = await dbFetch("projects", []);
+        if (dbProj.length > 0) {
           projList = dbProj.filter(p => 
             (p.clientEmail && p.clientEmail.toLowerCase() === email) || 
             (p.client_email && p.client_email.toLowerCase() === email) ||
@@ -250,7 +140,9 @@ export default function ClientPortalDashboardPage() {
 
       // Fetch Comments
       try {
-        const { data } = await supabase.from("comments").select("*").eq("projectId", pId).order("createdAt", { ascending: true });
+        const data = (await dbFetch("comments", []))
+          .filter((item) => String(item.projectId || item.project_id) === String(pId))
+          .sort((a, b) => String(a.createdAt || a.created_at || "").localeCompare(String(b.createdAt || b.created_at || "")));
         if (data && data.length > 0) {
           const cMap = new Map();
           localC.forEach(item => cMap.set(item.commentId || item.id, item));
@@ -267,7 +159,9 @@ export default function ClientPortalDashboardPage() {
 
       // Fetch Bug Reports
       try {
-        const { data } = await supabase.from("bug_reports").select("*").eq("projectId", pId).order("createdAt", { ascending: false });
+        const data = (await dbFetch("bug_reports", []))
+          .filter((item) => String(item.projectId || item.project_id) === String(pId))
+          .sort((a, b) => String(b.createdAt || b.created_at || "").localeCompare(String(a.createdAt || a.created_at || "")));
         if (data && data.length > 0) {
           const bMap = new Map();
           localB.forEach(item => bMap.set(item.bugId || item.id, item));
@@ -284,25 +178,25 @@ export default function ClientPortalDashboardPage() {
 
       // Fetch Invoices
       try {
-        const { data } = await supabase.from("invoices").select("*").eq("projectId", pId);
+        const data = (await dbFetch("invoices", [])).filter((item) => String(item.projectId || item.project_id) === String(pId));
         if (data) setInvoices(data);
       } catch(e) {}
 
       // Fetch Milestones
       try {
-        const { data } = await supabase.from("milestones").select("*").eq("projectId", pId);
+        const data = (await dbFetch("milestones", [])).filter((item) => String(item.projectId || item.project_id) === String(pId));
         if (data) setMilestones(data);
       } catch(e) {}
 
       // Fetch Tasks
       try {
-        const { data } = await supabase.from("tasks").select("*").eq("projectId", pId);
+        const data = (await dbFetch("tasks", [])).filter((item) => String(item.projectId || item.project_id) === String(pId));
         if (data) setTasks(data);
       } catch(e) {}
 
       // Fetch Meetings
       try {
-        const { data } = await supabase.from("meetings").select("*").eq("projectId", pId);
+        const data = (await dbFetch("meetings", [])).filter((item) => String(item.projectId || item.project_id) === String(pId));
         if (data) setMeetings(data);
       } catch(e) {}
     };
@@ -315,27 +209,34 @@ export default function ClientPortalDashboardPage() {
     if (!newComment.trim() || !selectedProject) return;
 
     const pId = selectedProject.id || selectedProject.projectId;
+    const commentId = "cmt-" + Date.now();
+    const createdAt = new Date().toISOString();
     const commentObj = {
-      commentId: "cmt-" + Date.now(),
+      commentId,
+      id: commentId,
       projectId: pId,
-      senderId: clientInfo?.id || "CL-901",
+      project_id: pId,
+      client_email: clientEmail,
+      user_email: clientEmail,
+      email: clientEmail,
+      senderId: clientInfo?.id || clientEmail,
       senderRole: "CLIENT",
       senderName: clientInfo?.fullName || "Client User",
       message: newComment,
-      createdAt: new Date().toLocaleString()
+      createdAt,
+      created_at: createdAt,
     };
 
-    const updatedC = [...comments, commentObj];
-    setComments(updatedC);
-    setNewComment("");
     try {
-      localStorage.setItem(`software_house_comments_${pId}`, JSON.stringify(updatedC));
-    } catch(e) {}
-
-    try {
-      await supabase.from("comments").insert([commentObj]);
+      const saved = await dbSaveRecord("comments", commentObj);
+      const updatedC = [...comments, saved];
+      setComments(updatedC);
+      setNewComment("");
+      try { localStorage.setItem(`software_house_comments_${pId}`, JSON.stringify(updatedC)); } catch(e) {}
       showToast("Comment Sent 💬", "Your message has been posted to PM & Dev team.", "success");
-    } catch(e) {}
+    } catch (error) {
+      showToast("Comment was not sent", error?.message || "Could not post the comment.", "error");
+    }
   };
 
   const handleCreateBugReport = async (e) => {
@@ -343,28 +244,33 @@ export default function ClientPortalDashboardPage() {
     if (!bugForm.title.trim() || !selectedProject) return;
 
     const pId = selectedProject.id || selectedProject.projectId;
+    const bugId = "bug-" + Date.now();
     const bugObj = {
-      bugId: "bug-" + Date.now(),
+      id: bugId,
+      bugId,
       projectId: pId,
+      project_id: pId,
+      client_email: clientEmail,
+      user_email: clientEmail,
+      email: clientEmail,
       title: bugForm.title,
       description: bugForm.description,
       priority: bugForm.priority,
       bugStatus: "Open 🔴",
       assignedDeveloper: selectedProject.projectManager || "Dev Lead",
-      createdAt: new Date().toLocaleDateString()
+      createdAt: new Date().toISOString(),
     };
 
-    const updatedB = [bugObj, ...bugReports];
-    setBugReports(updatedB);
-    setBugForm({ title: "", description: "", priority: "Medium" });
     try {
-      localStorage.setItem(`software_house_bugs_${pId}`, JSON.stringify(updatedB));
-    } catch(e) {}
-
-    try {
-      await supabase.from("bug_reports").insert([bugObj]);
+      const saved = await dbSaveRecord("bug_reports", bugObj);
+      const updatedB = [saved, ...bugReports];
+      setBugReports(updatedB);
+      setBugForm({ title: "", description: "", priority: "Medium" });
+      try { localStorage.setItem(`software_house_bugs_${pId}`, JSON.stringify(updatedB)); } catch(e) {}
       showToast("Bug Report Submitted 🐞", "Report logged for development team resolution.", "success");
-    } catch(e) {}
+    } catch (error) {
+      showToast("Bug report was not saved", error?.message || "Could not submit the report.", "error");
+    }
   };
 
   // Calculate Overall Dashboard Metrics

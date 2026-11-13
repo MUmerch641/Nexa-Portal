@@ -1,15 +1,26 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabase";
 import { useParams, useRouter } from "next/navigation";
 import { showToast } from "@/components/Toast";
 import { FaCalendarCheck, FaArrowLeft } from "react-icons/fa";
+import { dbFetch, dbSaveRecord } from "@/lib/dbPersistence";
+
+function toInputTime(value) {
+  const text = String(value || "").trim();
+  if (/^\d{2}:\d{2}/.test(text)) return text.slice(0, 5);
+  const match = text.match(/^(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM)$/i);
+  if (!match) return "";
+  let hour = Number(match[1]) % 12;
+  if (match[3].toUpperCase() === "PM") hour += 12;
+  return String(hour).padStart(2, "0") + ":" + match[2];
+}
 
 export default function EditAttendance() {
   const { id } = useParams();
   const router = useRouter();
   const [employees, setEmployees] = useState([]);
+  const [currentRecord, setCurrentRecord] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -22,19 +33,32 @@ export default function EditAttendance() {
   });
 
   const getEmployees = async () => {
-    const { data, error } = await supabase.from("employees").select("id, full_name");
-    if (!error && data) setEmployees(data);
+    const data = await dbFetch("employees", []);
+    setEmployees(data);
   };
 
   const getAttendance = async () => {
-    const { data, error } = await supabase.from("attendance").select("*").eq("id", id).single();
-    if (!error && data) setForm(data);
-    setLoading(false);
+    try {
+      const records = await dbFetch("attendance", []);
+      const record = records.find((item) => String(item.id) === String(id));
+      if (!record) throw new Error("Attendance record not found.");
+      setCurrentRecord(record);
+      setForm({
+        employee_id: record.employee_email || record.user_email || record.email || record.student_email || record.employee_id || record.student_id || "",
+        date: record.attendance_date || record.date || "",
+        status: record.attendance_status || record.status || "Present",
+        check_in: toInputTime(record.check_in_time || record.check_in),
+        check_out: toInputTime(record.check_out_time || record.check_out),
+      });
+    } catch (error) {
+      showToast("Attendance could not be loaded", error?.message || "Refresh and try again.", "error");
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
     const role = localStorage.getItem("user_role") || "employee";
-    const email = (localStorage.getItem("current_user_email") || "").toLowerCase().trim();
     const adminCheck = ["admin", "manager", "hr"].includes(role);
 
     if (!adminCheck) {
@@ -44,7 +68,7 @@ export default function EditAttendance() {
     }
 
     if (id) {
-      Promise.all([getEmployees(), getAttendance()]);
+      Promise.all([getEmployees().catch(() => setEmployees([])), getAttendance()]);
     }
   }, [id]);
 
@@ -56,15 +80,32 @@ export default function EditAttendance() {
     e.preventDefault();
     setSaving(true);
     try {
-      const { error } = await supabase.from("attendance").update(form).eq("id", id);
-      if (error) {
-        showToast("Update Failed 🛑", error.message, "error");
-        return;
-      }
+      const employee = employees.find((item) => String(item.email || item.id) === String(form.employee_id));
+      const email = String(employee?.email || form.employee_id).trim().toLowerCase();
+      const checkIn = form.check_in || "Not Checked In";
+      const checkOut = form.check_out || "Not Checked Out";
+      const saved = await dbSaveRecord("attendance", {
+        ...currentRecord,
+        employee_id: employee?.id || email,
+        student_id: currentRecord?.student_id || email,
+        employee_email: email,
+        user_email: email,
+        email,
+        user_name: employee?.full_name || currentRecord?.user_name || email,
+        attendance_date: form.date,
+        date: form.date,
+        attendance_status: form.status,
+        status: form.status,
+        check_in: checkIn,
+        check_in_time: checkIn,
+        check_out: checkOut,
+        check_out_time: checkOut,
+      });
+      if (!saved) throw new Error("The server did not confirm the attendance update.");
       showToast("Attendance Updated ✅", "Record saved successfully.", "success");
       setTimeout(() => router.push("/dashboard/attendance/history"), 800);
-    } catch (e) {
-      showToast("Error", "An unexpected error occurred.", "error");
+    } catch (error) {
+      showToast("Update Failed 🛑", error?.message || "Could not save the attendance record.", "error");
     } finally {
       setSaving(false);
     }
@@ -123,7 +164,7 @@ export default function EditAttendance() {
               >
                 <option value="">— Select Employee —</option>
                 {employees.map((emp) => (
-                  <option key={emp.id} value={emp.id}>
+                  <option key={emp.id} value={emp.email || emp.id}>
                     {emp.full_name}
                   </option>
                 ))}

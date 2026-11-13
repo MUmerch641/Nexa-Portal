@@ -1,10 +1,9 @@
 "use client";
 
-import { authenticatedFetch } from "@/lib/authenticatedFetch";
-
 import { useEffect, useState, useRef, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
-import { dbFetch, dbSaveRecord } from "@/lib/dbPersistence";
+import { dbFetch, dbSaveRecord, dbDeleteRecord } from "@/lib/dbPersistence";
+import { getTodayDateString } from "@/lib/attendanceUtils";
 import { logActivity } from "@/lib/activityUtils";
 import Modal from "@/components/Modal";
 import { showToast } from "@/components/Toast";
@@ -143,99 +142,95 @@ export default function LeavesPage() {
     };
 
     try {
-      await dbSaveRecord("leaves", newLeave);
-      await supabase.from("leaves").insert([{
-        employee_name: applicant,
-        type: form.type,
-        start_date: form.startDate,
-        end_date: form.endDate,
-        reason: form.reason,
-        status: "pending",
-        salary_cut: false
-      }]).catch(() => {});
-    } catch(e) {}
-
-    const updated = [newLeave, ...leaves];
-    setLeaves(updated);
-    localStorage.setItem("software_house_leaves", JSON.stringify(updated));
-
-    showToast("Application Submitted ⏳", "Your leave request has been submitted for HR review.", "success");
-    setForm(prev => ({ ...prev, reason: "" }));
+      const savedLeave = await dbSaveRecord("leaves", newLeave);
+      if (!savedLeave) throw new Error("The server did not confirm your leave request.");
+      const updated = [savedLeave, ...leaves.filter((leave) => leave.id !== savedLeave.id)];
+      setLeaves(updated);
+      try { localStorage.setItem("software_house_leaves", JSON.stringify(updated)); } catch (storageError) {}
+      showToast("Application Submitted ⏳", "Your leave request has been submitted for HR review.", "success");
+      setForm(prev => ({ ...prev, reason: "" }));
+    } catch (error) {
+      showToast("Leave request not saved", error?.message || "Could not submit the leave request.", "error");
+    }
   };
 
   const handleApprove = async (id) => {
     const targetLeave = leaves.find(l => l.id === id);
     const updatedLeave = targetLeave ? { ...targetLeave, status: "Approved", salary_cut: false } : { id, status: "Approved", salary_cut: false };
     try {
-      await dbSaveRecord("leaves", updatedLeave);
-    } catch(e) {}
+      const savedLeave = await dbSaveRecord("leaves", updatedLeave);
+      if (!savedLeave) throw new Error("The server did not confirm the leave approval.");
+      const updated = leaves.map(l => l.id === id ? savedLeave : l);
+      setLeaves(updated);
+      try { localStorage.setItem("software_house_leaves", JSON.stringify(updated)); } catch (storageError) {}
 
-    const updated = leaves.map(l => l.id === id ? { ...l, status: "Approved", salary_cut: false } : l);
-    setLeaves(updated);
-    localStorage.setItem("software_house_leaves", JSON.stringify(updated));
+      // Auto-mark attendance for the first day of the approved leave.
+      const applicantName = targetLeave?.employee_name || targetLeave?.applicant_name || "Applicant";
+      const leaveDate = targetLeave?.start_date || getTodayDateString();
+      const applicantEmail = String(targetLeave?.applicant_email || targetLeave?.email || "").toLowerCase().trim();
+      const leaveAttRecord = {
+        id: `att-leave-${applicantEmail || applicantName}-${leaveDate}`,
+        user_id: applicantEmail || applicantName,
+        user_email: applicantEmail,
+        email: applicantEmail,
+        employee_email: applicantEmail,
+        user_name: applicantName,
+        user_role: targetLeave?.role || "student",
+        attendance_status: "On Leave (Approved)",
+        type: "check_in",
+        total_work_hours: "Leave Authorized",
+        attendance_date: leaveDate,
+        check_in_time: "Leave Approved",
+        public_ip: "Leave / Off-Site",
+        created_at: new Date().toISOString()
+      };
 
-    // Auto-mark attendance log as On Leave (Approved)
-    const applicantName = targetLeave?.employee_name || targetLeave?.applicant_name || "Applicant";
-    const todayStr = new Date().toISOString().split("T")[0];
-    const leaveDate = targetLeave?.start_date || todayStr;
-    const leaveAttRecord = {
-      id: `att-leave-${Date.now()}`,
-      user_id: applicantName,
-      user_name: applicantName,
-      user_role: targetLeave?.role || "student",
-      attendance_status: "On Leave (Approved)",
-      type: "check_in",
-      total_work_hours: "Leave Authorized",
-      attendance_date: leaveDate,
-      check_in_time: "Leave Approved",
-      public_ip: "Leave / Off-Site",
-      created_at: new Date().toISOString()
-    };
-
-    try {
-      const savedAttLogs = JSON.parse(localStorage.getItem("software_house_master_attendance_logs") || "[]");
-      const filteredLogs = savedAttLogs.filter(a => !(a.user_name === applicantName && a.attendance_date === leaveDate));
-      const newAttLogs = [leaveAttRecord, ...filteredLogs];
-      localStorage.setItem("software_house_master_attendance_logs", JSON.stringify(newAttLogs));
-      
-      const userEmailKey = (targetLeave?.applicant_email || targetLeave?.email || "").trim().toLowerCase();
-      if (userEmailKey) {
-        localStorage.setItem(`today_attendance_${userEmailKey}`, JSON.stringify([leaveAttRecord]));
+      try {
+        const savedAttendance = await dbSaveRecord("attendance", leaveAttRecord);
+        if (!savedAttendance) throw new Error("Leave approved, but the attendance update was not confirmed.");
+        try {
+          const savedAttLogs = JSON.parse(localStorage.getItem("software_house_master_attendance_logs") || "[]");
+          const filteredLogs = savedAttLogs.filter(a => !(a.user_email === applicantEmail && a.attendance_date === leaveDate));
+          localStorage.setItem("software_house_master_attendance_logs", JSON.stringify([savedAttendance, ...filteredLogs]));
+          if (applicantEmail && leaveDate === getTodayDateString()) localStorage.setItem(`today_attendance_${applicantEmail}`, JSON.stringify([savedAttendance]));
+          window.dispatchEvent(new Event("storage"));
+        } catch (storageError) {}
+        showToast("Leave Approved 🟢", "Approved by Admin. Attendance marked as 'On Leave' (Not Absent).", "success");
+      } catch (attendanceError) {
+        showToast("Leave approved; attendance needs review", attendanceError?.message || "The leave was approved, but its attendance entry did not save.", "warning");
       }
-
-      await dbSaveRecord("attendance", leaveAttRecord).catch(() => {});
-      window.dispatchEvent(new Event("storage"));
-    } catch (e) {}
-
-    showToast("Leave Approved 🟢", "Approved by Admin. Attendance marked as 'On Leave' (Not Absent).", "success");
+    } catch (error) {
+      showToast("Leave approval failed", error?.message || "The leave decision was not saved.", "error");
+    }
   };
 
   const handleReject = async (id) => {
     const targetLeave = leaves.find(l => l.id === id);
     const updatedLeave = targetLeave ? { ...targetLeave, status: "Rejected", salary_cut: true } : { id, status: "Rejected", salary_cut: true };
     try {
-      await dbSaveRecord("leaves", updatedLeave);
-    } catch(e) {}
-
-    const updated = leaves.map(l => l.id === id ? { ...l, status: "Rejected", salary_cut: true } : l);
-    setLeaves(updated);
-    localStorage.setItem("software_house_leaves", JSON.stringify(updated));
-
-    showToast("Leave Rejected 🔴", "Leave request rejected.", "info");
+      const savedLeave = await dbSaveRecord("leaves", updatedLeave);
+      if (!savedLeave) throw new Error("The server did not confirm the leave decision.");
+      const updated = leaves.map(l => l.id === id ? savedLeave : l);
+      setLeaves(updated);
+      try { localStorage.setItem("software_house_leaves", JSON.stringify(updated)); } catch (storageError) {}
+      showToast("Leave Rejected 🔴", "Leave request rejected.", "info");
+    } catch (error) {
+      showToast("Leave rejection failed", error?.message || "The leave decision was not saved.", "error");
+    }
   };
 
   const handleDeleteLeave = async (id) => {
     if (!confirm("Are you sure you want to delete this leave application?")) return;
-    const updated = leaves.filter(l => l.id !== id);
-    setLeaves(updated);
-    localStorage.setItem("software_house_leaves", JSON.stringify(updated));
-    dbDeleteRecord("leaves", id).catch(() => {});
-    authenticatedFetch("/api/persistence", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ table: "leaves", record: { id }, action: "delete" })
-    }).catch(() => {});
-    showToast("Leave Deleted 🗑️", "Leave application removed permanently from database.", "info");
+    try {
+      const result = await dbDeleteRecord("leaves", id);
+      if (!result.success) throw new Error(result.error || "Could not delete the leave request.");
+      const updated = leaves.filter(l => l.id !== id);
+      setLeaves(updated);
+      try { localStorage.setItem("software_house_leaves", JSON.stringify(updated)); } catch (storageError) {}
+      showToast("Leave Deleted 🗑️", "Leave application removed permanently from database.", "info");
+    } catch (error) {
+      showToast("Leave deletion failed", error?.message || "The leave request was not deleted.", "error");
+    }
   };
 
   const focusForm = () => {

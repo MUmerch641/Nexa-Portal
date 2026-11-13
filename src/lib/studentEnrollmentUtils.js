@@ -145,6 +145,14 @@ export async function registerEmployeeWithCredentials({ employeeData }) {
     designation: employeeData.designation || "Staff Member",
     employment_type: employeeData.employment_type || "Paid Staff (Full Time)",
     joining_date: employeeData.joining_date || new Date().toISOString().split("T")[0],
+    father_name: employeeData.father_name || "",
+    blood_group: employeeData.blood_group || "",
+    address: employeeData.address || "",
+    guardian_phone: employeeData.guardian_phone || "",
+    emergency_phone: employeeData.emergency_phone || "",
+    assigned_shift: employeeData.assigned_shift || "",
+    basic_salary: employeeData.basic_salary == null ? null : Number(employeeData.basic_salary),
+    bank_account_number: employeeData.bank_account_number || "",
     role: "employee", status: "active", created_at: new Date().toISOString(),
   };
   await dbSaveRecord("employees", employeeProfile);

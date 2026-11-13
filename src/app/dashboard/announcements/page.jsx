@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabase";
 import Modal from "@/components/Modal";
 import { showToast } from "@/components/Toast";
 import {
@@ -20,7 +19,7 @@ import {
   FaExclamationTriangle
 } from "react-icons/fa";
 
-import { dbFetch, dbSaveList } from "@/lib/dbPersistence";
+import { dbFetch, dbSaveRecord, dbDeleteRecord } from "@/lib/dbPersistence";
 
 export default function AnnouncementsPage() {
   const [role, setRole] = useState("admin");
@@ -65,14 +64,6 @@ export default function AnnouncementsPage() {
       setLoading(false);
     });
   }, []);
-
-  const saveAnnouncementsState = (newList) => {
-    setAnnouncements(newList);
-    dbSaveList("announcements", newList);
-    if (typeof window !== "undefined") {
-      window.dispatchEvent(new Event("storage"));
-    }
-  };
 
   const [form, setForm] = useState({
     title: "",
@@ -139,23 +130,14 @@ export default function AnnouncementsPage() {
       broadcastNotification: form.broadcastNotification,
     };
 
-    const updated = [newObj, ...announcements];
-    saveAnnouncementsState(updated);
-
     try {
-      await supabase.from("announcements").insert([
-        {
-          title: form.title.trim(),
-          category: form.category,
-          priority: form.priority,
-          target_audience: form.target_audience,
-          content: form.content.trim(),
-          start_date: form.start_date,
-          expiry_date: form.expiry_date,
-          created_at: nowIso
-        }
-      ]);
-    } catch (dbErr) { }
+      const saved = await dbSaveRecord("announcements", newObj);
+      setAnnouncements((current) => [saved, ...current.filter((item) => item.id !== saved.id)]);
+      if (typeof window !== "undefined") window.dispatchEvent(new Event("storage"));
+    } catch (error) {
+      showToast("Announcement was not published", error?.message || "Could not save the announcement.", "error");
+      return;
+    }
 
     setCreateModalOpen(false);
     setForm({
@@ -179,8 +161,10 @@ export default function AnnouncementsPage() {
     const id = deleteModal.item.id;
 
     try {
-      const updated = announcements.filter((a) => a.id !== id);
-      saveAnnouncementsState(updated);
+      const result = await dbDeleteRecord("announcements", id);
+      if (!result.success || !result.deleted) throw new Error(result.error || "The announcement was not found.");
+      setAnnouncements((current) => current.filter((announcement) => announcement.id !== id));
+      if (typeof window !== "undefined") window.dispatchEvent(new Event("storage"));
       showToast("Announcement Deleted 🗑️", "Broadcast record removed successfully.", "info");
     } catch (e) {
       showToast("Error", "Failed to delete announcement.", "error");
