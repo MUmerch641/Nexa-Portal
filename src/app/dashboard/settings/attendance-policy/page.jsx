@@ -30,7 +30,6 @@ export default function AttendancePolicySettingsPage() {
   const [policy, setPolicy] = useState(DEFAULT_POLICY);
   const [originalPolicy, setOriginalPolicy] = useState(DEFAULT_POLICY);
   const [hasChanges, setHasChanges] = useState(false);
-  const [showCreateTableHelp, setShowCreateTableHelp] = useState(false);
 
   useEffect(() => {
     const loadPolicy = async () => {
@@ -354,65 +353,11 @@ export default function AttendancePolicySettingsPage() {
         </div>
       </div>
 
-      {/* Table Creation Instructions */}
-      <div className={`bg-amber-50 rounded-2xl p-6 border border-amber-200 transition-all ${showCreateTableHelp ? 'max-h-96 opacity-100' : 'max-h-20 opacity-100'}`}>
-        <button 
-          type="button"
-          onClick={() => setShowCreateTableHelp(!showCreateTableHelp)}
-          className="flex items-center justify-between w-full"
-        >
-          <div className="flex items-center gap-2">
-            <FaShieldAlt className="text-amber-600 text-lg" />
-            <h3 className="font-bold text-amber-900 text-sm">Supabase Table Setup Required</h3>
-          </div>
-          <span className="text-xs text-amber-600 font-bold">
-            {showCreateTableHelp ? "Hide Instructions" : "Show Instructions"}
-          </span>
-        </button>
-        
-        {showCreateTableHelp && (
-          <div className="mt-4 space-y-3">
-            <p className="text-xs text-amber-800">
-              The <code>attendance_policy</code> table doesn't exist in your Supabase database yet. Please create it using the following steps:
-            </p>
-            
-            <ol className="list-decimal pl-5 space-y-2 text-xs text-amber-800">
-              <li>Go to your <strong>Supabase Dashboard</strong> (https://supabase.com/dashboard)</li>
-              <li>Select your project: <code className="bg-amber-100 px-1 rounded">uzwmwtkldgchnuqxamov</code></li>
-              <li>Click on <strong>SQL Editor</strong> in the left sidebar</li>
-              <li>Click <strong>New Query</strong></li>
-            </ol>
-            
-            <div className="bg-white border border-amber-300 rounded-lg p-3 text-xs font-mono overflow-x-auto">
-              <pre className="text-amber-900">
-{`-- Create attendance_policy table
-CREATE TABLE IF NOT EXISTS attendance_policy (
-  id TEXT PRIMARY KEY DEFAULT 'policy_1',
-  shift_start TEXT DEFAULT '10:00 AM',
-  shift_end TEXT DEFAULT '6:00 PM',
-  grace_period_minutes INTEGER DEFAULT 14,
-  late_warning_minutes INTEGER DEFAULT 29,
-  salary_deduction_after INTEGER DEFAULT 30,
-  policy_name TEXT DEFAULT 'Standard Policy',
-  description TEXT DEFAULT 'Standard attendance policy for employees and students',
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Insert default record
-INSERT INTO attendance_policy (id, shift_start, shift_end, grace_period_minutes, late_warning_minutes, salary_deduction_after, policy_name, description)
-VALUES ('policy_1', '10:00 AM', '6:00 PM', 14, 29, 30, 'Standard Policy', 'Standard attendance policy for employees and students')
-ON CONFLICT (id) DO NOTHING;`}
-              </pre>
-            </div>
-            
-            <ol className="list-decimal pl-5 space-y-2 text-xs text-amber-800">
-              <li>Paste the SQL code above into the SQL Editor</li>
-              <li>Click <strong>Run</strong> or press <code className="bg-amber-100 px-1 rounded">Ctrl+Enter</code></li>
-              <li>Refresh this page and the policy settings will work!</li>
-            </ol>
-          </div>
-        )}
+      <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 text-sm text-emerald-900">
+        <div className="flex items-center gap-2 font-bold">
+          <FaShieldAlt /> Supabase backend connected
+        </div>
+        <p className="mt-1 text-xs text-emerald-800">Attendance policy settings are stored in the shared, access-controlled backend. No manual table setup is required.</p>
       </div>
     </div>
   );

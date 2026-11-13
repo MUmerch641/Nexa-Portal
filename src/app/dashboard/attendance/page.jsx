@@ -1,5 +1,7 @@
 "use client";
 
+import { authenticatedFetch } from "@/lib/authenticatedFetch";
+
 import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -412,7 +414,7 @@ export default function AttendancePage() {
           localLogs.forEach(log => {
             if (log) {
               const attDate = log.attendance_date || log.date || (log.timestamp ? log.timestamp.split("T")[0] : new Date().toISOString().split("T")[0]);
-              fetch("/api/persistence", {
+              authenticatedFetch("/api/persistence", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
@@ -700,7 +702,7 @@ export default function AttendancePage() {
 
     try {
       dbDeleteRecord("attendance", record.id).catch(() => {});
-      fetch("/api/persistence", {
+      authenticatedFetch("/api/persistence", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ table: "attendance", record: { id: record.id, date: record.date || record.attendance_date }, action: "delete" })
