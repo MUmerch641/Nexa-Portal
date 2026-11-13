@@ -59,6 +59,7 @@ export default function DashboardLayout({ children }) {
         "/dashboard/courses",
         "/dashboard/finance",
         "/dashboard/settings",
+        "/dashboard/settings/users",
         "/dashboard/payroll",
         "/dashboard/expenses",
         "/dashboard/clients"

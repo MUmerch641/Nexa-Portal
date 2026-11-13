@@ -1,3 +1,4 @@
+import { authenticatedFetch } from "@/lib/authenticatedFetch";
 /**
  * Student Attendance Utility Functions
  * Provides utility functions for student attendance management
@@ -79,7 +80,7 @@ export function calculateAttendancePercentage(attendanceRecords) {
  */
 export async function fetchAllStudents() {
   try {
-    const response = await fetch("/api/persistence?table=students");
+    const response = await authenticatedFetch("/api/persistence?table=students");
     const result = await response.json();
     return result?.data || [];
   } catch (e) {
@@ -94,7 +95,7 @@ export async function fetchAllStudents() {
  */
 export async function getStudentAttendanceByDate(date) {
   try {
-    const response = await fetch(`/api/attendance/student?date=${encodeURIComponent(date)}`);
+    const response = await authenticatedFetch(`/api/attendance/student?date=${encodeURIComponent(date)}`);
     const result = await response.json();
     return result?.data || [];
   } catch (e) {
@@ -121,7 +122,7 @@ export async function markStudentAttendance({
   ipAddress = "127.0.0.1"
 }) {
   try {
-    const response = await fetch("/api/attendance/student", {
+    const response = await authenticatedFetch("/api/attendance/student", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -153,7 +154,7 @@ export async function markStudentAttendance({
  */
 export async function markBulkStudentAttendance(attendanceData) {
   try {
-    const response = await fetch("/api/attendance/student", {
+    const response = await authenticatedFetch("/api/attendance/student", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -183,7 +184,7 @@ export async function getStudentAttendanceSummary(studentId, days = 30) {
     startDate.setDate(startDate.getDate() - days);
     const startDateStr = startDate.toISOString().split("T")[0];
     
-    const response = await fetch(`/api/attendance/student?date=${startDateStr}`);
+    const response = await authenticatedFetch(`/api/attendance/student?date=${startDateStr}`);
     const result = await response.json();
     const allRecords = result?.data || [];
     
@@ -264,7 +265,7 @@ export function exportAttendanceToCSV(attendanceData, filename = "student_attend
  */
 export async function getStudentAttendance(studentId) {
   try {
-    const response = await fetch(`/api/attendance/student?studentId=${encodeURIComponent(studentId)}`);
+    const response = await authenticatedFetch(`/api/attendance/student?studentId=${encodeURIComponent(studentId)}`);
     const result = await response.json();
     return result?.data || [];
   } catch (e) {
@@ -281,7 +282,7 @@ export async function getStudentAttendance(studentId) {
  */
 export async function deleteAttendanceRecord(id, studentId, date) {
   try {
-    const response = await fetch("/api/attendance/student", {
+    const response = await authenticatedFetch("/api/attendance/student", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

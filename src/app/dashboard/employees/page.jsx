@@ -1,5 +1,7 @@
 "use client";
 
+import { authenticatedFetch } from "@/lib/authenticatedFetch";
+
 import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
@@ -59,7 +61,6 @@ export default function EmployeesPage() {
     father_name: "",
     phone: "",
     email: "",
-    assigned_password: "",
     blood_group: "O+",
     address: "",
     guardian_phone: "",
@@ -106,7 +107,7 @@ export default function EmployeesPage() {
   useEffect(() => {
     const savedRole = localStorage.getItem("user_role") || "employee";
     const savedEmail = (localStorage.getItem("current_user_email") || "").toLowerCase().trim();
-    const adminCheck = savedRole === "admin" || savedEmail.includes("admin") || savedEmail.includes("owner");
+    const adminCheck = ["admin", "manager", "hr"].includes(savedRole);
 
     setRole(savedRole);
     setUserEmail(savedEmail);
@@ -162,16 +163,6 @@ export default function EmployeesPage() {
       return;
     }
 
-    if (!form.assigned_password || form.assigned_password.length < 6) {
-      showToast("Password Security Error 🔴", "Temporary password must be at least 6 characters long.", "error");
-      return;
-    }
-
-    if (form.confirm_password && form.assigned_password !== form.confirm_password) {
-      showToast("Password Mismatch 🔴", "Passwords do not match. Please re-enter.", "error");
-      return;
-    }
-
     setLoading(true);
 
     try {
@@ -190,23 +181,20 @@ export default function EmployeesPage() {
           guardian_phone: form.guardian_phone || "",
           emergency_phone: form.emergency_phone || "",
         },
-        password: form.assigned_password,
       });
 
       await fetchEmployees();
       setLoading(false);
       setIsAddModalOpen(false);
 
-      showToast("Employee Account Created 🎉", `Staff record & login created for ${trimmedName}.`, "success");
+      showToast("Employee profile saved", `${trimmedName} must create a Supabase account and wait for administrator approval.`, "success");
 
       setForm({
         full_name: "",
         father_name: "",
         phone: "",
         email: "",
-        assigned_password: "",
-        confirm_password: "",
-        blood_group: "O+",
+                blood_group: "O+",
         address: "",
         guardian_phone: "",
         emergency_phone: "",
@@ -236,7 +224,7 @@ export default function EmployeesPage() {
         localStorage.setItem("persistent_employees", JSON.stringify(updatedList));
         await dbSaveRecord("employees", { ...emp, status: "inactive" });
         await supabase.from("employees").update({ status: "inactive" }).eq("id", emp.id);
-        fetch("/api/persistence", {
+        authenticatedFetch("/api/persistence", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ table: "employees", record: { ...emp, status: "inactive" }, action: "save" })
@@ -250,7 +238,7 @@ export default function EmployeesPage() {
         localStorage.setItem("persistent_employees", JSON.stringify(updatedList));
         await dbSaveRecord("employees", { ...emp, status: "active" });
         await supabase.from("employees").update({ status: "active" }).eq("id", emp.id);
-        fetch("/api/persistence", {
+        authenticatedFetch("/api/persistence", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ table: "employees", record: { ...emp, status: "active" }, action: "save" })
@@ -278,7 +266,7 @@ export default function EmployeesPage() {
           await supabase.from("employees").delete().eq("email", emp.email.toLowerCase().trim());
           await supabase.from("payrolls").delete().eq("email", emp.email.toLowerCase().trim());
         }
-        fetch("/api/persistence", {
+        authenticatedFetch("/api/persistence", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ table: "employees", record: { id: emp.id, email: emp.email }, action: "delete" })
@@ -768,7 +756,7 @@ export default function EmployeesPage() {
               {/* SECTION 3: EMERGENCY CONTACT */}
               <div className="space-y-3 pt-2">
                 <h4 className="text-xs font-bold uppercase tracking-wider text-[#2563EB] border-b border-[#E2E8F0] pb-1">
-                  Emergency Contact & Password
+                  Emergency Contact
                 </h4>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="space-y-1">
@@ -783,17 +771,6 @@ export default function EmployeesPage() {
                     />
                   </div>
 
-                  <div className="space-y-1">
-                    <label className="font-semibold text-[#64748B]">Assign Login Password</label>
-                    <input
-                      type="text"
-                      name="assigned_password"
-                      value={form.assigned_password}
-                      onChange={handleChange}
-                      placeholder="Set Employee Password (e.g. Pass123)"
-                      className="w-full p-2.5 rounded-xl border border-[#E2E8F0] font-semibold text-[#0F172A] outline-none focus:border-[#2563EB]"
-                    />
-                  </div>
                 </div>
               </div>
 
