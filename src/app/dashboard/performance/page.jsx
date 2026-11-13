@@ -22,7 +22,7 @@ import {
   FaTrash
 } from "react-icons/fa";
 
-import { dbFetch, dbSaveList, dbDeleteRecord } from "@/lib/dbPersistence";
+import { dbFetch, dbSaveRecord } from "@/lib/dbPersistence";
 import { showToast } from "@/components/Toast";
 
 export default function PerformancePage() {
@@ -52,11 +52,6 @@ export default function PerformancePage() {
           dbFetch("performances", [], true).catch(() => [])
         ]);
 
-        let deletedEmails = [];
-        try {
-          deletedEmails = JSON.parse(localStorage.getItem("software_house_deleted_performances") || "[]");
-        } catch (e) {}
-
         const perfMap = new Map();
         (cloudPerformances || []).forEach((p) => {
           if (p && p.email) {
@@ -70,19 +65,15 @@ export default function PerformancePage() {
 
         (cloudEmployees || []).forEach((emp) => {
           const email = (emp.email || "").toLowerCase().trim();
-          if (!email || seenEmails.has(email) || deletedEmails.includes(email)) return;
+          if (!email || seenEmails.has(email)) return;
           seenEmails.add(email);
 
           const existing = perfMap.get(email);
-          const metrics = existing?.metrics || {
-            attendance: existing?.attendance || 94,
-            taskCompletion: existing?.task_completion || existing?.taskCompletion || 92,
-            deadlines: existing?.deadlines || 95,
-            clientFeedback: existing?.client_feedback || existing?.clientFeedback || 93,
-            socialMedia: existing?.social_media || existing?.socialMedia || 88,
-            behavior: existing?.behavior || 96,
-            leaveRecord: existing?.leave_record || existing?.leaveRecord || 94,
-            productivity: existing?.productivity || 92,
+          if (existing?.archived) return;
+          const metrics = {
+            attendance: 0, taskCompletion: 0, deadlines: 0, clientFeedback: 0,
+            socialMedia: 0, behavior: 0, leaveRecord: 0, productivity: 0,
+            ...(existing?.metrics || {}),
           };
 
           list.push({
@@ -98,19 +89,15 @@ export default function PerformancePage() {
         // 2. Map registered students (Deduplicated by Email & Filtered by Blacklist)
         (cloudStudents || []).forEach((std) => {
           const email = (std.email || "").toLowerCase().trim();
-          if (!email || seenEmails.has(email) || deletedEmails.includes(email)) return;
+          if (!email || seenEmails.has(email)) return;
           seenEmails.add(email);
 
           const existing = perfMap.get(email);
-          const metrics = existing?.metrics || {
-            attendance: existing?.attendance || 90,
-            taskCompletion: existing?.task_completion || existing?.taskCompletion || 88,
-            deadlines: existing?.deadlines || 90,
-            clientFeedback: existing?.client_feedback || existing?.clientFeedback || 89,
-            socialMedia: existing?.social_media || existing?.socialMedia || 85,
-            behavior: existing?.behavior || 94,
-            leaveRecord: existing?.leave_record || existing?.leaveRecord || 91,
-            productivity: existing?.productivity || 88,
+          if (existing?.archived) return;
+          const metrics = {
+            attendance: 0, taskCompletion: 0, deadlines: 0, clientFeedback: 0,
+            socialMedia: 0, behavior: 0, leaveRecord: 0, productivity: 0,
+            ...(existing?.metrics || {}),
           };
 
           list.push({
@@ -127,7 +114,6 @@ export default function PerformancePage() {
         if (typeof window !== "undefined") {
           localStorage.setItem("software_house_performances", JSON.stringify(list));
         }
-        dbSaveList("performances", list).catch(() => {});
       } catch (e) {}
       setLoading(false);
     };
@@ -137,7 +123,7 @@ export default function PerformancePage() {
 
   const savePerformanceState = (updatedList) => {
     setPerformances(updatedList);
-    dbSaveList("performances", updatedList);
+    try { localStorage.setItem("software_house_performances", JSON.stringify(updatedList)); } catch (error) {}
   };
 
   const showAlert = (title, message, type = "info") => {
@@ -152,26 +138,15 @@ export default function PerformancePage() {
     if (!confirm(`Are you sure you want to remove ${p.name} from the Performance Leaderboard?`)) return;
 
     const emailToDelete = (p.email || "").toLowerCase().trim();
-    const updated = performances.filter((item) => item.id !== p.id && (item.email || "").toLowerCase().trim() !== emailToDelete);
-    setPerformances(updated);
-
     try {
-      const savedDeleted = JSON.parse(localStorage.getItem("software_house_deleted_performances") || "[]");
-      if (!savedDeleted.includes(emailToDelete)) {
-        savedDeleted.push(emailToDelete);
-        localStorage.setItem("software_house_deleted_performances", JSON.stringify(savedDeleted));
-      }
-      if (emailToDelete) {
-        await supabase.from("performances").delete().eq("email", emailToDelete);
-      }
-      if (p.id) {
-        await supabase.from("performances").delete().eq("id", p.id);
-      }
-    } catch (e) {}
-
-    savePerformanceState(updated);
-    dbDeleteRecord("performances", p.id, p.email).catch(() => {});
-    showToast("Record Deleted 🗑️", `${p.name} removed from Performance Leaderboard.`, "info");
+      const archived = await dbSaveRecord("performances", { ...p, id: p.id, email: emailToDelete, archived: true, updated_at: new Date().toISOString() });
+      if (!archived) throw new Error("The server did not confirm this removal.");
+      const updated = performances.filter((item) => item.id !== p.id && (item.email || "").toLowerCase().trim() !== emailToDelete);
+      savePerformanceState(updated);
+      showToast("Record Deleted 🗑️", `${p.name} removed from Performance Leaderboard.`, "info");
+    } catch (error) {
+      showToast("Record was not removed", error?.message || "Could not update the leaderboard.", "error");
+    }
   };
 
   const calculateOverallScore = (metrics) => {
@@ -192,7 +167,7 @@ export default function PerformancePage() {
   });
 
   const handleEditClick = (employee) => {
-    if (role !== "admin") {
+    if (!["admin", "manager", "hr"].includes(role)) {
       showAlert("Access Restricted", "Only Admins are allowed to update employee evaluation scores.", "warning");
       return;
     }
@@ -211,15 +186,20 @@ export default function PerformancePage() {
     }));
   };
 
-  const handleSaveMetrics = (e) => {
+  const handleSaveMetrics = async (e) => {
     e.preventDefault();
     if (!editingEmployee) return;
 
-    const updated = performances.map((p) => (p.id === editingEmployee.id ? editingEmployee : p));
-    savePerformanceState(updated);
-    setEditModalOpen(false);
-    setEditingEmployee(null);
-    showAlert("Performance Score Updated", `Updated evaluation scores for ${editingEmployee.name}.`, "success");
+    try {
+      const saved = await dbSaveRecord("performances", { ...editingEmployee, archived: false, updated_at: new Date().toISOString() });
+      const updated = performances.map((p) => (p.id === saved.id ? saved : p));
+      savePerformanceState(updated);
+      setEditModalOpen(false);
+      setEditingEmployee(null);
+      showAlert("Performance Score Updated", `Updated evaluation scores for ${editingEmployee.name}.`, "success");
+    } catch (error) {
+      showAlert("Performance score was not saved", error?.message || "Could not save the evaluation.", "error");
+    }
   };
 
   const getRankBadge = (rank) => {

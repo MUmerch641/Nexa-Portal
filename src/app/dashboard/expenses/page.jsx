@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabase";
 import { logActivity } from "@/lib/activityUtils";
 import { dbFetch, dbSaveRecord, dbDeleteRecord } from "@/lib/dbPersistence";
 import {
@@ -47,9 +46,14 @@ export default function ExpensesPage() {
   // Fetch Expenses with LocalStorage Persistence & Supabase Sync
   const fetchExpenses = async () => {
     setLoading(true);
-    const finalExpenses = await dbFetch("expenses");
-    setExpenses(finalExpenses);
-    setLoading(false);
+    try {
+      setExpenses(await dbFetch("expenses"));
+    } catch (error) {
+      setExpenses([]);
+      alert(error?.message || "Could not load expenses.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -107,6 +111,8 @@ export default function ExpensesPage() {
         expense_date: new Date().toISOString().split("T")[0],
         notes: "",
       });
+    } catch (error) {
+      alert(error?.message || "Could not save this expense.");
     } finally {
       setSubmitting(false);
     }
@@ -115,26 +121,30 @@ export default function ExpensesPage() {
   // Toggle Payment Status (Paid <-> Unpaid)
   const togglePaymentStatus = async (id, currentStatus) => {
     const newStatus = currentStatus === "Paid" ? "Unpaid" : "Paid";
-    const updated = expenses.map(item => item.id === id ? { ...item, payment_status: newStatus } : item);
-    setExpenses(updated);
+    const target = expenses.find((item) => item.id === id);
+    if (!target) return;
     try {
-      localStorage.setItem("persistent_expenses", JSON.stringify(updated));
-    } catch(e) {}
-
-    supabase.from("expenses").update({ payment_status: newStatus }).eq("id", id).catch(() => {});
+      const saved = await dbSaveRecord("expenses", { ...target, payment_status: newStatus, status: newStatus });
+      const updated = expenses.map((item) => item.id === id ? saved : item);
+      setExpenses(updated);
+      try { localStorage.setItem("persistent_expenses", JSON.stringify(updated)); } catch(e) {}
+    } catch (error) {
+      alert(error?.message || "Could not update this expense.");
+    }
   };
 
   // Delete Expense Record
   const handleDeleteExpense = async (id) => {
     if (!confirm("Are you sure you want to delete this expense record?")) return;
 
+    const result = await dbDeleteRecord("expenses", id);
+    if (!result.success || !result.deleted) {
+      alert(result.error || "Could not delete this expense.");
+      return;
+    }
     const updated = expenses.filter(item => item.id !== id);
     setExpenses(updated);
-    try {
-      localStorage.setItem("persistent_expenses", JSON.stringify(updated));
-    } catch(e) {}
-
-    supabase.from("expenses").delete().eq("id", id).catch(() => {});
+    try { localStorage.setItem("persistent_expenses", JSON.stringify(updated)); } catch(e) {}
   };
 
   // Calculate Metrics

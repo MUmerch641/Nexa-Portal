@@ -10,8 +10,9 @@ import { dbFetch, dbSaveRecord, dbDeleteRecord } from "@/lib/dbPersistence";
 import Modal from "@/components/Modal";
 import { showToast } from "@/components/Toast";
 import { getCurrentMinutes, determineAttendanceState, isRecordFromToday, getTodayDateString, getEmployeeCheckInStatus, timeToMinutes, minutesToTime } from "@/lib/attendanceUtils";
-import { fetchAttendancePolicy, updateAttendancePolicy } from "@/lib/attendancePolicyUtils";
+import { fetchAttendancePolicy, getAttendancePolicyRules, updateAttendancePolicy } from "@/lib/attendancePolicyUtils";
 import { fetchCurrentPublicIp, verifyOfficeWifiAttendance, getActiveOfficeNetworks } from "@/lib/attendanceIpUtils";
+import { clockAttendance } from "@/lib/attendanceClockUtils";
 import {
   FaWifi,
   FaGlobe,
@@ -569,130 +570,32 @@ export default function AttendancePage() {
       return;
     }
 
-    const livePublicIp = verificationRes.currentPublicIp || "Live Connected Network";
-    const checkInRecord = todayRecords.find(r => r.type === "check_in" || r.check_in_time);
-    const checkOutRecord = todayRecords.find(r => r.type === "check_out" || (r.check_out_time && r.check_out_time !== "Not Checked Out"));
-
-    if (type === "check_in" && checkInRecord) {
-      showToast("Clock In Already Marked 🛑", "You have already Clocked In for today.", "warning");
-      return;
-    }
-
-    if (type === "check_out" && !checkInRecord) {
-      showToast("Clock In Required ⚠️", "You must Clock In before you can Clock Out.", "warning");
-      return;
-    }
-
-    if (type === "check_out" && checkOutRecord) {
-      showToast("Clock Out Completed 🛑", "You have already Clocked Out for today.", "warning");
-      return;
-    }
-
-    const { allowed, modalMessage, status, lightColor, attendanceStatus, salaryDeductionStatus } = determineAttendanceState(role, currentMinutes);
-
-    if (!allowed) {
-      showToast("Attendance Closed", modalMessage, status);
-      return;
-    }
-
-    const todayDateStr = getTodayDateString();
-    const nowIso = new Date().toISOString();
-    const nowLocalTime = new Date().toLocaleTimeString();
-
-    let calculatedWorkDuration = "In Progress";
-    let calculatedWorkSeconds = 0;
-
-    if (type === "check_out" && checkInRecord) {
-      const checkInTimeMs = new Date(checkInRecord.check_in_timestamp || checkInRecord.timestamp || checkInRecord.created_at).getTime();
-      const checkOutTimeMs = new Date(nowIso).getTime();
-      const diffMs = Math.max(0, checkOutTimeMs - checkInTimeMs);
-      
-      calculatedWorkSeconds = Math.floor(diffMs / 1000);
-      const hours = Math.floor(calculatedWorkSeconds / 3600);
-      const mins = Math.floor((calculatedWorkSeconds % 3600) / 60);
-      const secs = calculatedWorkSeconds % 60;
-
-      calculatedWorkDuration = hours > 0 ? `${hours}h ${mins}m ${secs}s` : `${mins}m ${secs}s`;
-    }
-
-    const newRecord = {
-      id: `att-${Date.now()}`,
-      attendance_id: `att-${Date.now()}`,
-      user_id: userEmail,
-      user_role: role,
-      user_name: userName,
-      user_email: userEmail,
-      type,
-      attendance_date: todayDateStr,
-      check_in_time: type === "check_in" ? nowLocalTime : (checkInRecord?.check_in_time || "N/A"),
-      check_out_time: type === "check_out" ? nowLocalTime : "Not Checked Out",
-      check_in_timestamp: type === "check_in" ? nowIso : (checkInRecord?.check_in_timestamp || checkInRecord?.timestamp),
-      check_out_timestamp: type === "check_out" ? nowIso : null,
-      total_work_hours: type === "check_out" ? calculatedWorkDuration : "In Progress",
-      total_work_seconds: calculatedWorkSeconds,
-      attendance_status: attendanceStatus,
-      public_ip: livePublicIp,
-      created_at: nowIso,
-      timestamp: nowIso,
-    };
-
-    const userKey = `today_attendance_${userEmail}`;
-    let updatedUserRecords = [];
-    if (type === "check_out" && checkInRecord) {
-      updatedUserRecords = todayRecords.map(r => 
-        (r.id === checkInRecord.id || r.type === "check_in")
-          ? { 
-              ...r, 
-              check_out_time: nowLocalTime, 
-              check_out_timestamp: nowIso, 
-              total_work_hours: calculatedWorkDuration,
-              updated_at: nowIso
-            }
-          : r
-      );
-      updatedUserRecords.push(newRecord);
-    } else {
-      updatedUserRecords = [...todayRecords, newRecord];
-    }
-
-    setTodayRecords(updatedUserRecords);
-    localStorage.setItem(userKey, JSON.stringify(updatedUserRecords));
-
     try {
-      const masterSaved = JSON.parse(localStorage.getItem("software_house_master_attendance_logs") || "[]");
-      let updatedMaster = [newRecord, ...masterSaved];
+      const persistedRecord = await clockAttendance(type);
+      const todayDateStr = persistedRecord.attendance_date;
+      const userKey = `today_attendance_${userEmail}`;
+      const updatedUserRecords = [
+        persistedRecord,
+        ...todayRecords.filter((record) => record.id !== persistedRecord.id && !(record.attendance_date === todayDateStr && (record.type === "check_in" || record.type === "check_out" || record.check_in_time)))
+      ];
+      setTodayRecords(updatedUserRecords);
+      try { localStorage.setItem(userKey, JSON.stringify(updatedUserRecords)); } catch (storageError) {}
+
+      let masterSaved = [];
+      try {
+        const cachedLogs = JSON.parse(localStorage.getItem("software_house_master_attendance_logs") || "[]");
+        if (Array.isArray(cachedLogs)) masterSaved = cachedLogs;
+      } catch (storageError) {}
+      const updatedMaster = [persistedRecord, ...masterSaved.filter((record) => record.id !== persistedRecord.id)];
       setAllSystemLogs(updatedMaster);
-      localStorage.setItem("software_house_master_attendance_logs", JSON.stringify(updatedMaster));
+      try { localStorage.setItem("software_house_master_attendance_logs", JSON.stringify(updatedMaster)); } catch (storageError) {}
 
-      dbSaveRecord("attendance", {
-        id: newRecord.id,
-        user_email: userEmail,
-        employee_id: userEmail,
-        email: userEmail,
-        user_name: userName,
-        name: userName,
-        user_role: role,
-        attendance_date: todayDateStr,
-        date: todayDateStr,
-        check_in_time: newRecord.check_in_time,
-        check_in: newRecord.check_in_time,
-        check_out_time: newRecord.check_out_time,
-        check_out: newRecord.check_out_time,
-        attendance_status: attendanceStatus,
-        status: attendanceStatus,
-        public_ip: livePublicIp,
-        ip_address: livePublicIp,
-        created_at: nowIso,
-        timestamp: nowIso
-      }).catch(() => {});
-    } catch(e) {}
-
-    const toastTitle = type === "check_in" ? "Clocked In Successfully 🟢" : "Clocked Out Successfully 🔴";
-    showToast(toastTitle, `Recorded at ${nowLocalTime}.`, "success");
-
-    setTimeout(() => {
-      navigateToDashboard();
-    }, 1200);
+      const toastTitle = type === "check_in" ? "Clocked In Successfully" : "Clocked Out Successfully";
+      showToast(toastTitle, `Recorded at ${type === "check_in" ? persistedRecord.check_in_time : persistedRecord.check_out_time}.`, "success");
+      setTimeout(() => navigateToDashboard(), 1200);
+    } catch (error) {
+      showToast("Attendance Not Saved", error?.message || "Could not save the attendance record.", "error");
+    }
   };
 
   const executeDeleteRecord = async () => {
@@ -701,12 +604,8 @@ export default function AttendancePage() {
     const record = deleteModal.record;
 
     try {
-      dbDeleteRecord("attendance", record.id).catch(() => {});
-      authenticatedFetch("/api/persistence", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ table: "attendance", record: { id: record.id, date: record.date || record.attendance_date }, action: "delete" })
-      }).catch(() => {});
+      const result = await dbDeleteRecord("attendance", record.id);
+      if (!result.success) throw new Error(result.error || "The attendance record was not deleted.");
       const masterSaved = JSON.parse(localStorage.getItem("software_house_master_attendance_logs") || "[]");
       const updatedMaster = masterSaved.filter(r => r.id !== record.id);
       setAllSystemLogs(updatedMaster);
@@ -745,7 +644,8 @@ export default function AttendancePage() {
 
   const currentRole = user?.user_metadata?.role || userRole || "employee";
   const isStudentRole = currentRole === "student" || currentRole === "course_student";
-  const { lightColor, label: policyLabel } = determineAttendanceState(currentRole, currentMinutes);
+  const policyRules = attendancePolicy ? getAttendancePolicyRules(attendancePolicy) : null;
+  const { lightColor, label: policyLabel } = determineAttendanceState(currentRole, currentMinutes, policyRules);
 
   const checkIn = todayRecords.find((r) => r.type === "check_in" || r.check_in_time);
   const checkOut = todayRecords.find((r) => r.type === "check_out" || (r.check_out_time && r.check_out_time !== "Not Checked Out"));

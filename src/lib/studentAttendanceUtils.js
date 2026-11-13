@@ -10,7 +10,14 @@ import { authenticatedFetch } from "@/lib/authenticatedFetch";
  * Get today's date string in YYYY-MM-DD format
  */
 export function getTodayDateString() {
-  return new Date().toISOString().split("T")[0];
+  return toLocalDateString(new Date());
+}
+
+export function toLocalDateString(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 /**
@@ -62,7 +69,7 @@ export function getAttendanceStatusIcon(status) {
  */
 export function calculateAttendancePercentage(attendanceRecords) {
   if (!attendanceRecords || attendanceRecords.length === 0) {
-    return 100;
+    return 0;
   }
 
   const presentCount = attendanceRecords.filter(record => {
@@ -119,7 +126,7 @@ export async function markStudentAttendance({
   studentName,
   date,
   status = "Present",
-  ipAddress = "127.0.0.1"
+  ipAddress = ""
 }) {
   try {
     const response = await authenticatedFetch("/api/attendance/student", {
@@ -180,17 +187,20 @@ export async function markBulkStudentAttendance(attendanceData) {
  */
 export async function getStudentAttendanceSummary(studentId, days = 30) {
   try {
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() - days);
-    const startDateStr = startDate.toISOString().split("T")[0];
-    
-    const response = await authenticatedFetch(`/api/attendance/student?date=${startDateStr}`);
+    const endDate = new Date();
+    const startDate = new Date(endDate);
+    startDate.setDate(startDate.getDate() - Math.max(1, Number(days) || 30));
+    const startDateStr = toLocalDateString(startDate);
+    const endDateStr = toLocalDateString(endDate);
+
+    const params = new URLSearchParams({ from: startDateStr, to: endDateStr, studentId });
+    const response = await authenticatedFetch(`/api/attendance/student?${params.toString()}`);
     const result = await response.json();
     const allRecords = result?.data || [];
     
     // Filter for this student
     const studentRecords = allRecords.filter(
-      r => (r.student_id || r.user_email || r.user_id || "").toLowerCase() === studentId.toLowerCase()
+      r => (r.student_id || r.user_email || r.user_id || "").toLowerCase() === String(studentId || "").toLowerCase()
     );
 
     const summary = {
@@ -214,7 +224,7 @@ export async function getStudentAttendanceSummary(studentId, days = 30) {
       }
     });
 
-    summary.percentage = Math.round((summary.present / summary.totalDays) * 100);
+    summary.percentage = summary.totalDays ? Math.round((summary.present / summary.totalDays) * 100) : 0;
     
     return summary;
   } catch (e) {

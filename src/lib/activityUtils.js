@@ -1,11 +1,15 @@
-import { supabase } from "@/lib/supabase";
+import { dbDeleteRecord, dbFetch, dbSaveRecord } from "@/lib/dbPersistence";
 
 export const INITIAL_ACTIVITIES = [];
 
 export async function logActivity(user_name, action_type, description, icon = "general") {
+  let userEmail = "";
+  try { userEmail = (localStorage.getItem("current_user_email") || "").toLowerCase().trim(); } catch (e) {}
   const newActivity = {
     id: `act-${Date.now()}`,
     user_name: user_name || "Admin",
+    user_email: userEmail,
+    email: userEmail,
     action_type: action_type || "System Action",
     description,
     timestamp: new Date().toISOString(),
@@ -20,9 +24,9 @@ export async function logActivity(user_name, action_type, description, icon = "g
     localStorage.setItem("persistent_activity_logs", JSON.stringify(updated));
   } catch (e) {}
 
-  // 2. Save to Supabase DB activity_logs table
+  // 2. Save to the shared app_records backend.
   try {
-    await supabase.from("activity_logs").insert([newActivity]);
+    await dbSaveRecord("activity_logs", newActivity);
   } catch (e) {}
 
   // 3. Trigger events for instant live feed update
@@ -42,22 +46,15 @@ export async function clearActivityLogs() {
   } catch(e) {}
 
   try {
-    await supabase.from("activity_logs").delete().neq("id", "0");
+    const activities = await dbFetch("activity_logs", []);
+    await Promise.all(activities.map((activity) => dbDeleteRecord("activity_logs", activity.id)));
   } catch(e) {}
 }
 
 export async function fetchRecentActivities() {
   let dbActivities = [];
   try {
-    const { data, error } = await supabase
-      .from("activity_logs")
-      .select("*")
-      .order("timestamp", { ascending: false })
-      .limit(30);
-
-    if (!error && data) {
-      dbActivities = data;
-    }
+    dbActivities = await dbFetch("activity_logs", []);
   } catch (e) {}
 
   let localActivities = [];
@@ -76,7 +73,7 @@ export async function fetchRecentActivities() {
   });
 
   const combined = Array.from(actMap.values()).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-  return combined;
+  return combined.slice(0, 30);
 }
 
 export function formatTimeAgo(isoTimestamp) {
@@ -116,12 +113,14 @@ export function updateEmployeeRealtimeStatus(userEmail, status, lastActiveIso = 
   } catch (e) {}
 
   try {
-    supabase.from("employee_activity_statuses").upsert([{
+    dbSaveRecord("employee_activity_statuses", {
+      id: emailKey,
+      email: emailKey,
       user_email: emailKey,
       status,
       last_active: lastActiveIso,
       updated_at: new Date().toISOString()
-    }]);
+    }).catch(() => {});
   } catch (e) {}
 }
 

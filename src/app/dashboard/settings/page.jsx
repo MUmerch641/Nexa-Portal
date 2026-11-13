@@ -5,7 +5,7 @@ import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import Modal from "@/components/Modal";
 import { showToast } from "@/components/Toast";
-import { getCompanyInfo, updateCompanyInfo } from "@/lib/companyUtils";
+import { fetchCompanyInfo, updateCompanyInfo } from "@/lib/companyUtils";
 import {
   FaBuilding,
   FaCoins,
@@ -29,7 +29,7 @@ import {
 export default function SettingsPage() {
   const [role, setRole] = useState("admin");
   const [userEmail, setUserEmail] = useState("");
-  const [officeIp, setOfficeIp] = useState("39.46.118.183");
+  const [officeIp, setOfficeIp] = useState("");
 
   const [companyForm, setCompanyForm] = useState({
     company_name: "",
@@ -105,22 +105,24 @@ export default function SettingsPage() {
     setRole(storedRole);
     setUserEmail(storedEmail);
 
-    const companyData = getCompanyInfo();
-    setCompanyForm({
-      company_name: companyData.company_name || "",
-      company_logo: companyData.company_logo || "",
-      currency_symbol: companyData.currency_symbol || "Rs.",
-      company_address: companyData.company_address || "",
-      contact_number: companyData.contact_number || "",
-      email_address: companyData.email_address || "",
-      website_url: companyData.website_url || "",
-      tax_registration_no: companyData.tax_registration_no || "",
-    });
-
-    setAuditInfo({
-      updated_at: companyData.updated_at ? new Date(companyData.updated_at).toLocaleString() : "Never",
-      updated_by: companyData.updated_by || "System Initializer"
-    });
+    const loadCompanyInfo = async () => {
+      const companyData = await fetchCompanyInfo();
+      setCompanyForm({
+        company_name: companyData.company_name || "",
+        company_logo: companyData.company_logo || "",
+        currency_symbol: companyData.currency_symbol || "Rs.",
+        company_address: companyData.company_address || "",
+        contact_number: companyData.contact_number || "",
+        email_address: companyData.email_address || "",
+        website_url: companyData.website_url || "",
+        tax_registration_no: companyData.tax_registration_no || "",
+      });
+      setAuditInfo({
+        updated_at: companyData.updated_at ? new Date(companyData.updated_at).toLocaleString() : "Never",
+        updated_by: companyData.updated_by || "System Initializer"
+      });
+    };
+    loadCompanyInfo();
   }, []);
 
   const handleUseCurrentIp = async () => {
@@ -531,7 +533,7 @@ export default function SettingsPage() {
                 type="text"
                 value={officeIp}
                 onChange={(e) => setOfficeIp(e.target.value)}
-                placeholder="39.46.118.183"
+                placeholder="Use Detect Current IP"
                 className="w-full rounded-xl border border-[#E2E8F0] px-3.5 py-2 text-xs text-[#0F172A] outline-none focus:border-[#2563EB] font-mono bg-white"
               />
 

@@ -1,7 +1,5 @@
 "use client";
 
-import { authenticatedFetch } from "@/lib/authenticatedFetch";
-
 import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
@@ -32,11 +30,33 @@ import {
   FaDownload
 } from "react-icons/fa";
 
-const INITIAL_DEMO_EMPLOYEES = [
-  { id: "emp-101", full_name: "Muhammad Ali", father_name: "Tariq Mahmood", email: "ali.staff@gmail.com", phone: "03001234567", department: "Web Development", designation: "Senior Lead Developer", employment_type: "Paid Staff (Full Time)", joining_date: "2025-01-15", status: "active" },
-  { id: "emp-102", full_name: "Sara Khan", father_name: "Abdul Rehman", email: "sara.design@gmail.com", phone: "03219876543", department: "UI/UX Design", designation: "Lead Designer", employment_type: "Paid Staff (Full Time)", joining_date: "2025-02-01", status: "active" },
-  { id: "emp-103", full_name: "Muhammad Rahim Bugti", father_name: "Hussain Bugti", email: "rahim.staff@gmail.com", phone: "03335554433", department: "Engineering", designation: "Senior Full-Stack Developer", employment_type: "Paid Staff (Full Time)", joining_date: "2025-01-01", status: "active" }
-];
+async function setEmployeeAccountStatus(email, status) {
+  const normalizedEmail = String(email || "").trim().toLowerCase();
+  if (!normalizedEmail) return null;
+  const { data: profile, error: lookupError } = await supabase.from("user_profiles")
+    .select("id, role, status")
+    .eq("email", normalizedEmail)
+    .maybeSingle();
+  if (lookupError) throw new Error(lookupError.message || "Could not check the employee login.");
+  if (!profile) return null;
+  if (profile.role === "admin" && status !== profile.status) {
+    throw new Error("An admin login cannot be disabled from the employee directory.");
+  }
+  if (profile.status === status) return { ...profile, changed: false };
+  const { error: updateError } = await supabase.from("user_profiles")
+    .update({ status, updated_at: new Date().toISOString() })
+    .eq("id", profile.id);
+  if (updateError) throw new Error(updateError.message || "Could not update the employee login.");
+  return { ...profile, changed: true };
+}
+
+async function restoreEmployeeAccountStatus(profile) {
+  if (!profile?.changed) return;
+  const { error } = await supabase.from("user_profiles")
+    .update({ status: profile.status, updated_at: new Date().toISOString() })
+    .eq("id", profile.id);
+  if (error) throw new Error(error.message || "Could not restore the employee login status.");
+}
 
 export default function EmployeesPage() {
   const router = useRouter();
@@ -61,16 +81,16 @@ export default function EmployeesPage() {
     father_name: "",
     phone: "",
     email: "",
-    blood_group: "O+",
+    blood_group: "",
     address: "",
     guardian_phone: "",
     emergency_phone: "",
-    department: "Web Development",
-    designation: "Senior Lead Developer",
+    department: "",
+    designation: "",
     employment_type: "Paid Staff (Full Time)",
     joining_date: new Date().toISOString().split("T")[0],
     assigned_shift: "Full Time (10:00 AM – 6:00 PM)",
-    basic_salary: "45000",
+    basic_salary: "",
     bank_account_number: "",
     status: "active"
   });
@@ -172,7 +192,6 @@ export default function EmployeesPage() {
           father_name: form.father_name || "",
           email: trimmedEmail,
           phone: form.phone || "",
-          blood_group: form.blood_group || "O+",
           department: form.department,
           designation: form.designation || "Staff Member",
           employment_type: form.employment_type || "Paid Staff (Full Time)",
@@ -180,10 +199,15 @@ export default function EmployeesPage() {
           address: form.address || "",
           guardian_phone: form.guardian_phone || "",
           emergency_phone: form.emergency_phone || "",
+          blood_group: form.blood_group || "",
+          assigned_shift: form.assigned_shift || "",
+          basic_salary: form.basic_salary === "" ? null : Number(form.basic_salary),
+          bank_account_number: form.bank_account_number || "",
         },
       });
 
-      await fetchEmployees();
+      setEmployees((current) => [res.employee, ...current.filter((employee) => employee.id !== res.employee.id)]);
+      try { localStorage.setItem("persistent_employees", JSON.stringify([res.employee, ...employees.filter((employee) => employee.id !== res.employee.id)])); } catch (storageError) {}
       setLoading(false);
       setIsAddModalOpen(false);
 
@@ -194,14 +218,18 @@ export default function EmployeesPage() {
         father_name: "",
         phone: "",
         email: "",
-                blood_group: "O+",
+        blood_group: "",
         address: "",
         guardian_phone: "",
         emergency_phone: "",
-        department: "Web Development",
-        designation: "Senior Lead Developer",
+        department: "",
+        designation: "",
         employment_type: "Paid Staff (Full Time)",
         joining_date: new Date().toISOString().split("T")[0],
+        assigned_shift: "Full Time (10:00 AM – 6:00 PM)",
+        basic_salary: "",
+        bank_account_number: "",
+        status: "active",
       });
     } catch (err) {
       setLoading(false);
@@ -216,66 +244,42 @@ export default function EmployeesPage() {
     if (!confirmModal.emp) return;
     const { type, emp } = confirmModal;
     setConfirmModal(prev => ({ ...prev, loading: true }));
-
-    if (type === "deactivate") {
-      const updatedList = employees.map(e => e.id === emp.id ? { ...e, status: "inactive" } : e);
-      setEmployees(updatedList);
-      try {
-        localStorage.setItem("persistent_employees", JSON.stringify(updatedList));
-        await dbSaveRecord("employees", { ...emp, status: "inactive" });
-        await supabase.from("employees").update({ status: "inactive" }).eq("id", emp.id);
-        authenticatedFetch("/api/persistence", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ table: "employees", record: { ...emp, status: "inactive" }, action: "save" })
-        }).catch(() => {});
-      } catch(e) {}
-      showToast("Employee Deactivated 🛑", `Account for ${emp.full_name} deactivated. Historical data preserved.`, "info");
-    } else if (type === "reactivate") {
-      const updatedList = employees.map(e => e.id === emp.id ? { ...e, status: "active" } : e);
-      setEmployees(updatedList);
-      try {
-        localStorage.setItem("persistent_employees", JSON.stringify(updatedList));
-        await dbSaveRecord("employees", { ...emp, status: "active" });
-        await supabase.from("employees").update({ status: "active" }).eq("id", emp.id);
-        authenticatedFetch("/api/persistence", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ table: "employees", record: { ...emp, status: "active" }, action: "save" })
-        }).catch(() => {});
-      } catch(e) {}
-      showToast("Employee Reactivated 🟢", `Account for ${emp.full_name} reactivated.`, "success");
-    } else if (type === "delete") {
-      const updatedList = employees.filter(e => e.id !== emp.id);
-      setEmployees(updatedList);
-      try {
-        localStorage.setItem("persistent_employees", JSON.stringify(updatedList));
-        if (emp.email) {
-          const deletedList = JSON.parse(localStorage.getItem("deleted_payrolls_list") || "[]");
-          if (!deletedList.includes(emp.email.toLowerCase().trim())) {
-            deletedList.push(emp.email.toLowerCase().trim());
-            localStorage.setItem("deleted_payrolls_list", JSON.stringify(deletedList));
-          }
+    try {
+      if (type === "deactivate" || type === "reactivate") {
+        const nextStatus = type === "deactivate" ? "inactive" : "active";
+        const accountStatus = await setEmployeeAccountStatus(emp.email, nextStatus);
+        let savedEmployee;
+        try {
+          savedEmployee = await dbSaveRecord("employees", { ...emp, status: nextStatus });
+        } catch (error) {
+          await restoreEmployeeAccountStatus(accountStatus);
+          throw error;
         }
-        await dbDeleteRecord("employees", emp.id);
-        if (emp.id) {
-          await supabase.from("employees").delete().eq("id", emp.id);
-          await supabase.from("payrolls").delete().eq("id", emp.id);
+        if (!savedEmployee) throw new Error("The server did not confirm the employee update.");
+        const updatedList = employees.map((employee) => employee.id === emp.id ? savedEmployee : employee);
+        setEmployees(updatedList);
+        try { localStorage.setItem("persistent_employees", JSON.stringify(updatedList)); } catch (storageError) {}
+        showToast(type === "deactivate" ? "Employee Deactivated 🛑" : "Employee Reactivated 🟢", `${emp.full_name} is now ${nextStatus}.`, type === "deactivate" ? "info" : "success");
+      } else if (type === "delete") {
+        const accountStatus = await setEmployeeAccountStatus(emp.email, "inactive");
+        let result;
+        try {
+          result = await dbDeleteRecord("employees", emp.id, emp.email);
+          if (!result.success || !result.deleted) throw new Error(result.error || "Could not delete the employee record.");
+        } catch (error) {
+          await restoreEmployeeAccountStatus(accountStatus);
+          throw error;
         }
-        if (emp.email) {
-          await supabase.from("employees").delete().eq("email", emp.email.toLowerCase().trim());
-          await supabase.from("payrolls").delete().eq("email", emp.email.toLowerCase().trim());
-        }
-        authenticatedFetch("/api/persistence", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ table: "employees", record: { id: emp.id, email: emp.email }, action: "delete" })
-        }).catch(() => {});
-      } catch(e) {}
-      showToast("Employee Deleted 🗑️", `'${emp.full_name}' purged permanently.`, "info");
+        const updatedList = employees.filter((employee) => employee.id !== emp.id);
+        setEmployees(updatedList);
+        try { localStorage.setItem("persistent_employees", JSON.stringify(updatedList)); } catch (storageError) {}
+        showToast("Employee Deleted 🗑️", `'${emp.full_name}' was removed. Payroll history is retained.`, "info");
+      }
+      setConfirmModal({ isOpen: false, type: "", emp: null, loading: false });
+    } catch (error) {
+      setConfirmModal((current) => ({ ...current, loading: false }));
+      showToast("Employee update failed", error?.message || "The change was not saved. Please try again.", "error");
     }
-
-    setConfirmModal({ isOpen: false, type: "", emp: null, loading: false });
   };
 
   // Export Employees Directory to CSV

@@ -15,7 +15,7 @@ export async function POST(request) {
       return NextResponse.json({ error: "Enter a valid account email address." }, { status: 400 });
     }
     const { error } = await context.client.auth.resetPasswordForEmail(email, {
-      redirectTo: `${new URL(request.url).origin}/verify-email`,
+      redirectTo: `${new URL(request.url).origin}/reset-password`,
     });
     if (error) return NextResponse.json({ error: error.message }, { status: 400 });
     return NextResponse.json({ success: true, message: "Password reset instructions were sent if the account exists." });

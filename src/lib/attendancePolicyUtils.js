@@ -1,151 +1,120 @@
-/**
- * Attendance Policy Utility Functions
- * Manages custom attendance policy for employees and students
- */
-
-import { supabase } from "./supabase";
+import { authenticatedFetch } from "@/lib/authenticatedFetch";
 
 // Default attendance policy
 export const DEFAULT_POLICY = {
+  id: "policy_1",
   shift_start: "10:00 AM",
   shift_end: "6:00 PM",
   grace_period_minutes: 14,
   late_warning_minutes: 29,
   salary_deduction_after: 30,
   policy_name: "Standard Policy",
-  description: "Standard attendance policy for employees and students"
+  description: "Standard attendance policy for employees and students",
 };
 
-/**
- * Fetch current attendance policy
- */
+const POLICY_CACHE_KEY = "attendance_policy";
+
+function cachePolicy(policy) {
+  try {
+    if (typeof window !== "undefined") localStorage.setItem(POLICY_CACHE_KEY, JSON.stringify(policy));
+  } catch (error) {}
+}
+
+function readCachedPolicy() {
+  try {
+    if (typeof window === "undefined") return null;
+    const saved = localStorage.getItem(POLICY_CACHE_KEY);
+    return saved ? { ...DEFAULT_POLICY, ...JSON.parse(saved) } : null;
+  } catch (error) {
+    return null;
+  }
+}
+
+async function readPolicyResponse(response) {
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok || !result.success) {
+    throw new Error(result.error || "Could not sync the attendance policy.");
+  }
+  return result;
+}
+
+/** Fetch the shared server policy first; local storage is only an offline fallback. */
 export async function fetchAttendancePolicy() {
+  const cachedPolicy = readCachedPolicy();
   try {
-    // Check local cache first
-    if (typeof window !== "undefined") {
-      const cached = localStorage.getItem("attendance_policy");
-      if (cached) {
-        return JSON.parse(cached);
-      }
-    }
-
-    // Fetch from Supabase
-    try {
-      const { data, error } = await supabase
-        .from("attendance_policy")
-        .select("*")
-        .order("created_at", { ascending: false })
-        .limit(1);
-
-      if (!error && data && data.length > 0) {
-        const policy = data[0];
-        if (typeof window !== "undefined") {
-          localStorage.setItem("attendance_policy", JSON.stringify(policy));
-        }
-        return policy;
-      }
-    } catch (supabaseErr) {
-      console.log("Supabase fetch failed, using default:", supabaseErr.message);
-    }
-
-    // Return default policy
-    return DEFAULT_POLICY;
-  } catch (e) {
-    console.error("Error fetching attendance policy:", e);
+    const response = await authenticatedFetch("/api/attendance/policy");
+    const result = await readPolicyResponse(response);
+    const policy = { ...DEFAULT_POLICY, ...(result.policy || {}) };
+    cachePolicy(policy);
+    return policy;
+  } catch (error) {
+    if (cachedPolicy) return cachedPolicy;
     return DEFAULT_POLICY;
   }
 }
 
-/**
- * Update attendance policy
- */
-export async function updateAttendancePolicy(policy) {
+async function saveAttendancePolicy(action, policy) {
   try {
-    // Try to upsert to Supabase first
-    try {
-      const { data, error } = await supabase
-        .from("attendance_policy")
-        .upsert({
-          id: "policy_1",
-          shift_start: policy.shift_start,
-          shift_end: policy.shift_end,
-          grace_period_minutes: parseInt(policy.grace_period_minutes) || 14,
-          late_warning_minutes: parseInt(policy.late_warning_minutes) || 29,
-          salary_deduction_after: parseInt(policy.salary_deduction_after) || 30,
-          policy_name: policy.policy_name || "Standard Policy",
-          description: policy.description || "Standard attendance policy",
-          updated_at: new Date().toISOString()
-        })
-        .select()
-        .limit(1);
-
-      if (error) {
-        console.log("Supabase error (table may not exist), using localStorage:", error.message);
-      } else if (data && data.length > 0) {
-        // Clear cache
-        if (typeof window !== "undefined") {
-          localStorage.removeItem("attendance_policy");
-        }
-        return { success: true, message: "Attendance policy updated successfully" };
-      }
-    } catch (supabaseErr) {
-      console.log("Supabase connection failed, using localStorage:", supabaseErr.message);
-    }
-
-    // Fallback to localStorage
-    if (typeof window !== "undefined") {
-      localStorage.setItem("attendance_policy", JSON.stringify(policy));
-    }
-
-    return { success: true, message: "Attendance policy saved (using localStorage fallback)" };
-  } catch (e) {
-    console.error("Error in updateAttendancePolicy:", e);
-    return { success: false, error: e.message };
+    const response = await authenticatedFetch("/api/attendance/policy", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action, policy }),
+    });
+    const result = await readPolicyResponse(response);
+    const savedPolicy = { ...DEFAULT_POLICY, ...(result.policy || policy || DEFAULT_POLICY) };
+    cachePolicy(savedPolicy);
+    return { success: true, message: "Attendance policy saved and synced across the portal.", policy: savedPolicy };
+  } catch (error) {
+    return { success: false, error: error?.message || "Could not save the attendance policy." };
   }
 }
 
-/**
- * Reset policy to default
- */
-export async function resetAttendancePolicy() {
-  try {
-    if (typeof window !== "undefined") {
-      localStorage.removeItem("attendance_policy");
-    }
-    
-    return { 
-      success: true, 
-      message: "Policy reset to default",
-      policy: DEFAULT_POLICY
-    };
-  } catch (e) {
-    console.error("Error resetting policy:", e);
-    return { success: false, error: e.message };
-  }
+/** Update the shared server policy; never report a local-only write as a team sync. */
+export function updateAttendancePolicy(policy) {
+  return saveAttendancePolicy("update", policy);
 }
 
-/**
- * Convert time string to minutes since midnight
- */
+/** Reset the shared server policy and refresh this browser's cache. */
+export function resetAttendancePolicy() {
+  return saveAttendancePolicy("reset", DEFAULT_POLICY);
+}
+
+export function getAttendancePolicyRules(policy = DEFAULT_POLICY) {
+  const shiftStartFromString = timeToMinutes(policy?.shift_start || DEFAULT_POLICY.shift_start);
+  const parsedShiftStart = policy?.shift_start_minutes ?? shiftStartFromString;
+  const shiftStart = Number(parsedShiftStart);
+  const asMinutes = (value, fallback) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? Math.max(0, Math.min(180, parsed)) : fallback;
+  };
+
+  return {
+    ...policy,
+    shift_start_minutes: Number.isFinite(shiftStart) ? shiftStart : 600,
+    grace_period_minutes: asMinutes(policy?.grace_period_minutes, DEFAULT_POLICY.grace_period_minutes),
+    late_warning_minutes: asMinutes(policy?.late_warning_minutes, DEFAULT_POLICY.late_warning_minutes),
+    salary_deduction_after: asMinutes(policy?.salary_deduction_after, DEFAULT_POLICY.salary_deduction_after),
+  };
+}
+
+/** Convert time string to minutes since midnight */
 export function timeToMinutes(timeStr) {
   if (!timeStr) return 0;
-  
-  const match = timeStr.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)?$/i);
+
+  const match = String(timeStr).match(/^(\d{1,2}):(\d{2})\s*(AM|PM)?$/i);
   if (!match) return 0;
-  
+
   let hours = parseInt(match[1], 10);
   const minutes = parseInt(match[2], 10);
   const period = match[3] ? match[3].toUpperCase() : "AM";
-  
+
   if (period === "PM" && hours < 12) hours += 12;
   if (period === "AM" && hours === 12) hours = 0;
-  
+
   return hours * 60 + minutes;
 }
 
-/**
- * Convert minutes to time string
- */
+/** Convert minutes to time string */
 export function minutesToTime(minutes) {
   const hours = Math.floor(minutes / 60);
   const mins = minutes % 60;
@@ -154,60 +123,33 @@ export function minutesToTime(minutes) {
   return `${displayHours.toString().padStart(2, "0")}:${mins.toString().padStart(2, "0")} ${period}`;
 }
 
-/**
- * Get attendance status based on policy
- */
+/** Get attendance status based on policy */
 export function getAttendanceStatus(minutes, role = "employee", policy = null) {
-  const defaultPolicy = DEFAULT_POLICY;
-  const policyMinutes = policy || defaultPolicy;
-  
-  const shiftStart = timeToMinutes(policyMinutes.shift_start);
-  const graceEnd = shiftStart + (parseInt(policyMinutes.grace_period_minutes) || 14);
-  const lateWarningEnd = shiftStart + (parseInt(policyMinutes.late_warning_minutes) || 29);
-  const salaryDeductionStart = shiftStart + (parseInt(policyMinutes.salary_deduction_after) || 30);
+  const policyMinutes = getAttendancePolicyRules(policy || DEFAULT_POLICY);
+  const shiftStart = policyMinutes.shift_start_minutes;
+  const graceEnd = shiftStart + policyMinutes.grace_period_minutes;
+  const lateWarningEnd = shiftStart + policyMinutes.late_warning_minutes;
+  const salaryDeductionStart = shiftStart + policyMinutes.salary_deduction_after;
 
-  const isStudent = role === "student" || role === "course_student" || role === "intern" || role === "internship";
+  const isStudent = ["student", "course_student", "intern", "internship"].includes(role);
 
   if (minutes < shiftStart) {
-    return {
-      status: "Closed",
-      label: "Attendance Closed",
-      color: "slate",
-      message: `Attendance opens at ${policyMinutes.shift_start}`
-    };
+    return { status: "Closed", label: "Attendance Closed", color: "slate", message: `Attendance opens at ${policyMinutes.shift_start}` };
   }
 
-  if (minutes >= shiftStart && minutes < graceEnd) {
-    return {
-      status: "On Time",
-      label: "On Time 🟢",
-      color: "emerald",
-      message: "On time attendance recorded"
-    };
+  if (minutes < graceEnd) {
+    return { status: "Present (On Time)", label: "On Time", color: "green", message: "Attendance marked as On Time!" };
   }
 
-  if (minutes >= graceEnd && minutes < lateWarningEnd) {
-    return {
-      status: "Late Warning",
-      label: "Late Warning 🟠",
-      color: "amber",
-      message: "Late attendance recorded"
-    };
+  if (minutes < lateWarningEnd) {
+    return { status: "Late Warning", label: "Late Warning", color: "yellow", message: "You are late. Please mark your attendance immediately." };
   }
 
-  if (isStudent) {
-    return {
-      status: "Late Fine",
-      label: "Late Fine Applicable 🔴",
-      color: "rose",
-      message: "Late fine may apply"
-    };
+  if (minutes >= salaryDeductionStart) {
+    return isStudent
+      ? { status: "Late (Fine Applicable)", label: "Late Fine", color: "red", message: "A late attendance fine may apply according to institute policy." }
+      : { status: "Salary Deduction", label: "Salary Deduction", color: "red", message: "One day's salary will be deducted according to company policy." };
   }
 
-  return {
-    status: "Salary Deduction",
-    label: "Salary Deduction 🔴",
-    color: "rose",
-    message: "1-day salary deduction applied"
-  };
+  return { status: "Late", label: "Late", color: "orange", message: "Attendance marked late." };
 }

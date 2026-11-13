@@ -1,4 +1,4 @@
-import { supabase } from "@/lib/supabase";
+import { authenticatedFetch } from "@/lib/authenticatedFetch";
 
 export const TABLE_STORAGE_KEYS = {
   employees: "persistent_employees",
@@ -47,10 +47,18 @@ export function cleanPayloadForDb(value) {
   return safe;
 }
 
+async function requestPersistence(url, init) {
+  const response = await authenticatedFetch(url, init);
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok || result.error) {
+    throw new Error(result.error || `The portal could not save this record (${response.status}).`);
+  }
+  return result;
+}
+
 export async function dbFetch(table, defaultData = [], _forceFresh = false) {
-  const { data, error } = await supabase.from(table).select("*");
-  if (error) throw new Error(error.message || `Unable to load ${table}.`);
-  return Array.isArray(data) ? data : defaultData;
+  const result = await requestPersistence(`/api/persistence?table=${encodeURIComponent(table)}`);
+  return Array.isArray(result.data) ? result.data : defaultData;
 }
 
 export async function dbSaveList(table, list = []) {
@@ -64,23 +72,38 @@ export async function dbSaveList(table, list = []) {
   }
   const records = [...byKey.values()];
   if (!records.length) return records;
-  const { data, error } = await supabase.from(table).upsert(records).select("*");
-  if (error) throw new Error(error.message || `Unable to save ${table}.`);
-  return data || records;
+  const result = await requestPersistence("/api/data", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ table, operation: "upsert", values: records }),
+  });
+  return Array.isArray(result.data) ? result.data : records;
 }
 
 export async function dbSaveRecord(table, record) {
   if (!record) return null;
-  const { data, error } = await supabase.from(table).upsert(cleanPayloadForDb(record)).select("*").maybeSingle();
-  if (error) throw new Error(error.message || `Unable to save ${table} record.`);
-  return data || record;
+  const result = await requestPersistence("/api/persistence", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ table, record: cleanPayloadForDb(record), action: "save" }),
+  });
+  return result.data?.[0] || record;
 }
 
 export async function dbDeleteRecord(table, id, emailField = "") {
   if (!id && !emailField) return { success: false, error: "A record ID or email is required." };
-  let query = supabase.from(table).delete();
-  if (id) query = query.eq("id", String(id));
-  else query = query.eq("email", String(emailField).trim().toLowerCase());
-  const { error } = await query;
-  return error ? { success: false, error: error.message } : { success: true };
+  try {
+    const result = await requestPersistence("/api/persistence", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        table,
+        action: "delete",
+        record: id ? { id: String(id) } : { email: String(emailField).trim().toLowerCase() },
+      }),
+    });
+    return { success: true, deleted: Boolean(result.deleted), count: Number(result.count) || 0 };
+  } catch (error) {
+    return { success: false, error: error?.message || `Unable to delete ${table} record.` };
+  }
 }

@@ -1,10 +1,7 @@
 "use client";
 
-import { authenticatedFetch } from "@/lib/authenticatedFetch";
-
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabase";
 import { generatePrintablePayslipPdf } from "@/lib/generatePayslipPdf";
 import Modal from "@/components/Modal";
 import { dbFetch, dbSaveRecord, dbDeleteRecord } from "@/lib/dbPersistence";
@@ -29,11 +26,24 @@ import {
   FaCertificate
 } from "react-icons/fa";
 
+function calculateNetSalary(rec) {
+  const basic = Number(rec.basic_salary || 0);
+  const overtime = Number(rec.overtime_amount || (rec.overtime_hours || 0) * (rec.overtime_rate || 600));
+  const bonus = Number(rec.bonus_amount || 0);
+  const incentive = Number(rec.incentive_amount || 0);
+  const leave = Number(rec.leave_deduction || 0);
+  const late = Number(rec.late_penalty || 0);
+  const advance = Number(rec.advance_deduction || 0);
+  const loan = Number(rec.loan_deduction || 0);
+  return basic + overtime + bonus + incentive - (leave + late + advance + loan);
+}
+
 export default function PayrollDashboardPage() {
   const router = useRouter();
   const [role, setRole] = useState("admin");
   const [userEmail, setUserEmail] = useState("");
-  const [selectedMonth, setSelectedMonth] = useState("2026-08");
+  const [selectedMonth, setSelectedMonth] = useState("");
+  const [availableMonths, setAvailableMonths] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showCalculatorModal, setShowCalculatorModal] = useState(false);
   const [sandboxForm, setSandboxForm] = useState({
@@ -54,7 +64,7 @@ export default function PayrollDashboardPage() {
     email: "",
     department: "Engineering",
     designation: "Software Engineer",
-    basic_salary: 75000,
+    basic_salary: 0,
     overtime_hours: 0,
     overtime_rate: 600,
     bonus_amount: 0,
@@ -150,6 +160,20 @@ export default function PayrollDashboardPage() {
   };
 
   useEffect(() => {
+    const now = new Date();
+    const months = Array.from({ length: 13 }, (_, offset) => {
+      const date = new Date(now.getFullYear(), now.getMonth() - offset, 1);
+      return {
+        value: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`,
+        label: date.toLocaleDateString(undefined, { month: "long", year: "numeric" }),
+      };
+    });
+    setAvailableMonths(months);
+    setSelectedMonth(months[0].value);
+  }, []);
+
+  useEffect(() => {
+    if (!selectedMonth) return;
     const savedRole = localStorage.getItem("user_role") || "admin";
     const savedEmail = localStorage.getItem("current_user_email") || "";
     setRole(savedRole);
@@ -158,20 +182,15 @@ export default function PayrollDashboardPage() {
     const loadPayrolls = async () => {
       try {
         const [cloudEmployees, cloudPayrolls] = await Promise.all([
-          dbFetch("employees", [], true).catch(() => []),
-          dbFetch("payrolls", [], true).catch(() => []),
+          dbFetch("employees", [], true),
+          dbFetch("payrolls", [], true),
         ]);
 
-        let deletedPayrollsList = [];
-        try {
-          deletedPayrollsList = JSON.parse(localStorage.getItem("deleted_payrolls_list") || "[]");
-        } catch(e) {}
-
-        // 1. Process cloudPayrolls records (Each record from Supabase payrolls table)
+        // Show only the selected month. Legacy rows use their creation month when available.
         const loadedPayrolls = (cloudPayrolls || [])
-          .filter(p => !deletedPayrollsList.includes((p.email || "").toLowerCase().trim()))
+          .filter((record) => (record.month || String(record.created_at || "").slice(0, 7)) === selectedMonth)
           .map((p, idx) => {
-            const basic = Number(p.basic_salary || 45000);
+            const basic = Number(p.basic_salary || 0);
             return {
               ...p,
               id: p.id || `p-cloud-${idx}`,
@@ -184,15 +203,12 @@ export default function PayrollDashboardPage() {
             };
           });
 
-        // 2. Add default payroll for registered employees who don't have a payroll record yet
+        // Add an editable salary row for employees without a payroll record this month.
         (cloudEmployees || []).forEach((emp, idx) => {
           const empEmail = (emp.email || "").toLowerCase().trim();
-          const empName = (emp.full_name || "").toLowerCase().trim();
-          if (deletedPayrollsList.includes(empEmail)) return;
-
-          const hasRecord = loadedPayrolls.some(p => (empEmail && p.email === empEmail) || (empName && (p.employee_name || "").toLowerCase().trim() === empName));
+          const hasRecord = empEmail && loadedPayrolls.some((p) => p.email === empEmail);
           if (!hasRecord && empEmail) {
-            const basic = Number(emp.basic_salary || 45000);
+            const basic = Number(emp.basic_salary || 0);
             loadedPayrolls.push({
               id: `p-${emp.id || idx + 1}-${idx}`,
               employee_id: emp.id || `emp-${idx + 101}`,
@@ -211,19 +227,18 @@ export default function PayrollDashboardPage() {
               advance_deduction: 0,
               loan_deduction: 0,
               final_payable_salary: basic,
-              status: "processed"
+              status: "draft"
             });
           }
         });
 
-        // 3. Deduplicate by employee identity (email/name) so each employee appears EXACTLY ONCE
+        // Keep one visible record per employee for the selected month.
         const deduplicatedPayrolls = [];
         const seenEmployees = new Set();
 
         loadedPayrolls.forEach((rec, idx) => {
           const emailKey = (rec.email || "").toLowerCase().trim();
-          const nameKey = (rec.employee_name || "").toLowerCase().trim();
-          const dedupeKey = emailKey || nameKey || `rec-${idx}`;
+          const dedupeKey = emailKey || (rec.id ? `id:${rec.id}` : `rec-${idx}`);
 
           if (!seenEmployees.has(dedupeKey)) {
             seenEmployees.add(dedupeKey);
@@ -247,21 +262,7 @@ export default function PayrollDashboardPage() {
 
   const savePayrollsState = (newList) => {
     setPayrolls(newList);
-    localStorage.setItem("software_house_payrolls", JSON.stringify(newList));
-  };
-
-  // Automated Formula: Net Salary = Basic + Overtime + Bonus + Incentives - (Leave Cuts + Late Penalty + Loan/Advance)
-  const calculateNetSalary = (rec) => {
-    const basic = Number(rec.basic_salary || 0);
-    const overtime = Number(rec.overtime_amount || (rec.overtime_hours || 0) * (rec.overtime_rate || 600));
-    const bonus = Number(rec.bonus_amount || 0);
-    const incentive = Number(rec.incentive_amount || 0);
-    const leave = Number(rec.leave_deduction || 0);
-    const late = Number(rec.late_penalty || 0);
-    const advance = Number(rec.advance_deduction || 0);
-    const loan = Number(rec.loan_deduction || 0);
-
-    return basic + overtime + bonus + incentive - (leave + late + advance + loan);
+    try { localStorage.setItem("software_house_payrolls", JSON.stringify(newList)); } catch (storageError) {}
   };
 
   const handleCreateEmployeePayroll = async (e) => {
@@ -275,13 +276,19 @@ export default function PayrollDashboardPage() {
     };
     const finalNet = calculateNetSalary(tempObj);
 
+    const employeeEmail = newEmpForm.email.toLowerCase().trim();
+    if (payrolls.some((record) => record.email?.toLowerCase().trim() === employeeEmail && (record.month || selectedMonth) === selectedMonth)) {
+      showAlert("Payroll already exists", `A payroll record for ${employeeEmail} already exists for ${selectedMonth}. Edit that record instead.`, "warning");
+      return;
+    }
+
     const newRecordObj = {
-      id: "p-" + Date.now(),
-      employee_id: "emp-" + Math.floor(100 + Math.random() * 900),
+      id: `payroll:${employeeEmail}:${selectedMonth}`,
+      employee_id: "",
       employee_name: newEmpForm.employee_name,
       department: newEmpForm.department,
       designation: newEmpForm.designation,
-      email: newEmpForm.email.toLowerCase().trim(),
+      email: employeeEmail,
       month: selectedMonth,
       basic_salary: Number(newEmpForm.basic_salary),
       overtime_hours: Number(newEmpForm.overtime_hours),
@@ -293,72 +300,37 @@ export default function PayrollDashboardPage() {
       advance_deduction: 0,
       loan_deduction: Number(newEmpForm.loan_deduction),
       final_payable_salary: finalNet,
-      status: "processed"
+      status: "draft",
+      created_at: new Date().toISOString(),
     };
 
-    // Save to Supabase Database synchronously first
     try {
-      await supabase.from("employees").upsert([
-        {
-          full_name: newRecordObj.employee_name,
-          email: newRecordObj.email,
-          department: newRecordObj.department,
-          designation: newRecordObj.designation,
-          employment_type: "Paid Staff (Full Time)"
-        }
-      ]);
-    } catch (e) {}
-
-    try {
-      const { data: pRes, error: pErr } = await supabase.from("payrolls").insert([
-        {
-          employee_name: newRecordObj.employee_name,
-          email: newRecordObj.email,
-          department: newRecordObj.department,
-          designation: newRecordObj.designation,
-          month: newRecordObj.month,
-          basic_salary: newRecordObj.basic_salary,
-          overtime_hours: newRecordObj.overtime_hours,
-          overtime_amount: newRecordObj.overtime_amount,
-          leave_deduction: newRecordObj.leave_deduction,
-          late_penalty: newRecordObj.late_penalty,
-          bonus_amount: newRecordObj.bonus_amount,
-          incentive_amount: newRecordObj.incentive_amount,
-          loan_deduction: newRecordObj.loan_deduction,
-          final_payable_salary: newRecordObj.final_payable_salary,
-          status: "processed",
-          created_at: new Date().toISOString()
-        }
-      ]).select();
-
-      if (pRes && pRes.length > 0) {
-        newRecordObj.id = pRes[0].id;
-      }
-    } catch (e) {}
-
-    const updated = [newRecordObj, ...payrolls];
-    savePayrollsState(updated);
-
-    setCreateModalOpen(false);
-    setNewEmpForm({
-      employee_name: "",
-      email: "",
-      department: "Engineering",
-      designation: "Software Engineer",
-      basic_salary: 75000,
-      overtime_hours: 0,
-      overtime_rate: 600,
-      bonus_amount: 0,
-      incentive_amount: 0,
-      leave_deduction: 0,
-      late_penalty: 0,
-      loan_deduction: 0,
-    });
-    showAlert(
-      "Payroll record saved",
-      `Employee: ${newRecordObj.employee_name}\nEmail: ${newRecordObj.email}\nNet salary: Rs. ${finalNet.toLocaleString()}\n\nThe employee must create a Supabase account and wait for administrator approval before using the portal.`,
-      "success"
-    );
+      const savedRecord = await dbSaveRecord("payrolls", newRecordObj);
+      if (!savedRecord) throw new Error("The server did not confirm the payroll save.");
+      savePayrollsState([savedRecord, ...payrolls]);
+      setCreateModalOpen(false);
+      setNewEmpForm({
+        employee_name: "",
+        email: "",
+        department: "Engineering",
+        designation: "Software Engineer",
+        basic_salary: 0,
+        overtime_hours: 0,
+        overtime_rate: 600,
+        bonus_amount: 0,
+        incentive_amount: 0,
+        leave_deduction: 0,
+        late_penalty: 0,
+        loan_deduction: 0,
+      });
+      showAlert(
+        "Payroll record saved",
+        `Employee: ${savedRecord.employee_name}\nEmail: ${savedRecord.email}\nNet salary: Rs. ${finalNet.toLocaleString()}\n\nPayroll is saved as a draft until it is reviewed.`,
+        "success"
+      );
+    } catch (error) {
+      showAlert("Payroll record not saved", error?.message || "Could not save the payroll record.", "error");
+    }
   };
 
   const handleUpdateRecord = async (e) => {
@@ -371,79 +343,32 @@ export default function PayrollDashboardPage() {
       final_payable_salary: finalNet
     };
 
-    const updated = payrolls.map((p) => (p.id === editingRecord.id ? updatedRecord : p));
-    savePayrollsState(updated);
-
-    // Save to Database
     try {
-      await dbSaveRecord("payrolls", updatedRecord).catch(() => {});
-      await supabase.from("payrolls").upsert([
-        {
-          employee_name: updatedRecord.employee_name,
-          email: updatedRecord.email,
-          department: updatedRecord.department,
-          designation: updatedRecord.designation,
-          month: updatedRecord.month || selectedMonth,
-          basic_salary: updatedRecord.basic_salary,
-          overtime_hours: updatedRecord.overtime_hours,
-          overtime_amount: updatedRecord.overtime_amount,
-          leave_deduction: updatedRecord.leave_deduction,
-          late_penalty: updatedRecord.late_penalty,
-          bonus_amount: updatedRecord.bonus_amount,
-          incentive_amount: updatedRecord.incentive_amount,
-          loan_deduction: updatedRecord.loan_deduction,
-          final_payable_salary: updatedRecord.final_payable_salary,
-          status: "processed"
-        }
-      ], { onConflict: "email" }).catch(() => {});
-    } catch (e) {}
-
-    setEditModalOpen(false);
-    setEditingRecord(null);
-    showAlert("Salary Recalculated & Saved ⚡", `Updated final payable salary for ${updatedRecord.employee_name} is Rs. ${finalNet.toLocaleString()}.`, "success");
+      const savedRecord = await dbSaveRecord("payrolls", { ...updatedRecord, month: updatedRecord.month || selectedMonth });
+      if (!savedRecord) throw new Error("The server did not confirm the payroll update.");
+      const updated = payrolls.map((record) => record.id === savedRecord.id ? savedRecord : record);
+      savePayrollsState(updated);
+      setEditModalOpen(false);
+      setEditingRecord(null);
+      showAlert("Salary Recalculated & Saved ⚡", `Updated final payable salary for ${savedRecord.employee_name} is Rs. ${finalNet.toLocaleString()}.`, "success");
+    } catch (error) {
+      showAlert("Salary update not saved", error?.message || "Could not save the payroll update.", "error");
+    }
   };
 
   const handleDeleteRecord = async (id) => {
     if (!confirm("Are you sure you want to remove this payroll record?")) return;
     
     const recordToDelete = payrolls.find(p => p.id === id);
-    const updated = payrolls.filter((p) => p.id !== id);
-    savePayrollsState(updated);
-
-    const emailToDelete = (recordToDelete?.email || "").toLowerCase().trim();
-
-    // Store in deleted_payrolls_list so it is NEVER restored on refresh
     try {
-      const deletedList = JSON.parse(localStorage.getItem("deleted_payrolls_list") || "[]");
-      if (emailToDelete && !deletedList.includes(emailToDelete)) {
-        deletedList.push(emailToDelete);
-        localStorage.setItem("deleted_payrolls_list", JSON.stringify(deletedList));
-      }
-    } catch(e) {}
-
-    // Delete from Supabase Database strictly (both payrolls and employees tables)
-    try {
-      if (emailToDelete) {
-        await supabase.from("payrolls").delete().eq("email", emailToDelete);
-        await supabase.from("employees").delete().eq("email", emailToDelete);
-      }
-      if (id) {
-        await supabase.from("payrolls").delete().eq("id", id);
-        await supabase.from("employees").delete().eq("id", id);
-      }
-      authenticatedFetch("/api/persistence", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ table: "payrolls", record: { id, email: emailToDelete }, action: "delete" })
-      }).catch(() => {});
-      authenticatedFetch("/api/persistence", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ table: "employees", record: { id, email: emailToDelete }, action: "delete" })
-      }).catch(() => {});
-    } catch(e) {}
-
-    showAlert("Payroll Record Deleted 🗑️", `Payroll record for ${recordToDelete?.employee_name || "Employee"} permanently removed.`, "success");
+      const result = await dbDeleteRecord("payrolls", id);
+      if (!result.success) throw new Error(result.error || "Could not delete the payroll record.");
+      const updated = payrolls.filter((record) => record.id !== id);
+      savePayrollsState(updated);
+      showAlert("Payroll Record Deleted 🗑️", `Payroll record for ${recordToDelete?.employee_name || "Employee"} removed. Employee records and other payroll months are retained.`, "success");
+    } catch (error) {
+      showAlert("Payroll record not deleted", error?.message || "Could not delete the payroll record.", "error");
+    }
   };
 
   // Role Filtering:
@@ -516,8 +441,7 @@ export default function PayrollDashboardPage() {
               onChange={(e) => setSelectedMonth(e.target.value)}
               className="bg-transparent text-[#0F172A] font-bold outline-none cursor-pointer"
             >
-              <option value="2026-08">🗓️ August 2026</option>
-              <option value="2026-07">🗓️ July 2026</option>
+              {availableMonths.map((month) => <option key={month.value} value={month.value}>🗓️ {month.label}</option>)}
             </select>
           </div>
 

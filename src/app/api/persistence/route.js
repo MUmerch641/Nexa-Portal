@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getRequestUser } from "@/lib/serverAuth";
+import { getRequestUser, isPortalAdmin } from "@/lib/serverAuth";
 import { cleanPayloadForDb } from "@/lib/dbPersistence";
 
 const TABLES = new Set([
@@ -37,6 +37,9 @@ export async function POST(request) {
     if (!TABLES.has(table)) return NextResponse.json({ error: "Unknown data module." }, { status: 400 });
     if (["clear_all", "delete_all"].includes(action)) {
       return NextResponse.json({ error: "Bulk clearing is disabled. Delete specific records instead." }, { status: 403 });
+    }
+    if (table === "attendance" && !isPortalAdmin(context.role)) {
+      return NextResponse.json({ error: "Use the live attendance clock to check in or out." }, { status: 403 });
     }
 
     if (action === "delete") {
