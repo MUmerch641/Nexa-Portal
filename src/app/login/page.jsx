@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { login, clearLegacyCredentialCache } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
@@ -243,9 +244,17 @@ export default function LoginPage() {
           </button>
         </form>
 
-        <p className="border-t border-slate-100 pt-4 text-center text-xs font-medium text-slate-500">
-          Accounts are created by an administrator.
-        </p>
+        <div className="border-t border-slate-100 pt-4 text-center text-xs">
+          <p className="font-medium text-slate-600">
+            New to NEXA?{" "}
+            <Link href="/signup" className="font-bold text-blue-600 hover:text-blue-700 hover:underline">
+              Create an account
+            </Link>
+          </p>
+          <p className="mt-2 text-slate-500">
+            An administrator must approve your account before you can sign in.
+          </p>
+        </div>
       </div>
       {/* Global Toast Notification Engine */}
       <ToastContainer />
