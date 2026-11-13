@@ -88,10 +88,10 @@ export function determineAttendanceState(role = "employee", minutes, policy = nu
   };
   
   const policyMinutes = policy || defaultPolicy;
-  const shiftStart = policyMinutes.shift_start_minutes || 600;
-  const graceEnd = shiftStart + (policyMinutes.grace_period_minutes || 14);
-  const lateWarningEnd = shiftStart + (policyMinutes.late_warning_minutes || 29);
-  const salaryDeductionStart = shiftStart + (policyMinutes.salary_deduction_after || 30);
+  const shiftStart = policyMinutes.shift_start_minutes ?? 600;
+  const graceEnd = shiftStart + (policyMinutes.grace_period_minutes ?? 14);
+  const lateWarningEnd = shiftStart + (policyMinutes.late_warning_minutes ?? 29);
+  const salaryDeductionStart = shiftStart + (policyMinutes.salary_deduction_after ?? 30);
 
   const isStudent = role === "student" || role === "course_student" || role === "intern" || role === "internship";
 
@@ -134,6 +134,18 @@ export function determineAttendanceState(role = "employee", minutes, policy = nu
     };
   }
 
+  if (minutes < salaryDeductionStart) {
+    return {
+      allowed: true,
+      modalMessage: "Attendance marked late. No salary deduction threshold has been reached.",
+      status: "warning",
+      lightColor: "orange",
+      label: "Late 🟠",
+      attendanceStatus: "Late",
+      salaryDeductionStatus: "No Deduction"
+    };
+  }
+
   // Salary Deduction period
   if (isStudent) {
     return {
@@ -165,7 +177,7 @@ export function determineAttendanceState(role = "employee", minutes, policy = nu
  * - (shift_start + salary_deduction_after) and after: Salary Deduction 🔴
  */
 export function getEmployeeCheckInStatus(input, policy = null) {
-  let minutes = 0;
+  let minutes = null;
   const defaultPolicy = {
     shift_start_minutes: 600,  // 10:00 AM
     grace_period_minutes: 14,  // 10:14 AM
@@ -174,9 +186,10 @@ export function getEmployeeCheckInStatus(input, policy = null) {
   };
   
   const policyMinutes = policy || defaultPolicy;
-  const shiftStart = policyMinutes.shift_start_minutes || 600;
-  const graceEnd = shiftStart + (policyMinutes.grace_period_minutes || 14);
-  const lateWarningEnd = shiftStart + (policyMinutes.late_warning_minutes || 29);
+  const shiftStart = policyMinutes.shift_start_minutes ?? 600;
+  const graceEnd = shiftStart + (policyMinutes.grace_period_minutes ?? 14);
+  const lateWarningEnd = shiftStart + (policyMinutes.late_warning_minutes ?? 29);
+  const salaryDeductionStart = shiftStart + (policyMinutes.salary_deduction_after ?? 30);
 
   if (typeof input === "number") {
     minutes = input;
@@ -194,7 +207,7 @@ export function getEmployeeCheckInStatus(input, policy = null) {
     }
     
     // If minutes not resolved yet, parse time string e.g. "10:12 AM" or "10:15:30 AM" or "10:30"
-    if (!minutes) {
+    if (minutes == null) {
       const match = input.match(/(\d+):(\d+)(?::\d+)?\s*(AM|PM)?/i);
       if (match) {
         let hours = parseInt(match[1], 10);
@@ -202,13 +215,13 @@ export function getEmployeeCheckInStatus(input, policy = null) {
         const modifier = match[3] ? match[3].toUpperCase() : "";
         if (modifier === "PM" && hours < 12) hours += 12;
         if (modifier === "AM" && hours === 12) hours = 0;
-        minutes = hours * 60 + mins;
+        if (hours >= 0 && hours <= 23 && mins >= 0 && mins <= 59) minutes = hours * 60 + mins;
       }
     }
   }
 
   // Fallback to current time if unparseable
-  if (!minutes) {
+  if (minutes == null || !Number.isFinite(minutes)) {
     const now = new Date();
     minutes = now.getHours() * 60 + now.getMinutes();
   }
@@ -235,7 +248,7 @@ export function getEmployeeCheckInStatus(input, policy = null) {
       badgeColor: "bg-emerald-50 text-emerald-700 border-emerald-200",
       colorKey: "emerald",
       dot: "🟢",
-      rule: `${policyMinutes.shift_start || "10:00 AM"} to ${policyMinutes.shift_start || "10:14 AM"} — On Time 🟢`
+      rule: `${policyMinutes.shift_start || "10:00 AM"} to ${minutesToTime(graceEnd)} — On Time 🟢`
     };
   }
 
@@ -252,6 +265,18 @@ export function getEmployeeCheckInStatus(input, policy = null) {
     };
   }
 
+  if (minutes < salaryDeductionStart) {
+    return {
+      status: "Late",
+      label: "Late 🟠",
+      shortLabel: "Late",
+      badgeColor: "bg-amber-50 text-amber-700 border-amber-200",
+      colorKey: "amber",
+      dot: "🟠",
+      rule: `Salary deduction starts at ${minutesToTime(salaryDeductionStart)}`
+    };
+  }
+
   // Salary Deduction period
   return {
     status: "Salary Deduction",
@@ -260,7 +285,7 @@ export function getEmployeeCheckInStatus(input, policy = null) {
     badgeColor: "bg-rose-50 text-rose-700 border-rose-200",
     colorKey: "rose",
     dot: "🔴",
-    rule: `Salary Deduction starts at ${policyMinutes.shift_start || "10:30 AM"}`
+    rule: `Salary Deduction starts at ${minutesToTime(salaryDeductionStart)}`
   };
 }
 

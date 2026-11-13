@@ -1,14 +1,14 @@
-import { supabase } from "@/lib/supabase";
+import { dbSaveRecord } from "@/lib/dbPersistence";
 
 export const DEFAULT_COMPANY_INFO = {
-  company_name: "Antigravity Software House (Pvt) Ltd",
+  company_name: "Nexa Innovation and Technology",
   company_logo: "/logo.jpeg",
   currency_symbol: "Rs.",
-  company_address: "Corporate Tech Campus, Innovation Parkway, Phase 6",
-  contact_number: "+92 300 1234567",
-  email_address: "info@softwarehouse.com",
-  website_url: "https://softwarehouse.com",
-  tax_registration_no: "TRN-99887766-PAK",
+  company_address: "",
+  contact_number: "",
+  email_address: "",
+  website_url: "",
+  tax_registration_no: "",
   updated_at: new Date().toISOString(),
   updated_by: ""
 };
@@ -27,8 +27,20 @@ export function getCompanyInfo() {
   return DEFAULT_COMPANY_INFO;
 }
 
+export async function fetchCompanyInfo() {
+  try {
+    const records = await dbFetch("settings", []);
+    const saved = records.find((record) => record.id === "company-info-config");
+    if (saved) {
+      try { localStorage.setItem("software_house_company_info", JSON.stringify(saved)); } catch (e) {}
+      return { ...DEFAULT_COMPANY_INFO, ...saved };
+    }
+  } catch (e) {}
+  return getCompanyInfo();
+}
+
 export async function updateCompanyInfo(updatedFields, adminEmail) {
-  const current = getCompanyInfo();
+  const current = await fetchCompanyInfo();
   const newCompanyObj = {
     ...current,
     ...updatedFields,
@@ -36,30 +48,18 @@ export async function updateCompanyInfo(updatedFields, adminEmail) {
     updated_by: adminEmail || "Admin Officer"
   };
 
-  // 1. Save to LocalStorage
+  await dbSaveRecord("settings", {
+    id: "company-info-config",
+    ...newCompanyObj,
+  });
+
+  // Keep this browser's cache in step with the shared server record.
   try {
     localStorage.setItem("software_house_company_info", JSON.stringify(newCompanyObj));
     if (typeof window !== "undefined") {
       window.dispatchEvent(new Event("storage"));
       window.dispatchEvent(new Event("companyInfoUpdated"));
     }
-  } catch (e) {}
-
-  // 2. Save to Supabase DB settings table
-  try {
-    await supabase.from("settings").upsert({
-      id: "company-info-config",
-      company_name: newCompanyObj.company_name,
-      company_logo: newCompanyObj.company_logo,
-      currency_symbol: newCompanyObj.currency_symbol,
-      company_address: newCompanyObj.company_address,
-      contact_number: newCompanyObj.contact_number,
-      email_address: newCompanyObj.email_address,
-      website_url: newCompanyObj.website_url,
-      tax_registration_no: newCompanyObj.tax_registration_no,
-      updated_at: newCompanyObj.updated_at,
-      updated_by: newCompanyObj.updated_by
-    });
   } catch (e) {}
 
   return newCompanyObj;

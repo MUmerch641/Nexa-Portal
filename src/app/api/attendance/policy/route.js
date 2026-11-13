@@ -20,6 +20,21 @@ async function savePolicy(client, policy, userId) {
   return { data: data?.payload || null, error };
 }
 
+function normalizeShiftTime(value, fallback) {
+  const time = String(value || fallback).trim();
+  if (!/^(0?[1-9]|1[0-2]):[0-5]\d\s?(AM|PM)$/i.test(time)) {
+    throw new Error("Shift times must use a format such as 10:00 AM or 6:00 PM.");
+  }
+  return time;
+}
+
+function boundedMinutes(value, fallback) {
+  if (value === "" || value == null) return fallback;
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(0, Math.min(180, parsed));
+}
+
 export async function GET(request) {
   const context = await getRequestUser(request);
   if (context.error) return NextResponse.json({ error: context.error }, { status: context.status });
@@ -41,14 +56,17 @@ export async function POST(request) {
     const { action, policy = {} } = await request.json();
     if (!['update', 'reset'].includes(action)) return NextResponse.json({ error: "Unsupported policy action." }, { status: 400 });
     const selected = action === "reset" ? DEFAULT_POLICY : {
-      shift_start: String(policy.shift_start || DEFAULT_POLICY.shift_start),
-      shift_end: String(policy.shift_end || DEFAULT_POLICY.shift_end),
-      grace_period_minutes: Math.max(0, Math.min(180, Number.parseInt(policy.grace_period_minutes, 10) || DEFAULT_POLICY.grace_period_minutes)),
-      late_warning_minutes: Math.max(0, Math.min(180, Number.parseInt(policy.late_warning_minutes, 10) || DEFAULT_POLICY.late_warning_minutes)),
-      salary_deduction_after: Math.max(0, Math.min(180, Number.parseInt(policy.salary_deduction_after, 10) || DEFAULT_POLICY.salary_deduction_after)),
-      policy_name: String(policy.policy_name || DEFAULT_POLICY.policy_name).slice(0, 120),
-      description: String(policy.description || DEFAULT_POLICY.description).slice(0, 1000),
+      shift_start: normalizeShiftTime(policy.shift_start, DEFAULT_POLICY.shift_start),
+      shift_end: normalizeShiftTime(policy.shift_end, DEFAULT_POLICY.shift_end),
+      grace_period_minutes: boundedMinutes(policy.grace_period_minutes, DEFAULT_POLICY.grace_period_minutes),
+      late_warning_minutes: boundedMinutes(policy.late_warning_minutes, DEFAULT_POLICY.late_warning_minutes),
+      salary_deduction_after: boundedMinutes(policy.salary_deduction_after, DEFAULT_POLICY.salary_deduction_after),
+      policy_name: String(policy.policy_name || DEFAULT_POLICY.policy_name).trim().slice(0, 120),
+      description: String(policy.description || DEFAULT_POLICY.description).trim().slice(0, 1000),
     };
+    if (selected.grace_period_minutes > selected.late_warning_minutes || selected.late_warning_minutes > selected.salary_deduction_after) {
+      return NextResponse.json({ error: "Keep grace period ≤ late warning ≤ salary deduction minutes." }, { status: 400 });
+    }
     const { data, error } = await savePolicy(context.client, selected, context.user.id);
     if (error) return NextResponse.json({ error: error.message }, { status: 403 });
     return NextResponse.json({ success: true, policy: data || { ...DEFAULT_POLICY, ...selected } });

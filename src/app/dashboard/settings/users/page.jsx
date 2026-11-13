@@ -14,6 +14,7 @@ export default function UserAccessPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState("");
   const [authorized, setAuthorized] = useState(false);
+  const [canGrantAdmin, setCanGrantAdmin] = useState(false);
   const [error, setError] = useState("");
 
   const loadUsers = useCallback(async () => {
@@ -28,9 +29,11 @@ export default function UserAccessPage() {
         .maybeSingle();
       if (actorError || !["admin", "manager", "hr"].includes(actor?.role) || actor?.status !== "active") {
         setAuthorized(false);
+        setCanGrantAdmin(false);
         throw new Error("Only approved administrators can manage account access.");
       }
       setAuthorized(true);
+      setCanGrantAdmin(actor.role === "admin");
       const { data, error: queryError } = await supabase.from("user_profiles")
         .select("id, email, full_name, role, status, created_at")
         .order("created_at", { ascending: false });
@@ -96,17 +99,20 @@ export default function UserAccessPage() {
                 {users.map((profile) => {
                   const draft = drafts[profile.id] || { role: profile.role, status: profile.status };
                   const changed = draft.role !== profile.role || draft.status !== profile.status;
+                  const canManageProfile = canGrantAdmin || profile.role !== "admin";
+                  const availableRoles = canGrantAdmin ? ROLES : ROLES.filter((role) => role !== "admin");
+                  const roleOptions = availableRoles.includes(profile.role) ? availableRoles : [profile.role, ...availableRoles];
                   return (
                     <tr key={profile.id}>
                       <td className="px-5 py-4"><div className="font-semibold">{profile.full_name || "New team member"}</div><div className="text-xs text-slate-500">{profile.email}</div></td>
-                      <td className="px-5 py-4"><select value={draft.role} onChange={(event) => setDrafts((all) => ({ ...all, [profile.id]: { ...draft, role: event.target.value } }))} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm">
-                        {ROLES.map((role) => <option key={role} value={role}>{role}</option>)}
+                      <td className="px-5 py-4"><select value={draft.role} disabled={!canManageProfile} onChange={(event) => setDrafts((all) => ({ ...all, [profile.id]: { ...draft, role: event.target.value } }))} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm disabled:bg-slate-100 disabled:text-slate-500">
+                        {roleOptions.map((role) => <option key={role} value={role}>{role}</option>)}
                       </select></td>
-                      <td className="px-5 py-4"><select value={draft.status} onChange={(event) => setDrafts((all) => ({ ...all, [profile.id]: { ...draft, status: event.target.value } }))} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm">
+                      <td className="px-5 py-4"><select value={draft.status} disabled={!canManageProfile} onChange={(event) => setDrafts((all) => ({ ...all, [profile.id]: { ...draft, status: event.target.value } }))} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm disabled:bg-slate-100 disabled:text-slate-500">
                         <option value="pending">Pending</option><option value="active">Active</option><option value="inactive">Inactive</option>
                       </select></td>
                       <td className="px-5 py-4 text-xs text-slate-500">{profile.created_at ? new Date(profile.created_at).toLocaleDateString() : "—"}</td>
-                      <td className="px-5 py-4 text-right"><button onClick={() => saveUser(profile)} disabled={!changed || saving === profile.id} className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40"><FaSave /> {saving === profile.id ? "Saving…" : "Save"}</button></td>
+                      <td className="px-5 py-4 text-right"><button onClick={() => saveUser(profile)} disabled={!changed || !canManageProfile || saving === profile.id} className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40"><FaSave /> {saving === profile.id ? "Saving…" : "Save"}</button></td>
                     </tr>
                   );
                 })}
