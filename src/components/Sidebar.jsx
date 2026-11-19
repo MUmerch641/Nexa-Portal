@@ -71,6 +71,7 @@ const adminMenuGroups = [
     id: "admin",
     items: [
       { name: "Meeting Management", href: "/dashboard/meetings", icon: FaVideo },
+      { name: "User Access & Approvals", href: "/dashboard/settings/users", icon: FaUsers },
       { name: "Company Settings", href: "/dashboard/settings", icon: FaCogs },
     ]
   }

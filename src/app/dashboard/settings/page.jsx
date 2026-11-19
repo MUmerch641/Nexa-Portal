@@ -221,7 +221,7 @@ export default function SettingsPage() {
         </div>
         {["admin", "manager", "hr"].includes(role) && (
           <Link href="/dashboard/settings/users" className="inline-flex items-center gap-2 rounded-xl bg-[#2563EB] px-4 py-2.5 text-xs font-bold text-white hover:bg-[#1D4ED8]">
-            <FaUsers /> Manage team access
+            <FaUsers /> User approvals & roles
           </Link>
         )}
       </div>
