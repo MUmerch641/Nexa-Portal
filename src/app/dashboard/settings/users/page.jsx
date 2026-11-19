@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import { showToast } from "@/components/Toast";
-import { FaArrowLeft, FaUsers, FaSyncAlt, FaSave } from "react-icons/fa";
+import { FaArrowLeft, FaUsers, FaSyncAlt, FaSave, FaCheckCircle } from "react-icons/fa";
 
 const ROLES = ["pending", "admin", "manager", "hr", "employee", "intern", "student", "client"];
 
@@ -13,6 +13,7 @@ export default function UserAccessPage() {
   const [drafts, setDrafts] = useState({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState("");
+  const [showPendingOnly, setShowPendingOnly] = useState(false);
   const [authorized, setAuthorized] = useState(false);
   const [canGrantAdmin, setCanGrantAdmin] = useState(false);
   const [error, setError] = useState("");
@@ -53,6 +54,10 @@ export default function UserAccessPage() {
   const saveUser = async (profile) => {
     const draft = drafts[profile.id];
     if (!draft) return;
+    if (draft.status === "active" && draft.role === "pending") {
+      showToast("Choose a role first", "Assign a team role before activating this account.", "warning");
+      return;
+    }
     setSaving(profile.id);
     const { data, error: updateError } = await supabase.from("user_profiles")
       .update({ role: draft.role, status: draft.status, updated_at: new Date().toISOString() })
@@ -65,8 +70,34 @@ export default function UserAccessPage() {
       return;
     }
     setUsers((current) => current.map((item) => item.id === data.id ? data : item));
+    setDrafts((current) => ({ ...current, [data.id]: { role: data.role, status: data.status } }));
     showToast("Account access updated", `${data.email} now has ${data.role} access (${data.status}).`, "success");
   };
+
+  const approveUser = async (profile) => {
+    const draft = drafts[profile.id];
+    if (!draft || draft.role === "pending") {
+      showToast("Choose a role first", "Select the team role this person should have, then approve the account.", "warning");
+      return;
+    }
+    setSaving(profile.id);
+    const { data, error: updateError } = await supabase.from("user_profiles")
+      .update({ role: draft.role, status: "active", updated_at: new Date().toISOString() })
+      .eq("id", profile.id)
+      .select("id, email, full_name, role, status, created_at")
+      .maybeSingle();
+    setSaving("");
+    if (updateError || !data) {
+      showToast("Approval failed", updateError?.message || "The account was not approved.", "error");
+      return;
+    }
+    setUsers((current) => current.map((item) => item.id === data.id ? data : item));
+    setDrafts((current) => ({ ...current, [data.id]: { role: data.role, status: data.status } }));
+    showToast("Account approved", `${data.email} can now sign in as ${data.role}.`, "success");
+  };
+
+  const pendingCount = users.filter((profile) => profile.status === "pending").length;
+  const visibleUsers = showPendingOnly ? users.filter((profile) => profile.status === "pending") : users;
 
   return (
     <div className="mx-auto max-w-6xl space-y-6 text-slate-900">
@@ -76,19 +107,24 @@ export default function UserAccessPage() {
             <FaArrowLeft /> Back to settings
           </Link>
           <h1 className="flex items-center gap-2 text-2xl font-bold"><FaUsers className="text-blue-600" /> Team account access</h1>
-          <p className="mt-1 text-sm text-slate-600">New sign-ups stay pending until you assign their role and activate them.</p>
+          <p className="mt-1 text-sm text-slate-600">Review new sign-ups here. Choose their role, then approve access.</p>
         </div>
-        <button onClick={loadUsers} disabled={loading} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold hover:bg-slate-50 disabled:opacity-50">
-          <FaSyncAlt /> Refresh
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button onClick={() => setShowPendingOnly((current) => !current)} className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold ${showPendingOnly ? "bg-amber-100 text-amber-900" : "border border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100"}`}>
+            <FaCheckCircle /> Pending approvals ({pendingCount})
+          </button>
+          <button onClick={loadUsers} disabled={loading} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold hover:bg-slate-50 disabled:opacity-50">
+            <FaSyncAlt /> Refresh
+          </button>
+        </div>
       </div>
 
       {!authorized && error && <div role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">{error}</div>}
       {authorized && error && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">{error}</div>}
 
       <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-        {loading ? <div className="p-8 text-center text-sm text-slate-500">Loading user profiles…</div> : !authorized ? null : users.length === 0 ? (
-          <div className="p-8 text-center text-sm text-slate-500">No one has signed up yet. Share the portal signup link with your team.</div>
+        {loading ? <div className="p-8 text-center text-sm text-slate-500">Loading user profiles…</div> : !authorized ? null : visibleUsers.length === 0 ? (
+          <div className="p-8 text-center text-sm text-slate-500">{showPendingOnly ? "There are no accounts waiting for approval." : "No one has signed up yet. Share the portal signup link with your team."}</div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[700px] text-left text-sm">
@@ -96,7 +132,7 @@ export default function UserAccessPage() {
                 <tr><th className="px-5 py-3">Team member</th><th className="px-5 py-3">Role</th><th className="px-5 py-3">Account status</th><th className="px-5 py-3">Joined</th><th className="px-5 py-3" /></tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {users.map((profile) => {
+                {visibleUsers.map((profile) => {
                   const draft = drafts[profile.id] || { role: profile.role, status: profile.status };
                   const changed = draft.role !== profile.role || draft.status !== profile.status;
                   const canManageProfile = canGrantAdmin || profile.role !== "admin";
@@ -112,7 +148,12 @@ export default function UserAccessPage() {
                         <option value="pending">Pending</option><option value="active">Active</option><option value="inactive">Inactive</option>
                       </select></td>
                       <td className="px-5 py-4 text-xs text-slate-500">{profile.created_at ? new Date(profile.created_at).toLocaleDateString() : "—"}</td>
-                      <td className="px-5 py-4 text-right"><button onClick={() => saveUser(profile)} disabled={!changed || !canManageProfile || saving === profile.id} className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40"><FaSave /> {saving === profile.id ? "Saving…" : "Save"}</button></td>
+                      <td className="px-5 py-4 text-right">
+                        <div className="flex flex-wrap justify-end gap-2">
+                          {profile.status === "pending" && <button onClick={() => approveUser(profile)} disabled={!canManageProfile || saving === profile.id} title={draft.role === "pending" ? "Choose a role before approving" : "Approve this account"} className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40"><FaCheckCircle /> {saving === profile.id ? "Approving…" : "Approve"}</button>}
+                          <button onClick={() => saveUser(profile)} disabled={!changed || !canManageProfile || saving === profile.id} className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40"><FaSave /> {saving === profile.id ? "Saving…" : "Save"}</button>
+                        </div>
+                      </td>
                     </tr>
                   );
                 })}
