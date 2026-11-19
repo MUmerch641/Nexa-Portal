@@ -5,13 +5,14 @@ import { useRouter, usePathname } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
 import Navbar from "@/components/Navbar";
 import ToastContainer, { showToast } from "@/components/Toast";
+import { supabase } from "@/lib/supabase";
 
 export default function DashboardLayout({ children }) {
   const router = useRouter();
   const pathname = usePathname();
   // Default false so sidebar is hidden on first load
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [role, setRole] = useState("admin");
+  const [role, setRole] = useState(null);
   const [authorized, setAuthorized] = useState(false);
 
   useEffect(() => {
@@ -29,24 +30,57 @@ export default function DashboardLayout({ children }) {
   }, [pathname]);
 
   useEffect(() => {
-    const checkAuth = () => {
-      if (typeof window === "undefined") return;
+    let active = true;
+    const checkAuth = async () => {
+      setAuthorized(false);
+      setRole(null);
 
-      const isLoggedIn = localStorage.getItem("isLoggedIn") === "true";
-      const userRole = localStorage.getItem("user_role");
-
-      if (!isLoggedIn || !userRole) {
-        setAuthorized(false);
+      // localStorage is editable in the browser, so it must never grant a role.
+      // Verify the Supabase session and load the authoritative profile instead.
+      const { data: { user } = {}, error: authError } = await supabase.auth.getUser();
+      if (!active) return;
+      if (authError || !user) {
         router.replace("/login");
         return;
       }
 
-      const cleanRole = (userRole || "").toLowerCase().trim();
+      const { data: profile, error: profileError } = await supabase
+        .from("user_profiles")
+        .select("role, status")
+        .eq("id", user.id)
+        .maybeSingle();
+      if (!active) return;
 
-      // Admin, HR, Manager, Accounts roles have full unrestricted access to all routes
-      const isAdminUser = ["admin", "super_admin", "hr", "manager", "accounts"].includes(cleanRole);
+      if (profileError || !profile || profile.status !== "active") {
+        if (!profileError && profile && profile.status !== "active") {
+          await supabase.auth.signOut();
+        }
+        if (active) router.replace("/login");
+        return;
+      }
+
+      const cleanRole = String(profile.role || "").toLowerCase().trim();
+      const knownRoles = ["admin", "manager", "hr", "employee", "intern", "student", "client"];
+      if (!knownRoles.includes(cleanRole)) {
+        await supabase.auth.signOut();
+        if (active) router.replace("/login");
+        return;
+      }
+
+      // Keep the UI cache current for existing widgets. Route authorization
+      // continues to use the verified profile above, never this cache.
+      try {
+        localStorage.setItem("user_role", cleanRole);
+      } catch {
+        // Dashboard access does not depend on browser storage.
+      }
+      window.dispatchEvent(new Event("roleChanged"));
+
+      // Admin, HR, and Manager accounts have access to all dashboard routes.
+      const isAdminUser = ["admin", "hr", "manager"].includes(cleanRole);
 
       if (isAdminUser) {
+        if (!active) return;
         setAuthorized(true);
         setRole(cleanRole);
         return;
@@ -54,7 +88,6 @@ export default function DashboardLayout({ children }) {
 
       // RBAC Route Guarding for Direct URL Access Protection (Non-Admin Users)
       const adminOnlyPaths = [
-        "/dashboard",
         "/dashboard/employees",
         "/dashboard/courses",
         "/dashboard/finance",
@@ -66,50 +99,57 @@ export default function DashboardLayout({ children }) {
       ];
 
       const currentPath = pathname ? pathname.replace(/\/$/, "") : "";
+      const isAdminOnlyRoute = currentPath === "/dashboard" || adminOnlyPaths.some(
+        (path) => currentPath === path || currentPath.startsWith(`${path}/`)
+      );
 
       if (cleanRole === "employee") {
-        if (adminOnlyPaths.includes(currentPath) || currentPath === "/dashboard" || currentPath === "/dashboard/student") {
+        if (isAdminOnlyRoute || currentPath === "/dashboard/student") {
           showToast("403 Forbidden 🛑", "Access Denied: You do not have permission to access this area. Redirecting to Employee Portal...", "error");
           router.replace("/dashboard/employee");
           return;
         }
       } else if (cleanRole === "student") {
-        if (adminOnlyPaths.includes(currentPath) || currentPath === "/dashboard" || currentPath === "/dashboard/employee") {
+        if (isAdminOnlyRoute || currentPath === "/dashboard/employee") {
           showToast("403 Forbidden 🛑", "Access Denied: You do not have permission to access this area. Redirecting to Student Portal...", "error");
           router.replace("/dashboard/student");
           return;
         }
       } else if (cleanRole === "intern") {
-        if (adminOnlyPaths.includes(currentPath) || currentPath === "/dashboard" || currentPath === "/dashboard/employee") {
+        if (isAdminOnlyRoute || currentPath === "/dashboard/employee") {
           showToast("403 Forbidden 🛑", "Access Denied. Redirecting to Internships Portal...", "error");
           router.replace("/dashboard/internships");
           return;
         }
       } else if (cleanRole === "client") {
-        if (adminOnlyPaths.includes(currentPath) || currentPath === "/dashboard") {
+        if (isAdminOnlyRoute) {
           showToast("403 Forbidden 🛑", "Redirecting to Client Portal...", "info");
           router.replace("/dashboard/client-portal");
           return;
         }
       }
 
+      if (!active) return;
       setAuthorized(true);
       setRole(cleanRole);
     };
 
-    checkAuth();
+    checkAuth().catch(() => {
+      if (!active) return;
+      router.replace("/login");
+    });
 
-    window.addEventListener("popstate", checkAuth);
-    const handleRoleChange = () => {
-      if (typeof window !== "undefined") {
-        setRole(localStorage.getItem("user_role") || "admin");
-      }
-    };
-    window.addEventListener("roleChanged", handleRoleChange);
+    // Recheck on sign-in, sign-out, and token refresh so stale browser role data
+    // cannot keep someone in the dashboard after access changes.
+    const { data: { subscription } = {} } = supabase.auth.onAuthStateChange(() => {
+      queueMicrotask(() => {
+        if (active) checkAuth().catch(() => active && router.replace("/login"));
+      });
+    });
 
     return () => {
-      window.removeEventListener("popstate", checkAuth);
-      window.removeEventListener("roleChanged", handleRoleChange);
+      active = false;
+      subscription?.unsubscribe();
     };
   }, [pathname, router]);
 
@@ -124,7 +164,7 @@ export default function DashboardLayout({ children }) {
     );
   }
 
-  const isAdminRole = role === "admin" || role === "hr" || role === "manager" || role === "accounts";
+  const isAdminRole = role === "admin" || role === "hr" || role === "manager";
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] flex">
@@ -149,3 +189,4 @@ export default function DashboardLayout({ children }) {
     </div>
   );
 }
+
